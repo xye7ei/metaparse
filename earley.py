@@ -178,9 +178,22 @@ class Earley(grammar.Grammar):
             print('Parse faield')
             return s
 
+
+class earley(grammar.cfg): 
+    """A metaclass specifier to directly declare Earley parser for a
+    grammar. It shares the __prepare__ method with superclass
+    grammar.cfg.
+
+    """
+
+    def __new__(mcls, n, bs, kw):
+        lxs_rls = super(earley, mcls).__new__(mcls, n, bs, kw)
+        return Earley(lxs_rls)
+
+
 if __name__ == '__main__':
 
-    class S(metaclass=grammar.cfg):
+    class S(metaclass=earley):
 
         c = r'c'
         d = r'd'
@@ -194,7 +207,8 @@ if __name__ == '__main__':
         def C(d):
             return 'C[d]'
 
-    p1 = Earley(S)
+    # p1 = Earley(S)
+    p1 = S
 
     class GArith(metaclass=grammar.cfg):
 

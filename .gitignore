@@ -1,1 +1,3 @@
 *.pyc
+*.sqlite
+.ipython/profile_default/startup/README

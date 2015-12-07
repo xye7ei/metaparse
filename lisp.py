@@ -1,9 +1,9 @@
 import pprint as pp
-from earley import earley
-from lalr import lalr
+from earley import earley, Earley
+from grammar import cfg
+from lalr import lalr, LALR
 
-# class GLisp(metaclass=earley):
-class GLisp(metaclass=lalr):
+class GLisp(metaclass=cfg):
 
     LAMBDA = r'lambda'
     STRING = r'"[^\"]*"'
@@ -53,32 +53,14 @@ class GLisp(metaclass=lalr):
 inp = '(+ 1 2 (* 3 4))'
 jnp = '((lambda (x) (+ x 1)) 9)'
 
-# list(GLisp.tokenize(jnp))
-# list(enumerate(GLisp.Ks))
+pe = Earley(GLisp)
+pl = LALR(GLisp)
 
-# list(enumerate(GLisp.ACTION))
-# list(enumerate(GLisp.GOTO))
+# pp.pprint(GLisp.parse(inp))
+# pp.pprint(pe.parse_process(inp))
 
-# GLisp.ACTION
-# GLisp.parse(inp)
-# ('term',
-#  ('appl',
-#   ['(',
-#    ('term', ('atom', '+')),
-#    ('slist',
-#     [('term', ('atom', '1')),
-#      ('slist',
-#       [('term', ('atom', '2')),
-#        ('slist',
-#         [('term',
-#           ('appl',
-#            ['(',
-#             ('term', ('atom', '*')),
-#             ('slist',
-#              [('term', ('atom', '3')),
-#               ('slist', [('term', ('atom', '4')), 'slist'])]),
-#             ')'])),
-#          'slist'])])]),
-#    ')']))
+# %timeit pe.parse_process(inp)
+# %timeit pl.parse(inp)
 
-pp.pprint(GLisp.parse(inp))
+# %timeit pe.parse_process(jnp)
+# %timeit pl.parse(jnp)

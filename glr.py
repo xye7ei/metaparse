@@ -9,30 +9,38 @@ class GLR(grammar.Grammar):
 
     def __init__(self, lxs_rls):
         super(GLR, self).__init__(lxs_rls)
-        self.calc_glr_item_sets()
+        self._calc_glr_item_sets()
 
     def __repr__(self):
         return 'General-LR-{}'.format(super(GLR, self).__repr__())
 
-    def calc_glr_item_sets(G):
+    def _calc_glr_item_sets(G):
 
-        """
-        Calculate general LR-Item-Sets with respect of lookaheads only for
-        the purporse of shifting/GOTO rather than for reducing. Each
-        Item-Set has a reduce option set and a shift option set.
+        """Calculate general LR-Item-Sets with no respect to look-aheads.
+        Each conflict is registered into the parsing table. For
+        practical purpose, these conflicts should be reported for the
+        grammar writer to convey the conflicts and maybe experiment
+        with potential ambiguity, thus achieving better inspection
+        into the characteristics of the grammar itself.
+
+        For LR(0) grammars, the performance of GLR is no worse than
+        the LALR(1) parser.
 
         """
 
         G.Ks = Ks = [[G.Item(0, 0)]]
         G.GOTO = goto = []
         G.ACTION = acts = []
+
         # Fixed point computation. 
         z = 0
         while z < len(Ks):
+
             K = Ks[z]
             C = G.closure(K)
             iacts = {'reduce': [], 'shift': {}}
             igotoset = OrderedDict()
+
             for itm in C:
                 if itm.ended():
                     iacts['reduce'].append(itm)
@@ -43,6 +51,7 @@ class GLR(grammar.Grammar):
                         igotoset[X] = []
                     if jtm not in igotoset[X]:
                         igotoset[X].append(jtm)
+
             igoto = OrderedDict()
             for X, J in igotoset.items():
                 if J not in Ks:
@@ -77,10 +86,11 @@ class GLR(grammar.Grammar):
         results = []
         lexer = G.tokenize(inp)
         tokens = list(lexer)
-        prss = [[[0], [], 0]]          # prss :: [[State-Number, [Tree], InputPosition]]
+        prss = [[[0], [], 0]]          # prss :: [[State-Number, [Tree], InputPointer]]
+
         while prss:
+
             stk, trees, i = prss.pop() # stack top
-            # at, tok, tokval = tokens[i]
             tok = tokens[i]
             stt = stk[-1]
             reds = G.ACTION[stt]['reduce']
@@ -153,28 +163,29 @@ class glr(grammar.cfg):
         return GLR(lxs_rls)
     
 
-class Glrval(metaclass=grammar.cfg):
-
-    EQ   = r'='
-    STAR = r'\*'
-    ID   = r'[A-Za-z_]\w*'
-
-    def S(L, EQ, R):
-        return ('assign', L, R)
-
-    def S(R):
-        return ('expr', R)
-
-    def L(STAR, R):
-        return ('deref', R)
-
-    def L(ID):
-        return 'id'
-
-    def R(L):
-        return L
-
 if __name__ == '__main__':
+
+    class Glrval(metaclass=grammar.cfg):
+
+        EQ   = r'='
+        STAR = r'\*'
+        ID   = r'[A-Za-z_]\w*'
+
+        def S(L, EQ, R):
+            return ('assign', L, R)
+
+        def S(R):
+            return ('expr', R)
+
+        def L(STAR, R):
+            return ('deref', R)
+
+        def L(ID):
+            return 'id'
+
+        def R(L):
+            return L
+
 
     import pprint as pp
     print()

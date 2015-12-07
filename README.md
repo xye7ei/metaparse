@@ -91,6 +91,7 @@ p = Earley(GArith)
 inp = '3 + 2 * 5 + 11'
 
 s = p.parse(inp)
+```
 
 Resulted parse tree as a singleton parse forest, since
 Earley parser is non-deterministic:

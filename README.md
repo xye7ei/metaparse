@@ -14,7 +14,7 @@ of grammar to be written as a separate files, which can be treated as a
 complexed work for parsing simple CFGs in many practical cases handling
 textual information for their structures.
 
-- Metaprogramming support lexical/syntactic/semantic definition
+### Metaprogramming support lexical/syntactic/semantic definition
 
 Making use of high-level features of Python, writing a grammar can be almost
 with the same the syntax as defining a class with methods. Syntactic rules
@@ -75,7 +75,7 @@ extend various parser families to analyze characteristics of some grammar.
 The result of parsing is by default a parse tree or even a parse forest,
 with respect to deterministic/non-deterministic parser.
 
-- Non-deterministic parsers.
+### Non-deterministic parsers.
 
 Non-deterministic parsers are generally more powerful(they handle ambiguity
 and conflicts in a canonical way preserving each feasible parsing state).
@@ -112,7 +112,7 @@ Earley parser is non-deterministic:
 
 Another wide used non-deterministic parser is GLR parser.
 
-- Deterministic parsers.
+### Deterministic parsers.
 
 Typically, a well-formed deterministic parser always produces either one parse
 tree or a failure. It can handle only a subset of CFG according to their
@@ -130,7 +130,7 @@ in this packet for completion, thus to make comparisons between it and the GLR
 parser.
 
 
-- Expression based parsers
+## Expression based parsers
 
 The Parsing Expression Grammar(PEG) is also winning its popularity for its
 favor of writing grammars in EBNF way and its capability of handing grammars

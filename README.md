@@ -84,19 +84,23 @@ They return a parse forest by default.
 Example of using Earley parser. A parse tree is represented as a tuple, while
 a parse forest as a list of tuples.
 
-```python from earley import Earley
+```python
+
+from earley import Earley
 
 p = Earley(GArith)
 
 inp = '3 + 2 * 5 + 11'
 
 s = p.parse(inp)
+
 ```
 
 Resulted parse tree as a singleton parse forest, since
 Earley parser is non-deterministic:
 
 ```python
+
 [('expr^',
   [('expr',
     [('expr',

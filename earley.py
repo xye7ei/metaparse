@@ -1,6 +1,6 @@
-import grammar
 import pprint as pp
 
+import grammar
 from collections import namedtuple
 from collections import OrderedDict
 
@@ -79,7 +79,7 @@ class Earley(grammar.Grammar):
     def __repr__(self):
         return '{}{}'.format('Earley', super(Earley, self).__repr__())
 
-    def earley(G, inp : str) -> [[Item]]:
+    def parse_process(G, inp : str) -> [[Item]]:
 
         """
         Parse a iterable of strings w.R.t. given grammar into states.
@@ -151,24 +151,18 @@ class Earley(grammar.Grammar):
 
         return S
 
-    def parse_result(self, inp):
-        s = self.earley(inp)
-        return s
-
     def parse(self, inp):
-        s = self.parse_result(inp)
+        "Return the final state parsing `inp`, based on `parse_result`."
+        s = self.parse_process(inp)
         final = s[-1]
         if final:
-            if len(final) == 1:
-                return final[0].to_tree()
-            else:
+            if len(final) > 1:
                 print('Ambiguity raised.')
                 print('{} parse trees produced.'.format(len(final)))
                 print('Returning parse forest.')
-                return [fitm.to_tree() for fitm in final]
         else:
             print('Parse failed.')
-            return s
+        return [fitm.to_tree() for fitm in final]
 
     def eval(self, inp):
         s = self.parse_result(inp)
@@ -184,16 +178,9 @@ class Earley(grammar.Grammar):
             print('Parse faield')
             return s
 
-class earley(grammar.cfg):
-
-    def __new__(mcls, n, bs, kw):
-        lxs_rls = super(earley, mcls).__new__(mcls, n, bs, kw)
-        return Earley(lxs_rls)
-
-
 if __name__ == '__main__':
 
-    class S(metaclass=earley):
+    class S(metaclass=grammar.cfg):
 
         c = r'c'
         d = r'd'
@@ -207,8 +194,9 @@ if __name__ == '__main__':
         def C(d):
             return 'C[d]'
 
+    p1 = Earley(S)
 
-    class GArith(metaclass=earley):
+    class GArith(metaclass=grammar.cfg):
 
         PLUS  = r'\+'
         TIMES = r'\*'
@@ -243,8 +231,9 @@ if __name__ == '__main__':
         def atom(NUMB):
             return int(NUMB)
 
+    p2 = Earley(GArith)
 
-    pp.pprint(GArith.parse('3 + 2 * 5'))
+    pp.pprint(p2.parse('3 + 2 * 5'))
     # GArith.eval('3 + 2 * 5 + 10 * 10')
     # pp.pprint(GArith.parse('3 + 2 * (5 + 10) * 10'))
     # print(GArith.eval('3 + 2 * (5 + 10) * 10'))

@@ -1,6 +1,14 @@
-from earley import earley
+from grammar import cfg
+from earley import Earley
 
-class GArith(metaclass=earley):
+class GArith(metaclass=cfg):
+
+    # E -> E + T
+    # E -> T
+    # T -> T * F
+    # T -> F
+    # F -> NUMB
+    # F -> ( E )
 
     PLUS  = r'\+'
     TIMES = r'\*'
@@ -12,40 +20,30 @@ class GArith(metaclass=earley):
     def expr(expr, PLUS, term):
         return expr + term
 
-
     def expr(term):
         return term
-
 
     def term(term, TIMES, factor):
         return term * factor
 
-
     def term(factor):
         return factor
-
 
     def factor(atom):
         return atom
 
-
     def factor(LEFT, expr, RIGHT):
         return expr
-
 
     def atom(NUMB):
         return int(NUMB)
 
-# E -> E + T
-# E -> T
-# T -> T * F
-# T -> F
-# F -> NUMB
-# F -> ( E )
+p = Earley(GArith)
 
 inp = '3 + 2 * 5 + 11'
-s = GArith.parse(inp)
-fin = s[-1][-1][0]
+
+s = p.parse(inp)
+
 # print(inp)
 import pprint as pp
 pp.pprint(s)

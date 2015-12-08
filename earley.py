@@ -165,7 +165,7 @@ class Earley(grammar.Grammar):
         return [fitm.to_tree() for fitm in final]
 
     def eval(self, inp):
-        s = self.parse_result(inp)
+        s = self.parse_process(inp)
         final = s[-1]
         if final:
             if len(final) == 1:

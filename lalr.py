@@ -209,10 +209,10 @@ class LALR(grammar.Grammar):
         if conflicts:
             msg = ''
             for i, lk, itm in conflicts:
-                msg += '! LALR-Conflict raised:'
+                msg += '\n! LALR-Conflict raised:'
                 msg += '\n  - in ACTION[{}]: '.format(i)
-                msg += '\n    {}'.format(pp.pformat(ACTION[i], indent=4))
-                msg += "\n  - conflicting action on token '{}': ".format(lk)
+                msg += '\n{}'.format(pp.pformat(ACTION[i], indent=4))
+                msg += "\n  * conflicting action on token '{}': ".format(lk)
                 msg += "\n    {{'{}': ('reduce', {})}}".format(lk, itm)
             print(msg)
 

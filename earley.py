@@ -162,17 +162,18 @@ class Earley(grammar.Grammar):
                 print('Returning parse forest.')
         else:
             print('Parse failed.')
-        return [fitm.to_tree() for fitm in final]
+        return [fitm[0].to_tree() for fitm in final]
 
-    def eval(self, inp):
+    def interprete(self, inp):
         s = self.parse_process(inp)
         final = s[-1]
         if final:
             if len(final) == 1:
-                return final[0].eval()
+                return final[0][0].eval()
             else:
                 print('Ambiguity raised.')
-                print('Returning parse forest.')
+                print('Semantics with side-effects may be wrong.')
+                print('This is due to replicated execution!')
                 return [fitm[0].eval() for fitm in final]
         else:
             print('Parse faield')

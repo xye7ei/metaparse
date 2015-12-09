@@ -1,4 +1,32 @@
+# Module: grammar.py
+
+# The object-oriented model representing contex-free grammar(CFG).
+# According to formal language theory, a CFG can be formally
+# represented as a quad-tuple (T, N, R, T0) where
+
+# T is a set of terminal symbols;
+# N is a set of non-terminal symbols;
+# R is a set of transformation rules;
+# T0 is a set of starting symbol(often only one such symbol);
+
+# The metaclass `cfg` helps to collect declaration of lexical elements
+# and rules, with the former to be constructed as set T and the latter
+# N.
+
+# The validity of the grammar should be checked:
+# - Error for undeclared symbols;
+# - Warning for unsed symbols;
+# The outputs of validity check would be better logged into the user
+# specified log file.
+
+# Notes to important default configurations:
+
+# - The tokenizer applies regexp-matching with MULTILINE as default
+
+# Reason: There are always patterns like multi-line comments in texts.
+
 import re
+import inspect
 import pprint as pp
 
 from collections import OrderedDict
@@ -18,22 +46,30 @@ ERR_PAT = r'.'
 Token = namedtuple('Token', 'at symb val')
 Token.start = lambda s: s.at
 Token.end = lambda s: s.at + len(s.val)
-Token.__repr__ = lambda s: "Token('{}': {})@[{}:{}]".format(s.symb, s.val, s.at, s.end())
+Token.__repr__ = lambda s: "Token({}: {})@[{}:{}]".format(repr(s.symb), repr(s.val), s.at, s.end())
 
 
 class Rule(object):
 
-    """
-    Rule object representing a rule in a Context Free Grammar.
-    A Rule inside some specified scope should be constructed only once.
-    The equality should not be overwritten, thus as identity to save
-    performance when comparing rules while comparing some Item objects.
+    """Rule object representing a rule in a Context Free Grammar. A Rule
+    inside some specified scope should be constructed only once. The
+    equality should not be overwritten, thus as identity to save
+    performance when comparing rules while comparing some Item
+    objects.
+
+    The rule is mainly for traditional canonical BNF
+    representation. For grammar systems like EBNF based upon Parsing
+    Expression Grammar, which supports
+    Star/Optional/Alternative/... modifiers, it is better to define a
+    separate object for the rule-like expressions, although it is a
+    super set of canonical BNF rule.
+
     """
 
     def __init__(self, func):
         self.lhs = func.__name__
         self.rhs = [x[:-1] if x[-1].isdigit() else x
-                    for x in func.__code__.co_varnames]
+                    for x in inspect.signature(func).parameters]
         self.seman = func
         self.anno = func.__annotations__
 
@@ -51,13 +87,13 @@ class Rule(object):
         rl.rhs = list(rhs)
         return rl
 
-STAR = '*'
-
-@Rule
-def E(E: STAR, PLUS, T: STAR) -> int:
-    return E + T
     
 class Item(object):
+
+    """Item contains a pointer to rule list, a index of rule within that
+    list and a position indicating current read state in this Item.
+
+    """
 
     def __init__(self, rules, r, pos):
         self.rules = rules
@@ -86,6 +122,9 @@ class Item(object):
     def size(s): return len(s.rules[s.r].rhs)
     def target(s): return s.rules[s.r].lhs
 
+    def eval(self, *args):
+        return self.rules[self.r].seman(*args)
+
 
 class Grammar(object):
 
@@ -108,7 +147,7 @@ class Grammar(object):
 
         # {lex-name: lex-re}
         self.terminals = OrderedDict(
-            (lex, re.compile(pat)) for lex, pat in lexes.items())
+            (lex, re.compile(pat, re.MULTILINE)) for lex, pat in lexes.items())
 
         # [non-repeated-nonterminals]
         self.nonterminals = []
@@ -153,7 +192,8 @@ class Grammar(object):
             tp_symb = "{}^".format(fst_rl.lhs)
             tp_rl = Rule.raw(
                 tp_symb,
-                [fst_rl.lhs], lambda x: x)
+                [fst_rl.lhs, END],
+                lambda x, END: x)
             self.nonterminals.insert(0, tp_symb)
             rules = [tp_rl] + rules
 
@@ -189,41 +229,38 @@ class Grammar(object):
         """
         ns = set(G.nonterminals)
 
-        DESCEND = defaultdict(list) # :: Dict[<nonterminal>: Set[<nonterminal>]]
-        FIRST = {}           # :: Dict[<nonterminal>: Set[<terminal>]]
-        NULLABLE = set()     # :: Set[<terminal>]
+        NULLABLE = {X for X, rhs in G.rules if not rhs}     # :: Set[<terminal>]
+        def nullable(X, path=()):
+            if X in ns and X not in path:
+                n = False
+                for _, rhs in G.ntrie[X]:
+                    if rhs:
+                        path += (X,)
+                        if all(nullable(Y, path) for Y in rhs):
+                            NULLABLE.add(X)
+        for n in ns:
+            nullable(n)
 
+        FIRST = {}           # :: Dict[<nonterminal>: Set[<terminal>]]
         def first(X, path=()):
             if X in path:
                 return {}
             elif X not in ns:
                 return {X}
-            elif X in FIRST:
-                return FIRST[X]
             else:
                 F = set()
-                for _, rhs in G[X]:
-                    if not rhs:
-                        F.add(None)
-                        NULLABLE.add(X)
-                    else:
-                        # Use list rather than set to preserve visiting
-                        # order for easy reading.
-                        if rhs[0] in ns and rhs[0] not in DESCEND[X]:
-                            DESCEND[X].append(rhs[0])
-                        p = 0
-                        while p < len(rhs):
-                            FY = first(rhs[p], path+(X,))
-                            F.update(FY)
-                            if None not in FY:
-                                break
-                            else:
-                                p += 1
-                        F.discard(None)
-                        if p == len(rhs):
-                            NULLABLE.add(X)
-                            F.add(None)
-                FIRST[X] = F
+                if X in NULLABLE:
+                    F.add(None)
+                for _, rhs in G.ntrie[X]:
+                    for Y in rhs:
+                        path += (X,)
+                        F.update(first(Y, path))
+                        if Y not in NULLABLE:
+                            break
+                if X not in FIRST: 
+                    FIRST[X] = F
+                else:
+                    FIRST[X].update(F)
                 return F
 
         for n in ns:
@@ -238,6 +275,7 @@ class Grammar(object):
         defined lexical patterns. Ambiguity is resolved by the order
         of patterns within definition.
 
+        It must be reported if `pos` is not strictly increasing!!
         """
         # How to modify a group of regexes into more efficient
         # Trie with each node as atomic regex thus to optimize preformance?
@@ -249,15 +287,16 @@ class Grammar(object):
                 if m:
                     break
             if m and lex == IGNORED:
-                _, pos = m.span()
+                at, pos = m.span()
             elif m and lex != IGNORED:
                 at, pos = m.span()
                 yield Token(at, lex, m.group())
             else:
                 # Report error here!
                 # print('Unrecognized token at {} with value {}!'.format(at, m.group()))
-                yield Token(at, ERR, m.group())
+                at = pos
                 pos += 1
+                yield Token(at, ERR, inp[at])
         yield Token(pos, END, END_PAT)
 
     def closure(G, I):
@@ -290,6 +329,7 @@ class assoclist(list):
 
     def __getitem__(self, k0):
         return [v for k, v in self if k == k0]
+
 
 # There are two ways to specify a parser for given Grammar:
 # 
@@ -372,3 +412,17 @@ class cfg(type):
             lexes[ERR] = ERR_PAT
 
         return (lexes, rules)
+
+
+if __name__ == '__main__':
+
+    import pprint as pp
+    
+    STAR = '*'
+
+    @Rule
+    def E(E: STAR, PLUS, T: STAR) -> int:
+        return E + T
+
+    pp.pprint(E)
+    pp.pprint(E.anno)

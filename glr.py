@@ -7,6 +7,19 @@ from collections import OrderedDict
 
 class GLR(grammar.Grammar):
 
+    """GLR parser as an instance of non-deterministic parsers. Typically,
+    non-deterministic parsers produce parse forest other than exactly
+    one parse tree.
+
+    This leads to the deterministic semantic application along the
+    parse process UNABLE be performed with potential side-effects. To
+    support such application, the parse tree in the forest should be
+    modeled with corresponding semantic promises, such that one of the
+    constructed parse trees can be chosen for application whilst the
+    other are discarded.
+
+    """
+
     def __init__(self, lxs_rls):
         super(GLR, self).__init__(lxs_rls)
         self._calc_glr_item_sets()
@@ -90,14 +103,55 @@ class GLR(grammar.Grammar):
 
         while prss:
 
-            stk, trees, i = prss.pop() # stack top
+            stk, trns, i = prss.pop() # stack top
+
+            if i == len(tokens):
+                # Now trns should be [Tree, END], where Tree is the
+                # top of non-augmented grammar! So trns[0] means
+                # exactly the non-augmented root tree.
+                if len(trns) == 2 and trns[-1] == grammar.END_PAT:
+                    results.append(trns[0])
+                continue
+
             tok = tokens[i]
             stt = stk[-1]
             reds = G.ACTION[stt]['reduce']
             shif = G.ACTION[stt]['shift']
 
+            # REDUCE
+            # There may be multiple reduction options. Each option leads
+            # to one fork of the parsing state.
+            for ritm in reds:
+                # Forking, copying State-Stack and Trns
+                # Index of input remains unchanged. 
+                frk = stk[:]
+                trs = copy.deepcopy(trns)
+                subts = []
+                for _ in range(ritm.size()):
+                    frk.pop()
+                    subts.insert(0, trs.pop())
+                tar = ritm.target()
+                ntr = (tar, subts)
+                trs.append(ntr)
+
+                frk.append(G.GOTO[frk[-1]][tar])
+                prss.append([frk, trs, i]) # index i stays
+
+            # SHIFT
+            # There can be only 1 option for shifting given a symbol due
+            # to the nature of LR automaton.
+            if tok.symb in shif:
+                stk.append(G.GOTO[stt][tok.symb])
+                trns.append(tok.val)
+                prss.append([stk, trns, i+1]) # index i increases
+
+            # # ACCEPT
+            # if len(stk) == 1 and tok.symb == grammar.END:
+            #     results.append(trns)
+            #     continue
+
             # ERROR
-            if not reds and tok.symb not in shif:
+            if not reds and tok.symb not in shif and tok.symb != grammar.END:
                 # Need any hints for tracing dead states? 
                 msg = '\nWithin parsing fork {}'.format(stk)
                 msg += '\nSyntax error ignored: {}.'.format(tok)
@@ -108,51 +162,10 @@ class GLR(grammar.Grammar):
                 print(msg)
                 continue
 
-            # REDUCE
-            # There may be multiple reduction options. Each option leads
-            # to one fork of the parsing state.
-            for ritm in reds:
-                # Forking, copying State-Stack and Trees
-                # Index of input remains unchanged. 
-                frk = stk[:]
-                trs = copy.deepcopy(trees)
-                subts = []
-                for _ in range(ritm.size()):
-                    frk.pop()
-                    subts.insert(0, trs.pop())
-                tar = ritm.target()
-                ntr = (tar, subts)
-                trs.append(ntr)
-                if frk[-1] == 0 and tar == G.start_symbol:
-                    # total-parse :: 
-                    if tok.symb == grammar.END:
-                        # results.append((ntr, inp[:at]))
-                        results.append(ntr)
-                    # partial-parse :: (Tree, <consumed-tokens>) 
-                    # may be directly dropped.
-                    else:
-                        # msg = 'Stack {} errored when reading {}\n'.format(tok)
-                        # msg += '    - Currently reduction: {}\n'.format(ritm)
-                        # msg += '    - Currently used input: {}\n'.format(inp[:at])
-                        # print(msg)
-                        # results.append((ntr, inp[:at]))
-                        pass
-                else:
-                    frk.append(G.GOTO[frk[-1]][tar])
-                    prss.append([frk, trs, i]) # index i stays
-
-            # SHIFT
-            # There can be only 1 option for shifting given a symbol due
-            # to the nature of LR automaton.
-            if tok.symb in shif:
-                stk.append(G.GOTO[stt][tok.symb])
-                trees.append(tok.val)
-                prss.append([stk, trees, i+1]) # index i increases
-
-        if not results:
-            print('No parse tree generated. Check ignored position. ')
-        elif len(results) > 1:
-            print('Ambiguity raised: {} parse trees produced.'.format(len(results)))
+        # if not results:
+        #     print('No parse tree generated. Check ignored position. ')
+        # elif len(results) > 1:
+        #     print('Ambiguity raised: {} parse trns produced.'.format(len(results)))
         return results
 
 
@@ -195,16 +208,18 @@ if __name__ == '__main__':
     # pp.pprint(list(enumerate(Glrval.ACTION)))
 
     G = GLR(Glrval)
-    G.parse('id')
-    G.parse('*id')
-    G.parse("id=id")
-    G.parse('id=*id')
-    G.parse('**x=y')
+    # G.parse('id')
+    # G.parse('*id')
+    # G.parse("id=id")
+    # G.parse('id=*id')
+    # G.parse('**x=y')
 
-    p0 = G.parse('*  *o  =*q')
-    pp.pprint(p0)
+    res = G.parse('*  *o  =*q')
     pp.pprint(G.ACTION)
+    print('Result:')
+    pp.pprint(res)
     # p1 = G.parse('**o p =*q')
     # pp.pprint(p1)
     # p2 = G.parse('**a b =* *c d')
     # pp.pprint(p2)
+

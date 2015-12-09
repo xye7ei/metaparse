@@ -61,6 +61,7 @@ class LALR(grammar.Grammar):
         goto = []
         spont = []
         propa = []
+        Cs = []
 
         # Calculate Item Sets, GOTO and propagation graph in one pass.
         i = 0
@@ -68,6 +69,7 @@ class LALR(grammar.Grammar):
 
             K = Ks[i]
             C = G.close_default(K)
+            Cs.append(C)
 
             # Use OrderedDict to preserve order of finding
             # goto's, which should be the same order with
@@ -88,10 +90,13 @@ class LALR(grammar.Grammar):
                 if not itm.ended():
                     X = itm.active()
                     jtm = itm.shifted()
-                    if X not in igoto:
-                        igoto[X] = []
-                    if jtm not in igoto[X]:
-                        igoto[X].append(jtm)
+                    # Avoid making move to complete augmented top
+                    # rule.
+                    if X != grammar.END:
+                        if X not in igoto:
+                            igoto[X] = []
+                        if jtm not in igoto[X]:
+                            igoto[X].append(jtm)
                     if a != LALR.DUMMY:
                         # spontaneous target from Item(cr, pos)
                         ispont[itm].add(a)
@@ -145,23 +150,25 @@ class LALR(grammar.Grammar):
                                 spont[i][ctm].add(lk)
                             if not ctm.ended():
                                 X = ctm.active()
-                                j = goto[i][X]
-                                jtm = ctm.shifted()
-                                if lk not in spont[j][jtm]:
-                                    # print('At', i, ' adding ', lk, ' to ', j, "'s", jtm)
-                                    spont[j][jtm].add(lk)
-                                    brk = False
+                                if X != grammar.END:
+                                    j = goto[i][X]
+                                    jtm = ctm.shifted()
+                                    if lk not in spont[j][jtm]:
+                                        # print('At', i, ' adding ', lk, ' to ', j, "'s", jtm)
+                                        spont[j][jtm].add(lk)
+                                        brk = False
                 # Update propagation for each goto target.
                 for itm in propa[i]:
                     if not itm.ended():
                         X = itm.active()
-                        for lk in spont[i][itm]:
-                            j = goto[i][X]
-                            jtm = itm.shifted()
-                            if lk not in spont[j][jtm]:
-                                # print('In propagation at', i, ' adding ', a, ' to ', j, "'s", jtm)
-                                spont[j][jtm].add(lk)
-                                brk = False
+                        if X != grammar.END:
+                            for lk in spont[i][itm]:
+                                j = goto[i][X]
+                                jtm = itm.shifted()
+                                if lk not in spont[j][jtm]:
+                                    # print('In propagation at', i, ' adding ', a, ' to ', j, "'s", jtm)
+                                    spont[j][jtm].add(lk)
+                                    brk = False
             if brk:
                 G.passes = b
                 break
@@ -172,6 +179,7 @@ class LALR(grammar.Grammar):
         G.GOTO = goto
         G.propa = propa
         G.table = spont
+        G.Cs = Cs
 
         # spont has included all the non-kernel items which are not
         # necessary if spont registers only the target, not the
@@ -209,21 +217,27 @@ class LALR(grammar.Grammar):
         if conflicts:
             msg = ''
             for i, lk, itm in conflicts:
-                msg += '\n! LALR-Conflict raised:'
-                msg += '\n  - in ACTION[{}]: '.format(i)
-                msg += '\n{}'.format(pp.pformat(ACTION[i], indent=4))
-                msg += "\n  * conflicting action on token '{}': ".format(lk)
-                msg += "\n    {{'{}': ('reduce', {})}}".format(lk, itm)
+                msg = '\n'.join(
+                    '! LALR-Conflict raised:',
+                    '  - in ACTION[{}]: '.format(i),
+                    '{}'.format(pp.pformat(ACTION[i], indent=4)),
+                    "  * conflicting action on token {}: ".format(repr(lk)),
+                    "    {{{}: ('reduce', {})}}".format(repr(lk), itm)
+                )
             print(msg)
 
         G.conflicts = conflicts
         G.ACTION = ACTION
 
-    def parse(G, inp):
+    def parse(G, inp, interp=False):
 
-        """
-        Perform table-driven deterministic parsing process. Only one parse tree
-        is to be constructed.
+        """Perform table-driven deterministic parsing process. Only one parse
+        tree is to be constructed.
+
+        If `interp` mode is turned True, then a parse tree is reduced
+        to semantic result once its sub-nodes are completed. Otherwise
+        the return the parse tree as the result.
+
         """
 
         trees = []
@@ -236,7 +250,9 @@ class LALR(grammar.Grammar):
         while 1:
             i = ss[-1]
             if tok.symb not in G.ACTION[i]:
-                msg =  'LALR - Ignoring syntax error by {}\n'.format(tok)
+                msg =  'LALR - Ignoring syntax error by {}'.format(tok)
+                msg += '\n  Current state stack: {}'.format(ss)
+                msg += '\n'
                 print(msg)
                 tok = next(lexer)
             else:
@@ -265,18 +281,26 @@ class LALR(grammar.Grammar):
                     #     tree = (ntar, subts[0])
                     # else:
                     #     tree = (ntar, subts)
-                    tree = (ntar, subts)
+                    if interp:
+                        tree = rtm.eval(*subts)
+                    else:
+                        tree = (ntar, subts)
                     trees.append(tree)
                     # New got symbol is used for shifting.
                     ss.append(G.GOTO[ss[-1]][ntar])
 
                 # ACCEPT
-                # elif act == 'accept':
-                else:
+                elif act == 'accept':
                     return trees[-1]
 
+                else:
+                    raise ValueError('Invalid action {} on {}'.format(act, arg))
+
         raise ValueError('No enough token for completing the parse. ')
-        
+
+    def interprete(G, inp):
+        return G.parse(inp, interp=True)
+
 
 class lalr(grammar.cfg):
 

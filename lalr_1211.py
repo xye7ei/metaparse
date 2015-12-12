@@ -30,7 +30,7 @@ class LALR(grammar.Grammar):
     def __repr__(self):
         return 'LALR-{}'.format(super(LALR, self).__repr__())
 
-    def close_with(G, item, a):
+    def close_default(G, I):
         """I :: [G.Item]           # without lookaheads
 
         This can be done before calculating LALR-Item-Sets, thus avoid
@@ -44,7 +44,7 @@ class LALR(grammar.Grammar):
         represent a unicode character.
 
         """
-        C = [(item, a)]
+        C = [(itm, LALR.DUMMY) for itm in I]
         z = 0
         while z < len(C):
             itm, a = C[z]
@@ -69,6 +69,8 @@ class LALR(grammar.Grammar):
     def calc_lalr_item_sets(G):
         Ks = [[G.Item(0, 0)]]   # Kernels
         goto = []
+        spont = []
+        propa = []
         Cs = []
 
         # Calculate Item Sets, GOTO and propagation graph in one pass.
@@ -76,21 +78,42 @@ class LALR(grammar.Grammar):
         while i < len(Ks):
 
             K = Ks[i]
+            C = G.close_default(K)
+            Cs.append(C)
 
             # Use OrderedDict to preserve order of finding
             # goto's, which should be the same order with
             # the example in textbook.
             igoto = OrderedDict()
+            # Should be defaultOrderedDict
+            # ispont = defaultdict(set)
+            ispont = OrderedDict()
+            ipropa = []
 
-            for itm in G.closure(K):
-                # If item (A -> α.Xβ) has a goto.
+            # For each possible goto relation, conclude its
+            # corresponded spont/propa property (Dichotomy).
+            for itm, a in C:
+                # Prepare source of goto.
+                if itm not in ispont:
+                    ispont[itm] = set()
+                # If item has goto (A -> α.Xβ)
                 if not itm.ended():
                     X = itm.active()
                     jtm = itm.shifted()
+                    # Avoid making move to complete augmented top
+                    # rule.
                     if X not in igoto:
                         igoto[X] = []
                     if jtm not in igoto[X]:
                         igoto[X].append(jtm)
+                    if a != LALR.DUMMY:
+                        # spontaneous from `itm to its
+                        # corresponding GOTO target.
+                        ispont[itm].add(a)
+                    else:
+                        # propagation from `itm to its
+                        # corresponding GOTO target.
+                        ipropa.append(itm)
 
             # Register local goto into global goto.
             goto.append({})
@@ -106,56 +129,55 @@ class LALR(grammar.Grammar):
                 j = Ks.index(J)
                 goto[i][X] = j
 
+            spont.append(ispont)
+            propa.append(ipropa)
+
             i += 1
 
-        # The table `spont` represents the spontaneous lookaheads at
-        # first. But it can be used for in-place updating of
-        # propagated lookaheads. After the whole propagation process,
-        # `spont` is the final lookahead table.
-        spont = [OrderedDict((itm, set())
-                             for itm in K # G.closure(K)
-                         )
-                   for K in Ks]
+        # The very top of spontaneous lookahead, which is NOT included
+        # in the process above, since END symbol is not covered as an
+        # legal lookahead all above.
+        spont[0][G.Item(0, 0)] = {grammar.END}
 
-        # Initialize spontaneous END token for the top item set.
-        init_item = Ks[0][0]
-        spont[0][init_item].add(grammar.END)
-        for ctm, a in G.close_with(init_item, grammar.END):
-            if not ctm.ended():
-                X = ctm.active()
-                j0 = goto[0][X]
-                spont[j0][ctm.shifted()].add(a)
- 
-        # Propagation table, registers each of the GOTO target item
-        # which is to be applied with propagation from its corresponding
-        # source item.
-        propa = [[] for _ in Ks]
-
-        for i, K in enumerate(Ks):
-            for k in K:
-                for ctm, a in G.close_with(k, LALR.DUMMY):
-                    if not ctm.ended():
-                        X = ctm.active()
-                        j = goto[i][X]
-                        if a != LALR.DUMMY:
-                            spont[j][ctm.shifted()].add(a)
-                        else:
-                            # Propagation from KERNEL to its target
-                            # derived by the KERNEL's closure.
-                            # See algo 4.62 in Dragon book.
-                            propa[i].append((k, j, ctm.shifted()))
-
+        # All the kernel lookahead are almost determined by the
+        # "directly spontaneously one-step propagation", but further
+        # propagation should be done to garantee all the potential
+        # valid lookaheads.
         b = 1
         while True:
             brk = True
-            for i, K in enumerate(Ks):
-                for itm, j, jtm in propa[i]:
-                    lks_src = spont[i][itm]
-                    lks_tar = spont[j][jtm]
-                    for a in lks_src:
-                        if a not in lks_tar:
-                            lks_tar.add(a)
-                            brk = False
+            for i in range(len(Ks)):
+                # Update Kernel-Set[i]
+                Cas = G.close_default(Ks[i])
+                for itm in Ks[i]:
+                    for ctm, a in Cas:
+                        if a == LALR.DUMMY:
+                            lks = spont[i][itm]
+                        else:
+                            lks = [a]
+                        for lk in lks:
+                            # 
+                            if lk not in spont[i][ctm]:
+                                spont[i][ctm].add(lk)
+                                brk = False
+                            # if not ctm.ended():
+                            #     X = ctm.active()
+                            #     j = goto[i][X]
+                            #     jtm = ctm.shifted()
+                            #     if lk not in spont[j][jtm]:
+                            #         spont[j][jtm].add(lk)
+                            #         brk = False
+                # Update propagation for each goto target.
+                for itm in propa[i]:
+                    if not itm.ended():
+                        X = itm.active()
+                        for lk in spont[i][itm]:
+                            j = goto[i][X]
+                            jtm = itm.shifted()
+                            if lk not in spont[j][jtm]:
+                                # print('In propagation at', i, ' adding ', a, ' to ', j, "'s", jtm)
+                                spont[j][jtm].add(lk)
+                                brk = False
             if brk:
                 G.passes = b
                 break
@@ -330,12 +352,7 @@ if __name__ == '__main__':
 
     import pprint as pp
 
-    pp.pprint('Propa table:')
-    pp.pprint(GP.propa)
-    pp.pprint('Lookahead table:')
-    pp.pprint(list(enumerate(GP.table)))
-    # pp.pprint(list(enumerate(GP.ACTION)))
-    print()
+    pp.pprint(list(enumerate(GP.ACTION)))
 
     # No errors/problem should be raised. 
     GP.parse('id')
@@ -344,15 +361,12 @@ if __name__ == '__main__':
     GP.parse('id=*id')
     GP.parse('**x=y')
 
-    print('\n\nNow test constructed parser for errors in input.')
-
+    # print('\n\nNow test constructed parser for errors in input.')
     # print('\nTest 1: waiting to report ingorance of `p`...\n')
     # p1 = GP.parse('**o p =*q')
-    # print('\nResult:')
     # pp.pprint(p1)
+    # print('\nTest 2: waiting to report ingorance of `b` and `d`...\n')
+    # p2 = GP.parse('**a b =* *c d')
+    # pp.pprint(p2)
 
-    print('\nTest 2: waiting to report ingorance of `b` and `d`...\n')
-    p2 = GP.parse('**a b =* *c d')
-    print('\nResult:')
-    pp.pprint(p2)
-
+    pp.pprint(GP.propa)

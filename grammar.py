@@ -182,17 +182,15 @@ class Grammar(object):
         # the top rule is not explicitly given.
         fst_rl = rules[0]
         if len(fst_rl.rhs) != 1 or 1 < [rl.lhs for rl in rules].count(fst_rl.lhs):
-            # Consider symbol END...
-            # For LALR method, the top rule
-            # [S^ -> S END ; ??] should rather be
-            # [S^ -> S     ; END]
-            # That is, the first item set should be [[S^ -> .S ; END]]
-            # thus to be consistent with calculating spontaneous/progagation
-            # of LALR-Kernel, which is [[S^ -> .S ; '#']]
+            # For LR(1):
+            # - END should not be considered as a symbol in grammar,
+            #   only as a hint for acceptance;
+            # For LR(0):
+            # - END should be added into grammar.
             tp_symb = "{}^".format(fst_rl.lhs)
             tp_rl = Rule.raw(
                 tp_symb,
-                [fst_rl.lhs, END],
+                (fst_rl.lhs, END),
                 lambda x, END: x)
             self.nonterminals.insert(0, tp_symb)
             rules = [tp_rl] + rules
@@ -275,16 +273,16 @@ class Grammar(object):
         defined lexical patterns. Ambiguity is resolved by the order
         of patterns within definition.
 
-        It must be reported if `pos` is not strictly increasing!!
+        It must be reported if `pos` is not strictly increasing when
+        any of the valid lexical pattern matches zero-length string!!
+        This may lead to non-termination. 
         """
-        # How to modify a group of regexes into more efficient
-        # Trie with each node as atomic regex thus to optimize preformance?
 
         pos = 0
         while pos < len(inp):
             for lex, rgx in G.terminals.items():
                 m = rgx.match(inp, pos=pos)
-                if m:
+                if m and len(m.group()) > 0: # Guard matching for zero-length.
                     break
             if m and lex == IGNORED:
                 at, pos = m.span()

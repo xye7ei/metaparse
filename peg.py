@@ -75,13 +75,14 @@ def parse_terminal(G, x: Terminal, inp: str):
         if not m:
             return FAIL
         else:
-            # return inp[0], inp[1:]
             _, end = m.span()
             tokval = re.sub(r'\s+', '', inp[:end])
             return (x.symb, tokval), inp[end:]
 
 def parse_alts(G, alts: [Expr], inp: str) -> (tuple, str):
-    """May return a OR-tree here. Recall each parse tree is a AND-OR tree. 
+    """May return a OR-tree here. Recall each parse tree is an AND-OR
+    tree.
+
     """
     pf = []
     for a in alts:
@@ -101,9 +102,9 @@ def parse_seq(G, subs: [Expr], inp: str) -> (tuple, str):
                 # list.
                 ss.extend(t1)
             else:
-                # For parse_terminal the result is an atom.
-                # - It is a singleton list as parse forest per se!!!
-                # For parse, parse_alts the result maybe either. 
+                # For parse_terminal the result is an atom. It is a
+                # singleton list as parse forest per se!!! For parse,
+                # parse_alts the result maybe either.
                 ss.append(t1)
             inp = inp1
         else:

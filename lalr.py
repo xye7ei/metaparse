@@ -14,7 +14,7 @@ class LALR(grammar.Grammar):
 
     def __init__(self, lexes_rules):
 
-        super(LALR, self).__init__(lexes_rules) 
+        super(LALR, self).__init__(lexes_rules)
         _top0 = self.rules[0]
 
         # Trail `END` token for LR(1) grammar.
@@ -30,10 +30,8 @@ class LALR(grammar.Grammar):
     def __repr__(self):
         return 'LALR-{}'.format(super(LALR, self).__repr__())
 
-    def close_with(G, item, a):
-        """I :: [G.Item]           # without lookaheads
-
-        This can be done before calculating LALR-Item-Sets, thus avoid
+    def close_with_lookahead(G, item, a):
+        """This can be done before calculating LALR-Item-Sets, thus avoid
         computing closures repeatedly by applying the virtual dummy
         lookahead(`#` in the dragonbook). Since this lookahead must
         not be shared by any symbols within any instance of Grammar, a
@@ -112,20 +110,18 @@ class LALR(grammar.Grammar):
         # first. But it can be used for in-place updating of
         # propagated lookaheads. After the whole propagation process,
         # `spont` is the final lookahead table.
-        spont = [OrderedDict((itm, set())
-                             for itm in K # G.closure(K)
-                         )
-                   for K in Ks]
+        spont = [OrderedDict((itm, set()) for itm in K)
+                 for K in Ks]
 
         # Initialize spontaneous END token for the top item set.
         init_item = Ks[0][0]
         spont[0][init_item].add(grammar.END)
-        for ctm, a in G.close_with(init_item, grammar.END):
+        for ctm, a in G.close_with_lookahead(init_item, grammar.END):
             if not ctm.ended():
                 X = ctm.active()
                 j0 = goto[0][X]
                 spont[j0][ctm.shifted()].add(a)
- 
+
         # Propagation table, registers each of the GOTO target item
         # which is to be applied with propagation from its corresponding
         # source item.
@@ -133,7 +129,7 @@ class LALR(grammar.Grammar):
 
         for i, K in enumerate(Ks):
             for k in K:
-                for ctm, a in G.close_with(k, LALR.DUMMY):
+                for ctm, a in G.close_with_lookahead(k, LALR.DUMMY):
                     if not ctm.ended():
                         X = ctm.active()
                         j = goto[i][X]
@@ -141,8 +137,8 @@ class LALR(grammar.Grammar):
                             spont[j][ctm.shifted()].add(a)
                         else:
                             # Propagation from KERNEL to its target
-                            # derived by the KERNEL's closure.
-                            # See algo 4.62 in Dragon book.
+                            # derived by the KERNEL's closure. See
+                            # algo 4.62 in Dragon book.
                             propa[i].append((k, j, ctm.shifted()))
 
         b = 1
@@ -181,14 +177,14 @@ class LALR(grammar.Grammar):
 
         # Construct ACTION table
 
-        # SHIFT for non-ended to consume terminal for transition. 
+        # SHIFT for non-ended to consume terminal for transition.
         ACTION = [{} for _ in G.table]
         for i, xto in enumerate(G.GOTO):
             for a, j in xto.items():
                 if a in G.terminals:
                     ACTION[i][a] = ('shift', j)
 
-        # REDUCE for ended to reduce. 
+        # REDUCE for ended to reduce.
         conflicts = []
         for i, cik in enumerate(G.table):
             for itm, lks in cik.items():
@@ -293,7 +289,7 @@ class lalr(grammar.cfg):
 
     """
     This metaclass directly generates a LALR parser for the Grammar
-    declaration in class manner. 
+    declaration in class manner.
     """
 
     def __new__(mcls, n, bs, kw):
@@ -309,7 +305,7 @@ if __name__ == '__main__':
         EQ   = r'='
         STAR = r'\*'
         ID   = r'[A-Za-z_]\w*'
-        DUM  = r'\d+'           # For checking unused token as warning. 
+        DUM  = r'\d+'           # For checking unused token as warning.
 
         def S(L, EQ, R):
             return ('assign', L, R)
@@ -337,7 +333,7 @@ if __name__ == '__main__':
     # pp.pprint(list(enumerate(GP.ACTION)))
     print()
 
-    # No errors/problem should be raised. 
+    # No errors/problem should be raised.
     GP.parse('id')
     GP.parse('*id')
     GP.parse("id=id")
@@ -355,4 +351,3 @@ if __name__ == '__main__':
     p2 = GP.parse('**a b =* *c d')
     print('\nResult:')
     pp.pprint(p2)
-

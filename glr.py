@@ -125,7 +125,8 @@ class GLR(grammar.Grammar):
                 # Forking, copying State-Stack and Trns
                 # Index of input remains unchanged. 
                 frk = stk[:]
-                trs = copy.deepcopy(trns)
+                # trs = copy.deepcopy(trns)
+                trs = trns[:]
                 subts = []
                 for _ in range(ritm.size()):
                     frk.pop()
@@ -153,13 +154,13 @@ class GLR(grammar.Grammar):
             # ERROR
             if not reds and tok.symb not in shif and tok.symb != grammar.END:
                 # Need any hints for tracing dead states? 
-                msg = '\nWithin parsing fork {}'.format(stk)
-                msg += '\nSyntax error ignored: {}.'.format(tok)
-                msg += '\nChoking item set : \n{}'.format(
-                    pp.pformat(G.closure(G.Ks[stk[-1]])))
-                msg += '\nExpected shifters: \n{}'.format(
-                    pp.pformat(shif))
-                print(msg)
+                # msg = '\nWithin parsing fork {}'.format(stk)
+                # msg += '\nSyntax error ignored: {}.'.format(tok)
+                # msg += '\nChoking item set : \n{}'.format(
+                #     pp.pformat(G.closure(G.Ks[stk[-1]])))
+                # msg += '\nExpected shifters: \n{}'.format(
+                #     pp.pformat(shif))
+                # print(msg)
                 continue
 
         # if not results:

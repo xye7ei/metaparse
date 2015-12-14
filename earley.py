@@ -158,7 +158,7 @@ class Earley(grammar.Grammar):
         if final:
             if len(final) > 1:
                 print('Ambiguity raised.')
-                print('{} parse trees produced.'.format(len(final)))
+                print('{} Parse forest produced.'.format(len(final)))
                 print('Returning parse forest.')
         else:
             print('Parse failed.')
@@ -171,9 +171,13 @@ class Earley(grammar.Grammar):
             if len(final) == 1:
                 return final[0][0].eval()
             else:
-                print('Ambiguity raised.')
-                print('Semantics with side-effects may be wrong.')
-                print('This is due to replicated execution!')
+                msg = (
+                    'Ambiguity raised.'
+                    '\n Parse forest produced.'
+                    '\n Semantics dependent on side-effects may be wrong.'
+                    # '\n  This may due to replicated execution!'
+                )
+                print(msg)
                 return [fitm[0].eval() for fitm in final]
         else:
             print('Parse faield')
@@ -252,3 +256,40 @@ if __name__ == '__main__':
     # GArith.eval('3 + 2 * 5 + 10 * 10')
     # pp.pprint(GArith.parse('3 + 2 * (5 + 10) * 10'))
     # print(GArith.eval('3 + 2 * (5 + 10) * 10'))
+
+    s = p2.parse_process('3 + 2 * 5')
+
+    class Gif(metaclass=grammar.cfg):
+
+        IF     = r'if'
+        THEN   = r'then'
+        ELSE   = r'else'
+        EXPR   = r'\(\w+\)'
+        SINGLE = r'\w+'
+        DUMMY  = r'dum'
+
+        def stmt(SINGLE):
+            return SINGLE
+        def stmt(ifstmt):
+            return ifstmt
+
+        def ifstmt(IF, EXPR, THEN, stmt):
+            return ('when', EXPR, stmt)
+        def ifstmt(IF, EXPR, THEN, stmt1, ELSE, stmt2):
+            return ('if', EXPR, stmt1, stmt2)
+    
+    pif = Earley(Gif)
+
+    list(pif.tokenize('if (foo) then bar'))
+
+    # pif.parse_process('if foo else bar')
+    s1 = pif.parse_process('if (foo) then bar')
+    pif.interprete('if (foo) then bar')
+
+    # pif.parse_process('if foo else bar')
+    s2 = pif.parse_process('if (foo) then bar else baz')
+    pif.interprete('if (foo) then bar else baz')
+
+    # pif.parse_process('if foo else bar')
+    s3 = pif.parse_process('if (foo) then if (fee) then bar else baz')
+    pif.interprete('if (foo) then if (fee) then bar else baz')

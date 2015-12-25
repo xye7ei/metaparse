@@ -326,10 +326,10 @@ if __name__ == '__main__':
 
     import pprint as pp
 
-    pp.pprint('Propa table:')
-    pp.pprint(GP.propa)
-    pp.pprint('Lookahead table:')
-    pp.pprint(list(enumerate(GP.table)))
+    # pp.pprint('Propa table:')
+    # pp.pprint(GP.propa)
+    # pp.pprint('Lookahead table:')
+    # pp.pprint(list(enumerate(GP.table)))
     # pp.pprint(list(enumerate(GP.ACTION)))
     print()
 
@@ -342,12 +342,41 @@ if __name__ == '__main__':
 
     print('\n\nNow test constructed parser for errors in input.')
 
-    # print('\nTest 1: waiting to report ingorance of `p`...\n')
-    # p1 = GP.parse('**o p =*q')
-    # print('\nResult:')
-    # pp.pprint(p1)
+    print('\nTest 1: waiting to report ingorance of `p`...\n')
+    p1 = GP.parse('**o p =*q')
+    print('\nResult:')
+    pp.pprint(p1)
 
     print('\nTest 2: waiting to report ingorance of `b` and `d`...\n')
     p2 = GP.parse('**a b =* *c d')
     print('\nResult:')
     pp.pprint(p2)
+
+
+    print()
+    print('\n\nNow test confliction report of non-LALR(1) grammar.')
+
+    class Gab(metaclass=grammar.cfg):
+        """This is an example of LR(2) grammar. """
+
+        a = r'a'
+        b = r'b'
+        c = r'c'
+        d = r'd'
+
+        def S(A, c, a):
+            pass
+
+        def S(B, c, b):
+            pass
+
+        def A(a):
+            pass
+
+        def B(a):
+            pass
+
+    # print('\n{}'.format(Gab))
+
+    print('\nReport:')
+    pab = LALR(Gab)

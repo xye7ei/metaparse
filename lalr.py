@@ -58,14 +58,14 @@ class LALR(grammar.Grammar):
                             if None not in G.first(X):
                                 break
                         for b in jlk:
-                            jtm = G.Item(j, 0)
+                            jtm = G.make_item(j, 0)
                             if (jtm, b) not in C:
                                 C.append((jtm, b))
             z += 1
         return C
 
     def calc_lalr_item_sets(G):
-        Ks = [[G.Item(0, 0)]]   # Kernels
+        Ks = [[G.make_item(0, 0)]]   # Kernels
         goto = []
         Cs = []
 
@@ -194,7 +194,8 @@ class LALR(grammar.Grammar):
                             conflicts.append((i, lk, itm))
                         else:
                             ACTION[i][lk] = ('reduce', itm)
-                if itm == G.Item(0, 1):
+                # Accept-Item
+                if itm.index_pair() == (0, 1):
                     ACTION[i][grammar.END] = ('accept', None)
 
         if conflicts:
@@ -334,6 +335,7 @@ if __name__ == '__main__':
     print()
 
     # No errors/problem should be raised.
+    # import pdb ; pdb.set_trace()
     GP.parse('id')
     GP.parse('*id')
     GP.parse("id=id")

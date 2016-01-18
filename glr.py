@@ -41,7 +41,7 @@ class GLR(grammar.Grammar):
 
         """
 
-        G.Ks = Ks = [[G.Item(0, 0)]]
+        G.Ks = Ks = [[G.make_item(0, 0)]]
         G.GOTO = goto = []
         G.ACTION = acts = []
 
@@ -75,6 +75,87 @@ class GLR(grammar.Grammar):
             acts.append(iacts)
             goto.append(igoto)
             z += 1
+
+    def prepare(G):
+        G.results = []
+        G.prss = [[[0], []]]          # prss :: [[State-Number, [Tree]]]
+
+    def feed1(G, tok):
+        """Two approaches:
+
+        - DFS: Cache each input token after read, maintaining a stack
+          for unmature parse trees. Once a more mature parse tree
+          failed, keep parsing an umature tree with cached tokens.
+
+        - BFS: Does not cache input. Maintaining a queue with only
+          mature parse trees. Once reading a new token, feed it to
+          every parse tree in the queue.
+
+        BFS is applied below in constrast with the once-for-all
+        ``parse'' method.
+
+        """
+
+        # For each parse tree
+        # Like Earley:
+        # - Scan token and filter them
+        # - Find all possible reduces
+        prss = G.prss
+
+        # REDUCE
+        #
+        # - Preserve all states before reduction to maintain
+        #   nondeterministics! Since they can also be used for
+        #   scanning.
+        z = 0
+        while z < len(prss):
+            # In each loop round, some change must happen to avoid
+            # dead loop. How to garantee?
+            # - Corner case:
+            # ItemSet[i] == 
+            #   {(Xs -> .),
+            #    (Xs -> .Xs X),
+            #    (Xs -> Xs. X),
+            #    (X -> .),
+            #    (X -> .a),
+            #    (Xs -> Xs X.),
+            #   }
+            # GOTO[i][X] = i
+            # - How to handle...?
+
+            stk, trns = prss[z]
+            stt = stk[-1]
+
+            for ritm in G.ACTION[stt]['reduce']:
+                frk = stk[:]
+                trs = trns[:]
+                subts = []
+                for _ in range(ritm.size()):
+                    frk.pop()
+                    subts.insert(0, trs.pop())
+                tar = ritm.target()
+                ntr = (tar, subts)
+                trs.append(ntr)
+
+                frk.append(G.GOTO[frk[-1]][tar])
+                prss.append([frk, trs])
+
+            z += 1
+                
+        prss1 = []
+
+        for stk, trns in prss: 
+
+            stt = stk[-1] 
+
+            # SHIFT
+            if tok.symb in G.ACTION[stt]['shift']:
+                stk.append(G.GOTO[stt][tok.symb])
+                trns.append(tok.val)
+                prss1.append([stk, trns]) # index i increases
+
+        G.prss = prss1
+
 
     def parse(G, inp): 
 
@@ -224,3 +305,17 @@ if __name__ == '__main__':
     # p2 = G.parse('**a b =* *c d')
     # pp.pprint(p2)
 
+    toks = G.tokenize('*  *o  =*q')
+    G.prepare()
+    # G.feed1(next(toks))
+    # G.prss
+
+    class Gtweak(metaclass=grammar.cfg):
+        "A evil grammar which cannot be handled. Why? "
+        a = r'a'
+        def Xs(): pass
+        def Xs(Xs, X): pass
+        def X(): pass
+        def X(a): pass
+    Gtw = GLR(Gtweak)
+    # debug Gtw.parse('aa')

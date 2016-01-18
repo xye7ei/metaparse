@@ -115,24 +115,25 @@ Earley parser is non-deterministic:
 
 ```
 
-Another wide used non-deterministic parser is GLR parser.
+Another wide used non-deterministic parser is the GLR parser. But here
+in this packet GLR are only implemented as GLR(0), which is only
+capable for parsing LR(0) language. 
 
 ### Deterministic parsers.
 
-Typically, a well-formed deterministic parser always produces either one parse
-tree or a failure. It can handle only a subset of CFG according to their
-specified characteristics.
+Typically, a well-formed deterministic parser always produces either
+one parse tree or a failure. It can handle only a subset of CFG
+according to their specified characteristics.
 
-But these grammars are always more efficient when parsing and can be applied
-without generating a parse tree explicitly (commonly generating IR code during
-the parsing process). Most widely used deterministic parser is the LALR(1)
-parser, which is the kernel of yacc/bison program. The implementation of
-LALR(1) is tricky and may lose its popularity due to its constraints and against
-the advancing more powerful parser like LL(*).
+But these grammars are always more efficient when parsing and can be
+applied without generating a parse tree explicitly (commonly
+generating IR code during the parsing process). Most widely used
+deterministic parser is the LALR(1) parser, which is the kernel of
+yacc/bison program. The implementation of LALR(1) is tricky and may
+lose its popularity due to its constraints and against the advancing
+more powerful parser like LL(*).
 
-A well-designed LALR(1) parser can report conflicts clearly. It is hand coded
-in this packet for completion, thus to make comparisons between it and the GLR
-parser.
+A well-designed LALR(1) parser can report conflicts clearly. 
 
 
 ## Expression based parsers

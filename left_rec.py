@@ -77,15 +77,6 @@ def parse(G, inp):
     return tr
 
 
-# This grammar is ill for LL parsing not only because of left
-# recursion, but also because of left sharing, which means left
-# factoring is necessary!
-
-# Otherwise general LL parer algorithm should be applied, which keeps
-# tracks of every branching of alternatives, i.e. non-deterministics
-# to allow complete backtracking, which is not possible in LL(1)
-# framework. Then it is necessary to explictly maintain a stack.
-
 # Algorithm: 
 def _parse(G, inp):
 
@@ -133,6 +124,22 @@ def _parse(G, inp):
                         stk.append(tr1)
                         stks.append(stk)
                     
+
+# This grammar is ill for LL parsing not only because of left
+# recursion, but also because of left sharing, which means left
+# factoring is necessary!
+
+# Otherwise general LL parer algorithm should be applied, which keeps
+# tracks of every branching of alternatives, i.e. non-deterministics
+# to allow complete backtracking, which is not possible in
+# recursive-descendant LL(1) framework. Then it is necessary to
+# explictly maintain a stack for parsing states. Each state in the
+# stack contains:
+
+# - Reference to the current sub-tree which is to be completed
+#   - With its parent and ancestors correctly maintained;
+# - Position of reading the input;
+
 
 g1 = Grammar([
     ('E', ['E', r'\+', 'T']),

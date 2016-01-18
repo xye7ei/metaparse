@@ -43,6 +43,7 @@ ERR = 'ERR'
 ERR_PAT = r'.'
 
 
+# Object Token
 Token = namedtuple('Token', 'at symb val')
 Token.start = lambda s: s.at
 Token.end = lambda s: s.at + len(s.val)
@@ -113,14 +114,25 @@ class Item(object):
     def __hash__(self):
         return hash((self.r, self.pos))
 
-    def ended(s): return s.pos == len(s.rules[s.r].rhs)
-    def rest(s): return s.rules[s.r].rhs[s.pos:]
-    def over_rest(s): return s.rules[s.r].rhs[s.pos+1:]
-    def active(s): return s.rules[s.r].rhs[s.pos]
-    def shifted(s): return Item(s.rules, s.r, s.pos+1)
-    def prev(s): return s.rules[s.r].rhs[s.pos-1]
-    def size(s): return len(s.rules[s.r].rhs)
-    def target(s): return s.rules[s.r].lhs
+    def ended(s):
+        return s.pos == len(s.rules[s.r].rhs)
+    def rest(s):
+        return s.rules[s.r].rhs[s.pos:]
+    def over_rest(s):
+        return s.rules[s.r].rhs[s.pos+1:]
+    def active(s):
+        return s.rules[s.r].rhs[s.pos]
+    def shifted(s):
+        return Item(s.rules, s.r, s.pos+1)
+    def prev(s):
+        return s.rules[s.r].rhs[s.pos-1]
+    def size(s):
+        return len(s.rules[s.r].rhs)
+    def target(s):
+        return s.rules[s.r].lhs
+
+    def index_pair(s):
+        return (s.r, s.pos)
 
     def eval(self, *args):
         return self.rules[self.r].seman(*args)
@@ -156,12 +168,9 @@ class Grammar(object):
                 self.nonterminals.append(rl.lhs)
 
         # Perform validity check.
-        _tm_unused = set(self.terminals)
-        _tm_unused.discard(IGNORED)
-        _tm_unused.discard(END)
-        _tm_unused.discard(ERR)
-        _nt_unused = set(self.nonterminals)
-        _nt_unused.discard(rules[0].lhs)
+        _tm_unused = set(self.terminals).difference([IGNORED, END, ERR])
+        _nt_unused = set(self.nonterminals).difference([rules[0].lhs])
+
         msg = ''
         for r, rl in enumerate(rules):
             for j, X in enumerate(rl.rhs):
@@ -177,6 +186,7 @@ class Grammar(object):
             print('Warning: Unused terminal symbol {}'.format(tm))
         for nt in _nt_unused:
             print('Warning: Unused nonterminal symbol {}'.format(nt))
+
 
         # Generate top rule as Augmented Grammar only if
         # the top rule is not explicitly given.
@@ -216,7 +226,7 @@ class Grammar(object):
     def __getitem__(self, k):
         return self.ntrie[k]
 
-    def Item(G, r, pos):
+    def make_item(G, r, pos):
         return Item(G.rules, r, pos)
 
     def _calc_first_and_nullable(G):
@@ -308,11 +318,17 @@ class Grammar(object):
                 for j, jrl in enumerate(G.rules):
                     if itm.active() == jrl.lhs:
                         beta = itm.over_rest()
-                        jtm = G.Item(j, 0)
+                        jtm = G.make_item(j, 0)
                         if jtm not in C:
                             C.append(jtm)
             z += 1
         return C
+
+
+class ParserBase(object):
+
+    def __init__(self, grammar):
+        self.G = grammar
 
 
 class assoclist(list):

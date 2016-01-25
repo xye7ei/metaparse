@@ -71,6 +71,13 @@ class Rule(object):
         self.lhs = func.__name__
         self.rhs = [x[:-1] if x[-1].isdigit() else x
                     for x in inspect.signature(func).parameters]
+        self.rhs = []
+        for x in inspect.signature(func).parameters:
+            # Tailing numeric subscript like xxx_4
+            s = re.search(r'_(\d+)$', x)
+            if s:
+                x = x[:s.start()]
+            self.rhs.append(x)
         self.seman = func
         self.anno = func.__annotations__
 

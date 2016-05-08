@@ -129,7 +129,7 @@ class Earley(grammar.Grammar):
                 # states. 
                 # Top rule completed.
                 if not jt.waiting() and jt.rule == G.start_rule and lex == grammar.END:
-                    S[k+1].append(jt)
+                    S[k+1].append((jt, j))
                 # Normal rules.
                 if jt.waiting() and jt.waiting() == lex:
                     # Here terminal consumers can be collected for reporting errors.

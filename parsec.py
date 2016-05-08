@@ -173,6 +173,7 @@ def sexp(inp: str) -> (list, str):
     ], lambda l, w1, e, r, w2: e)
     return alter([alt1, alt2])(inp)
 
+
 if __name__ == '__main__':
 
     parens('(((  )  ))')

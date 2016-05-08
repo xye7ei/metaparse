@@ -1,3 +1,5 @@
+from sys import path; path.append('..')
+
 from grammar import cfg
 from glr import GLR
 from lalr import LALR, lalr

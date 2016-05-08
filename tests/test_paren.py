@@ -1,3 +1,5 @@
+from sys import path; path.append('..')
+
 from earley import earley
 
 class Gparen(metaclass=earley):
@@ -15,15 +17,18 @@ class Gparen(metaclass=earley):
         return pair
 
 
-    def pair(LEFT, pair1, RIGHT, pair2):
-        return '<' + pair1 + '>' + pair2
+    def pair(LEFT, pair_1, RIGHT, pair_2):
+        return '<' + pair_1 + '>' + pair_2
 
 
     def pair():
         return ''
 
-s = Gparen.parse('( ( ) ) ( )')
-v = Gparen.eval('( ( ) ) ( )')
-import pprint as pp
-pp.pprint(s)
-pp.pprint(v)
+
+if __name__ == '__main__':
+    # import pprint as pp
+    # s = Gparen.parse('( ( ) ) ( )')
+    # pp.pprint(s)
+    assert Gparen.interprete('()') == '<>'
+    assert Gparen.interprete('( ( ) )') == '<<>>'
+    assert Gparen.interprete('( ( ) ) ( )') == '<<>><>'

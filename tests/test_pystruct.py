@@ -1,9 +1,15 @@
+from sys import path; path.append('..')
+
 from lalr import lalr
 from earley import earley
 
-class PyStructReader(metaclass=earley):
-# class PyStructReader(metaclass=lalr):
+# class PyStructReader(metaclass=earley):
+class PyStructReader(metaclass=lalr):
 
+    """
+    Grammar for python object and built-in container types.
+    """
+    
     id = r'[A-Za-z_]\w*'
     comma = r','
     colon = r':'
@@ -14,15 +20,15 @@ class PyStructReader(metaclass=earley):
     Bl = r'\{'
     Br = r'\}'
 
-    def Obj(id)                      : return id
+    def Obj(id)                      : return ('Sym', id)
     def Obj(Lst)                     : return Lst
     def Obj(Tpl)                     : return Tpl
     def Obj(Dic)                     : return Dic
-    # def Obj(Set)                   : return Set
+    def Obj(Set)                     : return Set
 
     def Tpl(pl, Terms, pr)           : return ('Tpl', Terms)
     def Lst(bl, Terms, br)           : return ('Lst', Terms)
-    # def Set(Bl, Terms, Br)         : return ('Set', Terms)
+    def Set(Bl, Terms, Br)           : return ('Set', Terms)
     def Dic(Bl, DTerms, Br)          : return ('Dic', DTerms)
 
     def Terms(Obj, comma, Terms)     : return [Obj] + Terms
@@ -33,18 +39,25 @@ class PyStructReader(metaclass=earley):
     def DTerms(DTerm)                : return [DTerm]
     def DTerms()                     : return []
 
-    def DTerm(Obj1, colon, Obj2)     : return (Obj1, Obj2)
+    def DTerm(Obj_1, colon, Obj_2)   : return (Obj_1, Obj_2)
 
 
-rd = PyStructReader
-
-import pprint as pp
-pp.pprint(rd.rules)
-# pp.pprint(rd.parse('[]'))
-# pp.pprint(rd.parse('[a, b,]'))
-pp.pprint(rd.parse('[(a, b), c, {x : y, z : w}]'))
-# rd.parse('[(a, b), c, {x : y, z : w}]')
-# pp.pprint(rd.eval('[]'))
-# pp.pprint(rd.eval('[a, b,]'))
-# pp.pprint(rd.eval('[(a, b), c, {x : y, z : w}]'))
+if __name__ == '__main__':
+    rd = PyStructReader
+    import pprint as pp
+    pp.pprint(rd.rules)
+    # pp.pprint(rd.parse('[]'))
+    # pp.pprint(rd.parse('[a, b,]'))
+    # pp.pprint(rd.parse('[(a, b), c, {x : y, z : w}]'))
+    # pp.pprint(rd.interprete('[(a, b), c, {x : y, z : w}]'))
+    assert rd.interprete('a') == \
+        ('Sym', 'a')
+    assert rd.interprete('{(a, b), c, {e, f}}') == \
+        ('Set', [('Tpl', [('Sym', 'a'), ('Sym', 'b')]),
+                 ('Sym', 'c'),
+                 ('Set', [('Sym', 'e'), ('Sym', 'f')])])
+    # rd.parse('[(a, b), c, {x : y, z : w}]')
+    # pp.pprint(rd.interprete('[]'))
+    # pp.pprint(rd.interprete('[a, b,]'))
+    # pp.pprint(rd.interprete('[(a, b), c, {x : y, z : w}]'))
 

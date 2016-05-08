@@ -1,10 +1,13 @@
+from sys import path; path.append('..')
+
 from earley import earley
+from lalr import lalr
 
 def fappend(l, x):
     l.append(x)
     return l
 
-class Gcourses(metaclass=earley):
+class Gcourses(metaclass=lalr):
 
     """
     Grammar to assign multiple numbers to precedend course name.
@@ -22,7 +25,7 @@ class Gcourses(metaclass=earley):
 
     """
 
-    # IGNORED = r'[ \t]+|(,)|(and)'
+    IGNORED = r'[ \t]+|(,)|(and)'
     NAME    = r'[A-Z]+'
     NUMBER  = r'\d{4}'
     OR      = r'or'
@@ -60,34 +63,25 @@ import pprint as pp
 
 gcrs = Gcourses
 
-inp = "CS 2110"
-# import pdb
-# pdb.set_trace()
-inp = "CS 2110 and INFO 3300"
-gcrs.eval(inp)
-inp = "CS 2110, INFO 3300"
-gcrs.eval(inp)
-inp = "CS 2110, 3300, 3140"
-gcrs.eval(inp)
-inp = "CS 2110 or INFO 3300"
-gcrs.eval(inp)
-gcrs.parse(inp)
+assert gcrs.interprete('CS 2110') == \
+    [('CS', '2110')]
+assert gcrs.interprete('CS 2110 and INFO 3300') == \
+    [('CS', '2110'), ('INFO', '3300')]
+assert gcrs.interprete('CS 2110, INFO 3300') == \
+    [('CS', '2110'), ('INFO', '3300')]
+assert gcrs.interprete('CS 2110, 3300, 3140') == \
+    [('CS', '2110'), ('CS', '3300'), ('CS', '3140')]
+assert gcrs.interprete('CS 2110 or INFO 3300') == \
+    [[('CS', '2110')], [('INFO', '3300')]]
 
-# Compare forms with same semantics...
-
+# Compare forms with same semantics... 
 inp = "MATH 2210, 2230, 2310 or 2940"
-print(repr(inp))
 s1 =  Gcourses.parse(inp)
-v1 =  Gcourses.eval(inp)
-pp.pprint(v1)
+v1 =  Gcourses.interprete(inp)
 
 inp = "MATH 2210, 2230, 2310, or 2940"
-print(repr(inp))
 s2 = Gcourses.parse(inp)
-v2 =  Gcourses.eval(inp)
-pp.pprint(v2)
-
-# pp.pprint(v2, depth=2)
+v2 =  Gcourses.interprete(inp)
 
 assert s1 == s2
 assert v1 == v2

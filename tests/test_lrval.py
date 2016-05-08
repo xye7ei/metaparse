@@ -1,3 +1,5 @@
+from sys import path; path.append('..')
+
 from earley import earley
 
 class Glrval(metaclass=earley):
@@ -26,10 +28,18 @@ class Glrval(metaclass=earley):
     def R(L):
         return L
 
-inp = '*id = **id'
-Glrval.parse(inp)
 
-import pprint as pp
+if __name__ == '__main__':
 
-pp.pprint(Glrval.parse(inp))
-pp.pprint(Glrval.eval(inp))
+    inp = '*id = **id'
+    Glrval.parse(inp)
+
+    import pprint as pp
+
+    pp.pprint(Glrval.parse(inp))
+
+    result = Glrval.interprete(inp)
+    assert result == \
+        ('assign',
+         ('deref', 'id'),
+         ('deref', ('deref', 'id')))

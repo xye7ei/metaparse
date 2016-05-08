@@ -1,3 +1,5 @@
+from sys import path; path.append('..')
+
 from grammar import cfg
 from earley import Earley
 from lalr import LALR

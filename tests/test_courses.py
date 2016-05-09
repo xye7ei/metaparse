@@ -1,4 +1,4 @@
-from sys import path; path.append('..')
+import preamble
 
 from earley import earley
 from lalr import lalr
@@ -51,13 +51,13 @@ class Gcourses(metaclass=lalr):
     def nums(NUMBER):                return [NUMBER]
 
     # conj -> headed headed
-    def conj(headed1, headed2):      return headed1 + headed2
+    def conj(headed_1, headed_2):      return headed_1 + headed_2
 
     # disj -> headed OR headed
-    def disj(headed1, OR, headed2):  return [headed1, headed2]
+    def disj(headed_1, OR, headed_2):  return [headed_1, headed_2]
 
     # disj -> headed OR nums
-    def disj(headed1, OR, nums):     return [headed1, [(headed1[0][0], n) for n in nums]]
+    def disj(headed, OR, nums):     return [headed, [(headed[0][0], n) for n in nums]]
 
 import pprint as pp
 

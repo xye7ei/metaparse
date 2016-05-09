@@ -1,4 +1,4 @@
-from sys import path; path.append('..')
+import preamble
 
 from lalr import lalr
 from earley import earley

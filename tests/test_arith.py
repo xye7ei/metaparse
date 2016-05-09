@@ -1,4 +1,4 @@
-from sys import path; path.append('..')
+import preamble
 
 from grammar import cfg
 from earley import Earley

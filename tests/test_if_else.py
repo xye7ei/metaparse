@@ -1,4 +1,4 @@
-from sys import path; path.append('..')
+import preamble
 
 from grammar import cfg
 from earley import Earley
@@ -11,10 +11,7 @@ class Gif(metaclass=cfg):
 
     """
     Grammar having 'dangling-else' ambiguity.
-    This grammar does not lead LALR parser to raise any conflicts.
-    Does absence of conflicts mean absence of ambiguity!?
-    - NO, by trying the progagation process by hand it can be found
-      the conflicts arise by state 6
+    This grammar should lead LALR parser to raise conflicts.
 
 Ks
 (0, [(stmt^ -> .stmt)]),
@@ -80,17 +77,18 @@ ACTION
     def stmt(SINGLE):
         return SINGLE 
 
-    def ifstmt(IF, EXPR, THEN, stmt1, ELSE, stmt2):
-        return ('if-then-else', EXPR, stmt1, stmt2) 
+    def ifstmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
+        return ('ite', EXPR, stmt_1, stmt_2) 
 
     def ifstmt(IF, EXPR, THEN, stmt):
-        return ('if-then', EXPR, stmt)
+        return ('it', EXPR, stmt)
 
 
 if __name__ == '__main__':
 
-    print('Waiting for LALR to report CONFLICTs...')
+    # Should warn conflicts by consturcting LALR parser!
     plalr = LALR(Gif)
+    
     pglr = GLR(Gif)
     # pear = Earley(Gif)
 
@@ -98,16 +96,15 @@ if __name__ == '__main__':
 
     # Errored input
     inp = 'if e then if e then if e then else s'
-    print('\n\n\nGLR parsing "{}"'.format(inp))
     pglr.parse(inp)
     # timeit.timeit('pglr.parse(inp)')
 
     # Right input - 3 parse trees
     inp = 'if e then if e then if e then s else s'
-    print('\n\n\nGLR parsing for 3 parse trees "{}"'.format(inp))
-    pglr.parse(inp)
-    # print(timeit.timeit('30**30**30'))
+    ps = pglr.parse(inp)
+    assert len(ps) == 3
 
     # Right input - 4 parse trees
     inp = 'if e then if e then if e then if e then s else s'
-
+    ps = pglr.parse(inp)
+    assert len(ps) == 4

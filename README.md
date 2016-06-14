@@ -1,37 +1,89 @@
 # parket
 
-A python parser packet for studying and analyzing **Context Free
-Grammars**(CFG), including Earley, GLR(0), LALR(1) parsers. Also LL(1) parser
-based upon Parsing Expression Grammar(PEG) is being coorperated thereto.
+This package provides the most simple and elegant way of getting parsing work
+done. It aims to be the replacement of traditional *flex/yacc*-style toolset
+in Python environment.
 
-Features:
+## Background
 
-## Object-Oriented grammar definition
+The initiative for creating this package is to support studying and analyzing
+**Context Free Grammars(CFG)** in a easy way. Parsers like Earley, GLR(0),
+LALR(1) parsers. Also LL(1) and *parsec* parser based upon Parsing Expression
+Grammar(PEG) is being integrated but still not completed.
 
-Since the traditional way of using yacc/bison tool chains needs the definition
-of grammar to be written as a separate files, which can be treated as a
-**DSL**(Domain Specified Language) based upon C language, is too much an over-
-complexed work for parsing simple CFGs in many practical cases handling
-textual information for their structures.
 
-### Metaprogramming support lexical/syntactic/semantic definition
+# Rationale
 
-Making use of high-level features of Python, writing a grammar can be almost
-with the same the syntax as defining a class with methods. Syntactic rules
-and corresponded semantic operation can be written at the same time.
+This package is remarkable for its amazing simplicity and elegancy thanks to
+the extreme reflexibility of Python 3 language.
 
-Example of
+## About *flex/bison*
+
+Traditional parsing work is mostly supported with the toolset
+lex/yacc(flex/bison). Such toolset is found to be hard and complex to handle
+even for experienced programmers who just want do some handy parsing. 
+
+<!-- 
+The biggest reason for that is the complexity raised by integrating the
+*Backus-Naur-Form*-grammar as **Domain-Specific Language** into *C*-style
+coding environment. The compilation process and maintainance of intermediate
+files(**\*.l**, **\*.y**) are old-fashioned.
+ -->
+
+## About *parsec*
+
+Fans of functional languages like *Haskell* often appreciate the powerful
+**parsec** library for its expression-based translation mechanism. Pitifully,
+the intrinsic LL(1)-nature and explicit usage of try-function comprise
+significant limitations.
+
+
+# OO-style grammar definition
+
+Coincidently, there is some similarity between BNF-style grammar rule
+definition and Python function signature. Moreover, the semantic
+behavior corresponding to a rule can be represented by the function
+body.
+
+Given a examplar rule in *BISON*:
+```c
+exp:      NUM
+        | exp exp '+'     { $$ = $1 + $2;    }
+        | exp exp '-'     { $$ = $1 - $2;    }
+        ...
+        ;
+```
+
+the sematically equivalent representation in this package would be
+```python
+
+    PLUS = r'\+'
+    MINUS = r'-'
+
+    def exp(exp_1, exp_2, PLUS):
+        return exp_1 + exp_2
+    
+    def exp(exp_1, exp_2, MINUS):
+        return exp_1 - exp_2
+```
+
+## An example overview
+
+While the lexical declaration can be written as _class-attribute_ declarations
+and the rules can be written as _method_ declarations, a grammar instance for
+interperting arithmetic expressions in this package can be written as follows:
+
 ```python
 from grammar import cfg
 
 class GArith(metaclass=cfg):
 
-    # E -> E + T
-    # E -> T
-    # T -> T * F
-    # T -> F
-    # F -> NUMB
-    # F -> ( E )
+    # E ::= E + T
+    # E ::= T
+    # T ::= T * F
+    # T ::= F
+    # F ::= NUMB
+    # F ::= ( E )
 
     PLUS  = r'\+'
     TIMES = r'\*'
@@ -63,7 +115,7 @@ class GArith(metaclass=cfg):
 
 ```
 
-The key trick here is utilizing Python's reflective functionalities to
+The key trick supporting this is `Python 3`'s reflective functionalities to
 transform signatures of methods into pre-defined Rule objects.
 
 

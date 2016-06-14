@@ -57,14 +57,17 @@ exp:      NUM
 the sematically equivalent representation in this package would be
 ```python
 
-    PLUS = r'\+'
-    MINUS = r'-'
+NUM = r'\d+'
+PLUS = r'\+'
+MINUS = r'-'
 
-    def exp(exp_1, exp_2, PLUS):
-        return exp_1 + exp_2
+def exp(exp_1, exp_2, PLUS):
+    return exp_1 + exp_2
     
-    def exp(exp_1, exp_2, MINUS):
-        return exp_1 - exp_2
+def exp(exp_1, exp_2, MINUS):
+    return exp_1 - exp_2
+
+...
 ```
 
 ## An example overview
@@ -181,9 +184,7 @@ But these grammars are always more efficient when parsing and can be
 applied without generating a parse tree explicitly (commonly
 generating IR code during the parsing process). Most widely used
 deterministic parser is the LALR(1) parser, which is the kernel of
-yacc/bison program. The implementation of LALR(1) is tricky and may
-lose its popularity due to its constraints and against the advancing
-more powerful parser like LL(*).
+yacc/bison program. 
 
 A well-designed LALR(1) parser can report conflicts clearly. 
 

@@ -1,4 +1,4 @@
-parket
+metaparse
 =====
 
 This package provides (subjectively) the most simple and elegant way of getting parsing work done due to its dedicated parser front-end. It aims to be a remarkable alternative of traditional [yacc](https://en.wikipedia.org/wiki/Yacc)-style toolset in Python environment.
@@ -50,8 +50,9 @@ Fans of functional languages like `Haskell` often appreciate the powerful **pars
 
 Coincidently, there is some similarity between [BNF-style](https://en.wikipedia.org/wiki/Backus–Naur_Form) grammar rule definition and `Python` function signature. Moreover, the semantic behavior corresponding to a rule can be represented by the function body.
 
-Given a examplar rule definition in `BISON`:
-```c
+Given a examplar rule definition in BISON:
+
+```
 exp:      NUM
         | exp exp '+'     { $$ = $1 + $2;    }
         | exp exp '-'     { $$ = $1 - $2;    }
@@ -89,7 +90,7 @@ where each nonterminal is represented as function definition and symbols in this
 In this package, the user can generate parse trees when given input. Such usage is through the method `my_parser.parse(input)`. A parse tree is represented through this meta-rule within `Python` context:
 
 ```python
-<parse-tree> ->  <leaf-token>                           /* :: str */
+<parse-tree> ::= <leaf-token>                           /* :: str */
               |  (<subtree-name>, [<parse-tree> ...])   /* :: tuple[str, list] */
 ```
 
@@ -161,7 +162,7 @@ p.interprete('3 + 2 * (5 + 11)')
 # Output: 35
 ```
 
-The key trick supporting this style is `Python 3`'s reflection and metaprogramming functionalities. By using the module `inspect`, signatures of a method can be transformed into  a pre-defined grammar rule object and the method body can be referenced as  semantic object associated with this object.
+The key trick supporting this style is `Python 3`'s reflection and metaprogramming functionalities. By using the module `inspect`, signatures of a method can be transformed into  a pre-defined grammar rule object and the method body can be referenced as  semantic object associated with this object. By using the `metaclass` utilities, especially the `__prepare__` method, attribute and method declarations can be turned into pre-defined `Token` and `Rule` objects.
 
 
 ## Parser back-end: Context Free Grammar (CFG) Parsers
@@ -219,8 +220,10 @@ class Gif(metaclass=cfg):
         return ('it', EXPR, stmt)
 
 p = Earley(Gif)
+
 p.parse('if e then s if e then s else s')
-'''output:
+# Output:
+'''
 [('stmt^',
   [('stmt',
     [('ifstmt',
@@ -248,7 +251,7 @@ The problem arises when the parse result needs to be interpreted at any parser s
 
 ### Deterministic parsing
 
-A well-designed deterministic parser like *LALR* parser can report ambiguity conflicts clearly. When creating a LALR-parser with the dangling-else grammar above, a shift/reduce conflict due to the ambiguity is raised:
+A well-designed deterministic parser like *LALR* parser can report ambiguity conflicts clearly. When creating a LALR-parser with the dangling-else grammar above, a _shift/reduce_ conflict due to the ambiguity is raised:
 
 ```python
 from lalr import LALR
@@ -267,4 +270,4 @@ p = LALR(Gif)
 
 In such case, the generated parser structure, i.e. the underlying parser automaton states with corresponding transition tokens can be then inspected and analyzed with ease based on the OO-designed parser object.
 
-Another popular package [PLY](http://www.dabeaz.com/ply/) supplies extensive functionalities also based on LR-parsing. That implementation has more traditional front-end rule representation and yields better performance of parsing algorithm (ca. 130% of mine according to my nonserious benchmarking). Maybe the benefits of the efficiency can be learned for future optimization of this package.
+Another popular package [PLY](http://www.dabeaz.com/ply/) supplies extensive functionalities also based on LR-parsing. That implementation has more traditional front-end rule representation and yields better performance of parsing algorithm (ca. 130% speed-up of mine according to my nonserious benchmarking). Maybe the benefits of the efficiency can be learned for future optimization of this package.

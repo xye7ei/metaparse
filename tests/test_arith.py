@@ -41,7 +41,7 @@ class GArith(metaclass=cfg):
     def Atom(number):
         return int(number)
 
-    
+
 ari_earl = Earley(GArith)
 ari_lalr = LALR(GArith)
 ari_glr = GLR(GArith)
@@ -62,10 +62,10 @@ if __name__ == '__main__':
     assert p2 == ps3[0], \
         'Result from LALR should be equal to the first result from GLR'
 
-    assert 1 == ari_lalr.interprete('1')
-    assert 3 == ari_lalr.interprete('1 + 2')
-    assert 35 == ari_lalr.interprete('3 + 2 * (5 + 11)')
-    assert 135 == ari_lalr.interprete('3 + 2 * (5 + 11) + ((100))')
+    assert 1 == ari_lalr.interpret('1')
+    assert 3 == ari_lalr.interpret('1 + 2')
+    assert 35 == ari_lalr.interpret('3 + 2 * (5 + 11)')
+    assert 135 == ari_lalr.interpret('3 + 2 * (5 + 11) + ((100))')
 
     # print(inp)
     # pp.pprint(s)
@@ -85,7 +85,7 @@ if __name__ == '__main__':
     # This GLR parser is comparable to LALR parser in this
     # case.
 
-    # %timeit ari_glr.interprete(tough_inp)
+    # %timeit ari_glr.interpret(tough_inp)
     # 1 loops, best of 3: 3.37 s per loop
     # Interpretation is slightly more time-consuming than
     # parsing.

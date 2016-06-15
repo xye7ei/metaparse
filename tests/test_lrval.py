@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
     pp.pprint(Glrval.parse(inp))
 
-    result = Glrval.interprete(inp)
+    result = Glrval.interpret(inp)
     assert result == \
         ('assign',
          ('deref', 'id'),

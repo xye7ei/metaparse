@@ -94,7 +94,7 @@ class Earley(grammar.Grammar):
         for k, (at, lex, lexval) in enumerate(G.tokenize(inp)):
 
             # Note len(S[k]) is growing!
-            # Find candidate items until no more added. 
+            # Find candidate items until no more added.
             z = 0
             while z < len(S[k]):
 
@@ -126,7 +126,7 @@ class Earley(grammar.Grammar):
             for jt, j in S[k]:
                 # Mind the two following cases are not mutually exclusive,
                 # i.e. there may be successfully ended top item within intermediate
-                # states. 
+                # states.
                 # Top rule completed.
                 if not jt.waiting() and jt.rule == G.start_rule and lex == grammar.END:
                     S[k+1].append((jt, j))
@@ -164,7 +164,7 @@ class Earley(grammar.Grammar):
             print('Parse failed.')
         return [fitm[0].to_tree() for fitm in final]
 
-    def interprete(self, inp):
+    def interpret(self, inp):
         s = self.parse_process(inp)
         final = s[-1]
         if final:
@@ -184,7 +184,7 @@ class Earley(grammar.Grammar):
             return s
 
 
-class earley(grammar.cfg): 
+class earley(grammar.cfg):
     """A metaclass specifier to directly declare Earley parser for a
     grammar. It shares the __prepare__ method with superclass
     grammar.cfg.
@@ -203,8 +203,8 @@ if __name__ == '__main__':
         c = r'c'
         d = r'd'
 
-        def S(C1, C2):
-            return 'S[  C[{}]  C[{}]  ]'.format(C1, C2)
+        def S(C_1, C_2):
+            return 'S[  C[{}]  C[{}]  ]'.format(C_1, C_2)
 
         def C(c, C):
             return 'C[{} {}]'.format(c, C)
@@ -227,7 +227,7 @@ if __name__ == '__main__':
             'E ::= E + T'
             return expr + term
 
-        def expr(term): 
+        def expr(term):
             'E ::= T'
             return term
 
@@ -275,21 +275,21 @@ if __name__ == '__main__':
 
         def ifstmt(IF, EXPR, THEN, stmt):
             return ('when', EXPR, stmt)
-        def ifstmt(IF, EXPR, THEN, stmt1, ELSE, stmt2):
-            return ('if', EXPR, stmt1, stmt2)
-    
+        def ifstmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
+            return ('if', EXPR, stmt_1, stmt_2)
+
     pif = Earley(Gif)
 
     list(pif.tokenize('if (foo) then bar'))
 
     # pif.parse_process('if foo else bar')
     s1 = pif.parse_process('if (foo) then bar')
-    pif.interprete('if (foo) then bar')
+    pif.interpret('if (foo) then bar')
 
     # pif.parse_process('if foo else bar')
     s2 = pif.parse_process('if (foo) then bar else baz')
-    pif.interprete('if (foo) then bar else baz')
+    pif.interpret('if (foo) then bar else baz')
 
     # pif.parse_process('if foo else bar')
     s3 = pif.parse_process('if (foo) then if (fee) then bar else baz')
-    pif.interprete('if (foo) then if (fee) then bar else baz')
+    pif.interpret('if (foo) then if (fee) then bar else baz')

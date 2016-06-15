@@ -20,12 +20,12 @@ class Gchurch(metaclass=earley):
 if __name__ == '__main__':
 
     s = Gchurch.parse('succ succ succ zero')
-    v = Gchurch.interprete('succ succ succ zero')
+    v = Gchurch.interpret('succ succ succ zero')
 
     import pprint as pp
     pp.pprint(s)
 
-    assert Gchurch.interprete('zero') == 0
-    assert Gchurch.interprete('succ zero') == 1
-    assert Gchurch.interprete('succ succ zero') == 2
-    assert Gchurch.interprete('succ succ succ zero') == 3
+    assert Gchurch.interpret('zero') == 0
+    assert Gchurch.interpret('succ zero') == 1
+    assert Gchurch.interpret('succ succ zero') == 2
+    assert Gchurch.interpret('succ succ succ zero') == 3

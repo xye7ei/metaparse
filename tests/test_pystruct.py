@@ -9,7 +9,7 @@ class PyStructReader(metaclass=lalr):
     """
     Grammar for python object and built-in container types.
     """
-    
+
     id = r'[A-Za-z_]\w*'
     comma = r','
     colon = r':'
@@ -49,15 +49,15 @@ if __name__ == '__main__':
     # pp.pprint(rd.parse('[]'))
     # pp.pprint(rd.parse('[a, b,]'))
     # pp.pprint(rd.parse('[(a, b), c, {x : y, z : w}]'))
-    # pp.pprint(rd.interprete('[(a, b), c, {x : y, z : w}]'))
-    assert rd.interprete('a') == \
+    # pp.pprint(rd.interpret('[(a, b), c, {x : y, z : w}]'))
+    assert rd.interpret('a') == \
         ('Sym', 'a')
-    assert rd.interprete('{(a, b), c, {e, f}}') == \
+    assert rd.interpret('{(a, b), c, {e, f}}') == \
         ('Set', [('Tpl', [('Sym', 'a'), ('Sym', 'b')]),
                  ('Sym', 'c'),
                  ('Set', [('Sym', 'e'), ('Sym', 'f')])])
     # rd.parse('[(a, b), c, {x : y, z : w}]')
-    # pp.pprint(rd.interprete('[]'))
-    # pp.pprint(rd.interprete('[a, b,]'))
-    # pp.pprint(rd.interprete('[(a, b), c, {x : y, z : w}]'))
+    # pp.pprint(rd.interpret('[]'))
+    # pp.pprint(rd.interpret('[a, b,]'))
+    # pp.pprint(rd.interpret('[(a, b), c, {x : y, z : w}]'))
 

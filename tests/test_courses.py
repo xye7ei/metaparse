@@ -63,25 +63,25 @@ import pprint as pp
 
 gcrs = Gcourses
 
-assert gcrs.interprete('CS 2110') == \
+assert gcrs.interpret('CS 2110') == \
     [('CS', '2110')]
-assert gcrs.interprete('CS 2110 and INFO 3300') == \
+assert gcrs.interpret('CS 2110 and INFO 3300') == \
     [('CS', '2110'), ('INFO', '3300')]
-assert gcrs.interprete('CS 2110, INFO 3300') == \
+assert gcrs.interpret('CS 2110, INFO 3300') == \
     [('CS', '2110'), ('INFO', '3300')]
-assert gcrs.interprete('CS 2110, 3300, 3140') == \
+assert gcrs.interpret('CS 2110, 3300, 3140') == \
     [('CS', '2110'), ('CS', '3300'), ('CS', '3140')]
-assert gcrs.interprete('CS 2110 or INFO 3300') == \
+assert gcrs.interpret('CS 2110 or INFO 3300') == \
     [[('CS', '2110')], [('INFO', '3300')]]
 
-# Compare forms with same semantics... 
+# Compare forms with same semantics...
 inp = "MATH 2210, 2230, 2310 or 2940"
 s1 =  Gcourses.parse(inp)
-v1 =  Gcourses.interprete(inp)
+v1 =  Gcourses.interpret(inp)
 
 inp = "MATH 2210, 2230, 2310, or 2940"
 s2 = Gcourses.parse(inp)
-v2 =  Gcourses.interprete(inp)
+v2 =  Gcourses.interpret(inp)
 
 assert s1 == s2
 assert v1 == v2

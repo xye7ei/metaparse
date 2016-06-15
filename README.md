@@ -158,7 +158,7 @@ p.parse('3 + 2 * (5 + 11)')
 '''
 
 # Direct interpretation
-p.interprete('3 + 2 * (5 + 11)')
+p.interpret('3 + 2 * (5 + 11)')
 # Output: 35
 ```
 
@@ -247,7 +247,7 @@ p.parse('if e then s if e then s else s')
 '''
 ```
 
-The problem arises when the parse result needs to be interpreted at any parser state since it is not clear which parse tree should be chosen. If interpretation is performed on-the-fly during parsing, then rule semantics implemented with side-effect may lead to repeated execution of some body and unexpected result may occur.
+The problem arises when the parse result needs to be interpretd at any parser state since it is not clear which parse tree should be chosen. If interpretation is performed on-the-fly during parsing, then rule semantics implemented with side-effect may lead to repeated execution of some body and unexpected result may occur.
 
 ### Deterministic parsing
 

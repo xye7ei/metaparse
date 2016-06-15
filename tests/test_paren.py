@@ -29,6 +29,6 @@ if __name__ == '__main__':
     # import pprint as pp
     # s = Gparen.parse('( ( ) ) ( )')
     # pp.pprint(s)
-    assert Gparen.interprete('()') == '<>'
-    assert Gparen.interprete('( ( ) )') == '<<>>'
-    assert Gparen.interprete('( ( ) ) ( )') == '<<>><>'
+    assert Gparen.interpret('()') == '<>'
+    assert Gparen.interpret('( ( ) )') == '<<>>'
+    assert Gparen.interpret('( ( ) ) ( )') == '<<>><>'

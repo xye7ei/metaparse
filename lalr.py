@@ -282,7 +282,7 @@ class LALR(grammar.Grammar):
 
         raise ValueError('No enough token for completing the parse. ')
 
-    def interprete(G, inp):
+    def interpret(G, inp):
         return G.parse(inp, interp=True)
 
 

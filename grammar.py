@@ -121,6 +121,8 @@ class Item(object):
     def __hash__(self):
         return hash((self.r, self.pos))
 
+    def rule(s):
+        return s.rules[s.r]
     def ended(s):
         return s.pos == len(s.rules[s.r].rhs)
     def rest(s):

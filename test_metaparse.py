@@ -41,20 +41,9 @@ class ParserC(metaclass=cfg):
 # PHASE 1: Test Earley
 
 # print()
-# GIfThenElse.parse('if (e) then if (e) then s else s')
-# pp.pprint(GIfThenElse.graph) 
-# GIfThenElse.parse_chart('if (e) then if (e) then s else s')
-# pp.pprint(GIfThenElse.states) 
-# print()
-# pp.pprint(GIfThenElse.tokens)
-# pp.pprint(GIfThenElse.states)
+GIfThenElse.parse_chart('if (e) then if (e) then s else s')
+pp.pprint(GIfThenElse.chart) 
 # pp.pprint(GIfThenElse.chart)
-# pp.pprint(GIfThenElse.edges)
-# pp.pprint(GIfThenElse.item_graph)
-# pp.pprint(GIfThenElse.item_graph1)
-# pp.pprint(GIfThenElse.has_sub)
-# pp.pprint(GIfThenElse.chart)
-# pp.pprint(GIfThenElse.revchart)
 
 # ParserC.parse('a    b  b')
 # pp.pprint(ParserC.chart)
@@ -116,15 +105,15 @@ class SExpParser(metaclass=cfg):
 # xx = '<person name="john"></person>'
 li = 'a bc def g'
 
-print()
-pp.pprint(ListParser.parse('x x  x'))
-pp.pprint(ListParser.interpret('x x  x'))
+# print()
+# pp.pprint(ListParser.parse('x x  x'))
+# pp.pprint(ListParser.interpret('x x  x'))
 
-print()
-pp.pprint(ChurchParser.interpret('succ succ succ succ zero'))
+# print()
+# pp.pprint(ChurchParser.interpret('succ succ succ succ zero'))
 
 
-print()
-pp.pprint(list(SExpParser.grammar.tokenize('(lambda (x y) (+ x y))', True)))
-pp.pprint(SExpParser.parse('(lambda (x y) (+ x y))'))
-pp.pprint(SExpParser.interpret('(lambda (x y) (+ x y))'))
+# print()
+# pp.pprint(list(SExpParser.grammar.tokenize('(lambda (x y) (+ x y))', True)))
+# pp.pprint(SExpParser.parse('(lambda (x y) (+ x y))'))
+# pp.pprint(SExpParser.interpret('(lambda (x y) (+ x y))'))

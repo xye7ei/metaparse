@@ -3,3 +3,4 @@
 .ipython/profile_default/startup/README
 *.stats
 *.html
+*.py#

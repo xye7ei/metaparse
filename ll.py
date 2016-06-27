@@ -142,8 +142,8 @@ if __name__ == '__main__':
         d = r'd'
         # e = r'e'
 
-        def S(C1, C2):
-            return 'S[  C[{}]  C[{}]  ]'.format(C1, C2)
+        def S(C_1, C_2):
+            return 'S[  C[{}]  C[{}]  ]'.format(C_1, C_2)
 
         def C(c, C):
             return 'C[{} {}]'.format(c, C)
@@ -161,10 +161,11 @@ if __name__ == '__main__':
 
     class Q(metaclass=cfg):
         a = r'a'
-        def S(a1, S, a2): return
-        def S(a1, a2): return
+        def S(a_1, S, a_2): return
+        def S(a_1, a_2): return
 
     pq = LL(Q)
+    pp.pprint(pq.table)
 
     # Check deficiency of LL(1) parser w.R.t. deterministic choice
     # facing non-left-factored grammar with alternatives sharing
@@ -174,7 +175,7 @@ if __name__ == '__main__':
     # pq.parse('aa')
     # pq.parse('aaa')
     # pq.parse('aaaa')
-    pq.parse('aaaaa')
+    # pq.parse('aaaaa')
     # pq.parse('aaaaaa')
     # pq.parse('aaaaaaaa')
     # pq.parse('aaaaaaaaaa')

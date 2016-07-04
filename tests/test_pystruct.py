@@ -1,7 +1,8 @@
 import preamble
+import unittest
 
-from lalr import lalr
-from earley import earley
+from metaparse import Rule, lalr
+# from earley import earley
 
 # class PyStructReader(metaclass=earley):
 class PyStructReader(metaclass=lalr):
@@ -10,54 +11,69 @@ class PyStructReader(metaclass=lalr):
     Grammar for python object and built-in container types.
     """
 
-    id = r'[A-Za-z_]\w*'
+    l1 = r'\('
+    r1 = r',?\s*\)'
+    l2 = r'\['
+    r2 = r',?\s*\]'
+    l3 = r'\{'
+    r3 = r',?\s*\}'
     comma = r','
     colon = r':'
-    pl = r'\('
-    pr = r'\)'
-    bl = r'\['
-    br = r'\]'
-    Bl = r'\{'
-    Br = r'\}'
+    id = r'[A-Za-z_]\w*'
 
     def Obj(id)                      : return ('Sym', id)
+
     def Obj(Lst)                     : return Lst
     def Obj(Tpl)                     : return Tpl
     def Obj(Dic)                     : return Dic
     def Obj(Set)                     : return Set
 
-    def Tpl(pl, Terms, pr)           : return ('Tpl', Terms)
-    def Lst(bl, Terms, br)           : return ('Lst', Terms)
-    def Set(Bl, Terms, Br)           : return ('Set', Terms)
-    def Dic(Bl, DTerms, Br)          : return ('Dic', DTerms)
+    def Tpl(l1, Objs, r1)            : return ('Tpl', Objs)
+    def Lst(l2, Objs, r2)            : return ('Lst', Objs)
+    def Set(l3, Obj, Objs, r3)       : return ('Set', [Obj] + Objs) # 'Set' contains at least one object
+    def Dic(l3, DTerms, r3)          : return ('Dic', DTerms)
 
-    def Terms(Obj, comma, Terms)     : return [Obj] + Terms
-    def Terms(Obj)                   : return [Obj]
-    def Terms()                      : return []
+    def Objs(Objs, comma, Obj)       : return Objs + [Obj]
+    def Objs(Obj)                    : return [Obj]
+    def Objs()                       : return []
 
-    def DTerms(DTerm, comma, DTerms) : return [DTerm] + DTerms
+    def DTerms(DTerms, comma, DTerm) : return DTerms + [DTerm]
     def DTerms(DTerm)                : return [DTerm]
     def DTerms()                     : return []
 
     def DTerm(Obj_1, colon, Obj_2)   : return (Obj_1, Obj_2)
 
 
-if __name__ == '__main__':
-    rd = PyStructReader
-    import pprint as pp
-    pp.pprint(rd.rules)
-    # pp.pprint(rd.parse('[]'))
-    # pp.pprint(rd.parse('[a, b,]'))
-    # pp.pprint(rd.parse('[(a, b), c, {x : y, z : w}]'))
-    # pp.pprint(rd.interpret('[(a, b), c, {x : y, z : w}]'))
-    assert rd.interpret('a') == \
-        ('Sym', 'a')
-    assert rd.interpret('{(a, b), c, {e, f}}') == \
-        ('Set', [('Tpl', [('Sym', 'a'), ('Sym', 'b')]),
-                 ('Sym', 'c'),
-                 ('Set', [('Sym', 'e'), ('Sym', 'f')])])
-    # rd.parse('[(a, b), c, {x : y, z : w}]')
-    # pp.pprint(rd.interpret('[]'))
-    # pp.pprint(rd.interpret('[a, b,]'))
-    # pp.pprint(rd.interpret('[(a, b), c, {x : y, z : w}]'))
+target = PyStructReader.interpret
 
+class TestPyStructParser(unittest.TestCase):
+
+    def test_empty_list(self):
+        r = target('[]')
+        self.assertEqual(r, ('Lst', []))
+
+    def test_empty_dict(self):
+        r = target('{}')
+        self.assertEqual(r, ('Dic', []))
+
+    def test_symbol(self):
+        self.assertEqual(target('a'), ('Sym', 'a'))
+
+    def test_normal_set(self):
+        self.assertEqual(
+            target('{(a, b), c, {e, f}}'),
+            ('Set', [('Tpl', [('Sym', 'a'), ('Sym', 'b')]),
+                     ('Sym', 'c'),
+                     ('Set', [('Sym', 'e'), ('Sym', 'f')])]))
+
+    def test_normal_dict(self):
+        self.assertEqual(
+            target('[{a: b}, {c}, {x: y, z: [a]}]'),
+            ('Lst', [('Dic', [(('Sym', 'a'), ('Sym', 'b'))]),
+                     ('Set', [('Sym', 'c')]),
+                     ('Dic', [(('Sym', 'x'), ('Sym', 'y')),
+                              (('Sym', 'z'), ('Lst', [('Sym', 'a')]))])]))
+
+
+if __name__ == '__main__':
+    unittest.main()

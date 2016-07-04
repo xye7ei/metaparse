@@ -4,3 +4,4 @@
 *.stats
 *.html
 *.py#
+tests/.python_history

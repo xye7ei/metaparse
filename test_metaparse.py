@@ -11,14 +11,14 @@ class GIfThenElse(metaclass=Earley.meta):
     THEN    = r'then*'
     ELSE    = r'else*'
     EXPR    = r'\(\s*e\s*\)'
-    SINGLE  = r's'
+    SINGLE  = r'\w+'
 
     def stmt(SINGLE):
-        return 'sg'
+        return SINGLE
     def stmt(IF, EXPR, THEN, stmt):
-        return ['IF', 'x', 'THEN', stmt]
+        return ('it', stmt)
     def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
-        return ['IF', 'x', 'THEN', stmt_1, 'ELSE', stmt_2]
+        return ('ite', stmt_1, stmt_2)
 
 
 class S(metaclass=Earley.meta):
@@ -26,9 +26,9 @@ class S(metaclass=Earley.meta):
     IGNORED = r'\s+'
     x = r'x'
     def S(S_1, S_2):
-        return S_1 + S_2
+        return [S_1, S_2]
     def S(x):
-        return ['x']
+        return '!'
 
 
 class A(metaclass=Earley.meta):
@@ -53,8 +53,11 @@ class A(metaclass=Earley.meta):
 
 # PHASE 1: Test Earley
 
-pp.pprint(S.parse_forest('x  x   x'))
-pp.pprint(A.parse_forest('a a'))
+pp.pprint(S.recognize('x  x   x'))
+# pp.pprint(S.parse('x  x   x'))
+pp.pprint(S.interpret('x  x   x'))
+# pp.pprint(S.parse_chart('x  x   x'))
+# pp.pprint(A.parse_forest('a a'))
 
 # ParserC.parse_states('a b')
 # pp.pprint(ParserC.states)
@@ -70,31 +73,9 @@ pp.pprint(A.parse_forest('a a'))
 # pp.pprint(ParserC.chart)
 
 # print()
-# res = GIfThenElse.parse_forest('if (e) then if (e) then if (e) then s else s')
-# print(len(res))
-# pp.pprint(res)
-# pp.pprint(GIfThenElse.forest[-1])
-# GIfThenElse.parse_chart('if (e) then if (e) then s else s')
-# pp.pprint(GIfThenElse.states)
-# pp.pprint(GIfThenElse.chart)
-# trs = GIfThenElse.find_trees('stmt', 0)
-# print(len(trs))
-
-# trs0 = [] 
-# for tr in trs:
-#     if tr not in trs0:
-#         trs0.append(tr)
-# print(len(trs0))
-
-# pp.pprint(GIfThenElse.find_trees('stmt', 0, 9))
-# print(len(GIfThenElse.find_trees('stmt^',0))) # WHY LENGTH==4????
-# pp.pprint(GIfThenElse.find_nodes(0, 9, 'stmt^'))
-# GIfThenElse.parse('if (e) then if (e) then s else s')
-
-
-
-# ParserC.parse('a    b  b')
-# pp.pprint(ParserC.chart)
+pp.pprint(GIfThenElse.recognize('if (e) then if (e) then if (e) then aa else bb'))
+pp.pprint(GIfThenElse.interpret('if (e) then if (e) then if (e) then aa else bb'))
+# pp.pprint(GIfThenElse.parse('if (e) then if (e) then if (e) then s else s'))
 
 
 # PHASE 2: Test LALR

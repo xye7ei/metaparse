@@ -70,6 +70,7 @@ Token = namedtuple('Token', 'at symbol value')
 Token.start = property(lambda s: s.at)
 Token.end = property(lambda s: s.at + len(s.value))
 Token.__repr__ = lambda s: '({} -> {})@[{}:{}]'.format(s.symbol, repr(s.value), s.at, s.end)
+Token.is_END = lambda s: s.symbol == END
 
 # class Token(object):
 #
@@ -743,71 +744,52 @@ class Earley(ParserBase):
     def reset(self):
         pass
 
-    def parse_states(self, inp: str):
-        """On-the-fly parsing maintaining states.
+    def recognize(self, inp: str):
+        """Naive Earley's recognization algorithm. No parse produced.
         """
         G = self.grammar
-        S = self.states = []
-        T = self.tokens = []
+        S = [[(0, G.make_item(0, 0))]]
 
-        # Forest F[k] is a dict, of which
-        # - a key is a nonterminal
-        # - a value is the set of rules with associated subtree stacks
-        #
-        # Suppose there are two rules in grammar for A, (A -> .αBγ) and (A -> μ),
-        # then
-        # {(A -> .αBγ): [[]], 
-        #  (A -> .μ)  : [[]]}
-        # is in F[k]
-        F = self.forest = []
-        F0 = defaultdict(list)
-        top = G.start_rule
-        F0[top].append((ParseTree(top, []), list(top.rhs)))
-        F.append(F0)
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
 
-        S.append([(0, G.make_item(0, 0))])
-
-        for k, tok in enumerate(G.tokenize(inp, with_end=False)):
-            T.append(tok)
-            F.append(defaultdict(list)) # forest[i] :: {<Rule>: list<pair<<args>, <rest>>>}
-
-            at, lex, lexval = tok
-            # Closuring current item set S[k]
-            # ItemSet S[k] is the AGENDA in context of chart parsing
             C = S[-1]
             C1 = []
 
-            # compers = defaultdict(list)
             z_j = 0
             while z_j < len(C):
                 j, jtm = C[z_j]
                 # ISSUES by grammars having ε-Rules:
-                # 
+                #
                 # - In grammar without nullable rules, each predicted
                 #   non-kernel item consumes no further nonterminal
                 #   symbols, which means each completion item has no
                 #   effect on generated prediction items and can be
-                #   processed only ONCE and merely SINGLE-PASS-CLOSURE is
-                #   needed;
+                #   processed only ONCE and merely SINGLE-PASS-CLOSURE
+                #   is needed;
+                #
                 # - BUT in grammar with nullable rules, each predicted
                 #   non-kernel item can consume arbitrarily many
-                #   further nonterminals which leads to its completion,
-                #   meaning prediction may result in new completion items,
-                #   leading to repeated processing of the identical
-                #   completion item. Thus LOOP-closure is needed.
-                # 
+                #   further nonterminals which leads to its
+                #   completion, meaning prediction may result in new
+                #   completion items, leading to repeated processing
+                #   of the identical completion item. Thus
+                #   LOOP-closure is needed.
+                #
                 if not jtm.ended():
-                    # Prediction: find nonkernels
-                    if jtm.actor in G.nonterminals:
-                        for r, rule in enumerate(G.rules):
-                            if rule.lhs == jtm.actor:
-                                ktm = G.make_item(r, pos=0)
-                                new = (k, ktm)
-                                if new not in C:
-                                    C.append(new)
-                    # Scanning/proceed for next States
-                    elif jtm.actor == lex:
-                        C1.append((j, jtm.shifted))
+                    # Prediction/Completion no more needed when
+                    # recognizing END-Token
+                    if not tok.is_END():
+                        # Prediction: find nonkernels
+                        if jtm.actor in G.nonterminals:
+                                for r, rule in enumerate(G.rules):
+                                    if rule.lhs == jtm.actor:
+                                        ktm = G.make_item(r, pos=0)
+                                        new = (k, ktm)
+                                        if new not in C:
+                                            C.append(new)
+                        # Scanning/proceed for next States
+                        elif jtm.actor == tok.symbol:
+                            C1.append((j, jtm.shifted))
                 else: # jtm.ended() at k
                     for (i, itm) in S[j]:
                         if not itm.ended() and itm.actor == jtm.target:
@@ -816,26 +798,14 @@ class Earley(ParserBase):
                                 C.append(new)
                 z_j += 1
             if not C1:
-                # raise ValueError('Choked by {} at {}.'.format(lexval, at))
-                if lex != END:
-                    print('Unrecognized token {} Ignored. '.format(tok))
+                if not tok.is_END():
+                    print('Unrecognized Token {} Ignored. '.format(tok))
             else:
                 # Commit proceeded items (by Scanning) as item set.
                 S.append(C1)
 
-        # Final completion
-        k = len(S) - 1
-        C = S[k]
-        z_j = 0
-        while z_j < len(C):
-            j, jtm = C[z_j]
-            if jtm.ended():
-                for z_i, (i, itm) in enumerate(S[j]):
-                    if not itm.ended() and itm.actor == jtm.target:
-                        new = (i, itm.shifted)
-                        if new not in C:
-                            C.append(new)
-            z_j += 1
+        return S
+
 
     def parse_chart(self, inp: str):
         """Perform chart-parsing combined with Earley's recognition
@@ -863,47 +833,30 @@ class Earley(ParserBase):
         G = self.grammar
         # chart[i][j] registers proceeding items from @i to @j
         chart = self.chart = defaultdict(lambda: defaultdict(set))
-        # forest[i][j] registers completed parse trees from @i to @j
-        # - Trees are constructed on-the-fly
-        #   - Scanning Token T
-        #     - index a ParseLeaf in forest[k][k+1]
-        #     - For each item acting on T, mutate it with a new subtree ParseLeaf
-        #   - if the current (j, B -> y, k) being processed is completed
-        #     - index a ParseTree in forest[j][k]
-        #     - 
-        #   
-        forest = self.forest = defaultdict(
-            lambda: defaultdict(
-                lambda: default(set)))
-        tokens = self.tokens = []
         agenda = [(0, G.make_item(0, 0))]
+
         for k, tok in enumerate(G.tokenize(inp, False)):
-            tokens.append(tok)
-            at, lex, lexval = tok
             agenda1 = []
             while agenda:
-                # A item `jtm` from position @j
                 j, jtm = agenda.pop()
                 # Directly register intermediate state item
                 if jtm not in chart[j][k]:
                     chart[j][k].add(jtm)
-                    # Forest: conclude subtree @j
                 if not jtm.ended():
-                    # Prediction
-                    if jtm.actor in G.nonterminals:
-                        for r, rule in enumerate(G.rules):
-                            if rule.lhs == jtm.actor:
-                                ktm = G.make_item(r, 0)
-                                if ktm not in chart[k][k]:
-                                    chart[k][k].add(ktm)
-                                    agenda.append((k, ktm))
-                    # Scanning
-                    elif jtm.actor == lex:
-                        # chart[k][k+1].add(jtm.shifted)
-                        chart[j][k+1].add(jtm.shifted)
-                        agenda1.append((j, jtm.shifted))
-                        # Forest: conclude Leaf @k
-                        # Log subtree for all items @j waiting this Token
+                    if not tok.is_END():
+                        # Prediction
+                        if jtm.actor in G.nonterminals:
+                            for r, rule in enumerate(G.rules):
+                                if rule.lhs == jtm.actor:
+                                    ktm = G.make_item(r, 0)
+                                    if ktm not in chart[k][k]:
+                                        chart[k][k].add(ktm)
+                                        agenda.append((k, ktm))
+                        # Scanning
+                        elif jtm.actor == tok.symbol:
+                            chart[k][k+1].add(jtm.shifted)
+                            chart[j][k+1].add(jtm.shifted)
+                            agenda1.append((j, jtm.shifted))
                 else:
                     # Completion
                     for i in range(j+1):
@@ -912,32 +865,35 @@ class Earley(ParserBase):
                                 if not itm.ended() and itm.actor == jtm.target:
                                     if itm.shifted not in chart[i][k]:
                                         agenda.append((i, itm.shifted))
-                                        # Each tree initialized at @i gets a subtree for `jtm`
-                                        # Log subtree for all items @i waiting this
-                                        # nonterminal
             if agenda1:
                 agenda = agenda1
             else:
                 raise ValueError('Fail: empty new agenda by {}\nchart:\n{}'.format(tok,
                     pp.pformat(chart)))
 
-        # Final completion
-        k = len(tokens)
-        while agenda:
-            j, jtm = agenda.pop()
-            if jtm.ended():
-                chart[j][k].add(jtm)
-                for i in range(j+1):
-                    if j in chart[i]:
-                        for itm in chart[i][j]:
-                            if not itm.ended() and itm.actor == jtm.target:
-                                if itm.shifted not in chart[i][k]:
-                                    agenda.append((i, itm.shifted))
-        # Algo finished.
+        return chart
 
     def parse_forest(self, inp: str):
-        """Construct single-threaded parse trees during computing Earley
-        states.
+        """Construct single-threaded parse trees (the Parse Forest based upon
+        the underlying prediction/completion-graph, i.e. the chart)
+        during computing Earley states.
+
+        The most significant augmentation w.R.t. the naive recognition
+        algorithm is when more than one completed items @jtm in the
+        agenda matches one parent @(itm)'s need, the parent items'
+        stacks need to be forked/copied to accept these different
+        @jtm subtrees as a feasible shift.
+
+        Since parse trees are computed on-the-fly, the result is the
+        set of feasible parse trees.
+
+        CAUTION: Interpretation on-the-fly is NOT supported! Since the
+        traversal execution order of sibling subtrees' semantic
+        behaviors should be preserved for their parent tree, whereas
+        during AGENDA completion the execution of some shared item's
+        behavior may be interleaving (rigor proof still absent). OTOS,
+        after all top trees have been constructed, the thorough traverse
+        by each can deliver right semantic results.
 
         """
         G = self.grammar
@@ -948,12 +904,19 @@ class Earley(ParserBase):
 
         for k, tok in enumerate(G.tokenize(inp, with_end=True)):
 
+            # Components for the behavior of One-Pass transitive closure
+            # - The accumulated set as final closure
             s_acc = ss[-1]
+            # - The set of active items to be processed, i.e. AGENDA
             s_act = {**s_acc}
+            # - The initial set for next token position
             s_after = {}
 
             while 1:
+                # - The augmention items predicted/completed by items
+                #   in the AGENDA @s_act
                 s_aug = {}
+
                 for (j, jtm), j_stks in s_act.items():
                     # prediction
                     # TODO: Support nullable grammar (without LOOP) by applying
@@ -981,98 +944,52 @@ class Earley(ParserBase):
                             for (i, itm), i_stks in ss[j].items():
                                 if not itm.ended() and itm.actor == jtm.target:
                                     new = (i, itm.shifted)
-                                    if new in s_aug:
-                                        tar = s_aug[new]
-                                    else:
-                                        tar = s_aug[new] = []
+                                    if new not in s_aug:
+                                        s_aug[new] = []
                                     for i_stk in i_stks:
-                                        tar.append(i_stk + (j_tr,))
+                                        s_aug[new].append(i_stk + (j_tr,))
                 if s_aug:
-                    # Update, but NO replacement!!
-                    # !Wrong: s_acc.update(s_aug)
+                    # Register new AGENDA items as well as their
+                    # corresponding completion stacks
                     for (i, itm), i_stk in s_aug.items():
                         if (i, itm) in s_acc:
                             s_acc[i, itm].extend(i_stk)
                         else:
                             s_acc[i, itm] = i_stk
+                    # Next pass of AGENDA
                     s_act = s_aug
                 else:
+                    # No new AGENDA items
                     break
 
             if tok.symbol != END:
                 ss.append(s_after)
 
-        # 
-        res = []
-        for (i, itm), i_stks in ss[-1].items():
+        return ss
+
+
+    def parse(self, inp: str, interp=False):
+        """Fully parse. Use parse_forest as default parsing method and final
+        parse forest constructed is returned. 
+
+        """
+        G = self.grammar
+        forest = self.parse_forest(inp)
+        fin = []
+        for (i, itm), i_stks in forest[-1].items():
             if i == 0 and itm.r == 0 and itm.ended():
                 for i_stk in i_stks:
                     assert len(i_stk) == 1, 'Top rule should be Singleton rule.'
-                    res.append(i_stk[0]) 
+                    tree = ParseTree(G.start_rule, i_stk)
+                    if interp:
+                        fin.append(tree.translate())
+                    else:
+                        fin.append(tree)
+        return fin
 
-        return res
+    def interpret(self, inp: str):
+        return self.parse(inp, True)
 
-    # HOWTO: Construct a parse forest with given chart. 
-    # def find_subtrees(self, rule, i0, k):
-    #     chart = self.chart
-    #     tokens = self.tokens
-    #     G = self.grammar
-    #     # a list of stacks
-    #     stks = [(i0,)]
-    #     # 
-    #     for y in rule.rhs:
-    #         nstks = []
-    #         # nstks = set()
-    #         for stk in stks:
-    #             i = stk[-1]
-    #             for j in chart[i]:
-    #                 for itm in chart[i][j]:
-    #                     if y in G.nonterminals and itm.ended() and itm.target == y:
-    #                         for node in self.find_trees(y, i, j):
-    #                             nstks.append(stk[:-1] + (node, j,))
-    #                             # nstks.add(stk[:-1] + (node, j,))
-    #                     if y in G.terminals and i+1 == j and itm.prev == y:
-    #                         nstks.append(stk[:-1] + (tokens[i], j,)) 
-    #                         # nstks.add(stk[:-1] + (tokens[i], j,)) 
-    #         stks = nstks
-    #     for stk in stks:
-    #         if stk[-1] == k:
-    #             yield stk[:-1]
-
-    # def find_trees(self, X, i, k=None):
-    #     chart = self.chart
-    #     tokens = self.tokens
-    #     G = self.grammar
-    #     #
-    #     if k is None:
-    #         k = len(tokens)
-    #     # 
-    #     nodes = []
-    #     assert X in G.nonterminals
-    #     for itm in chart[i][k]:
-    #         if itm.ended() and itm.target == X:
-    #             for subs in self.find_subtrees(itm.rule, i, k):
-    #                 nodes.append(ParseTree(itm.rule, subs))
-    #     return nodes
-
-    def parse(self, inp: str):
-        """Fully parse. Reset states. Deliver fully parsed result as a list of parse trees. """
-        # Problem: how to traverse the chart to retrieve underlying parse trees?
-        #
-        # if there is a parse (A -> BC) in chart[i][k]
-        # then there is some j, that (B -> x)
-        #
-        #
-        
-        self.reset()
-        self.parse_chart(inp)
-        # How to build parse forest from chart?
-        chart = self.chart
-        # DFS building with stack forking
-        #
-        tokens = self.tokens
-        G = self.grammar
-        
 
 @meta
 class LALR(ParserBase):

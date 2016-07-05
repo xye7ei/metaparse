@@ -7,9 +7,9 @@ class GIfThenElse(metaclass=Earley.meta):
     """Ambigious grammar with Dangling-Else structure. """
 
     IGNORED = r'\s'
-    IF      = r'if*'
-    THEN    = r'then*'
-    ELSE    = r'else*'
+    IF      = r'if'
+    THEN    = r'then'
+    ELSE    = r'else'
     EXPR    = r'\(\s*e\s*\)'
     SINGLE  = r'\w+'
 
@@ -129,7 +129,7 @@ class SExpParser(metaclass=LALR.meta):
         return []
 
 # xx = '<person name="john"></person>'
-li = 'a bc def g'
+# li = 'a bc def g'
 
 # print()
 # pp.pprint(ListParser.parse('x x  x'))
@@ -145,3 +145,4 @@ li = 'a bc def g'
 # pp.pprint(res)
 # pp.pprint(res.translate())
 # pp.pprint(SExpParser.interpret('(lambda (x y) (+ x y))'))
+

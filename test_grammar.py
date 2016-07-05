@@ -1,4 +1,6 @@
 import pprint as pp
+import metaparse
+
 from metaparse import *
 
 
@@ -14,7 +16,7 @@ class G(metaclass=cfg):
 # pp.pprint(G.first_seq(G.rules[0].rhs, '#'))
 
 
-class Glrval(metaclass=cfg): 
+class LRVal(metaclass=cfg): 
     IGNORED = r'\s+'
     EQ   = r'='
     STAR = r'\*'
@@ -27,24 +29,25 @@ class Glrval(metaclass=cfg):
     def L(STAR, R):
         return ('deref', R) 
     def L(ID):
-        return 'id' 
+        return ID
     def R(L):
         return L 
 
 
 # pp.pprint(Glrval.closure_with_lookahead(G.make_item(0, 0), '%'))
-Plrval = Earley(Glrval)
-Rlrval = GLR(Glrval)
-Qlrval = LALR(Glrval)
+e_LRVal = Earley(LRVal)
+g_LRVal = GLR(LRVal)
+l_LRVal = LALR(LRVal)
 
-pp.pprint(Plrval.interpret('abc = * * ops'))
-pp.pprint(Plrval.interpret('* abc = * * * ops'))
+# pp.pprint(e_LRVal.interpret('abc = * * ops'))
+# pp.pprint(e_LRVal.interpret('* abc = * * * ops'))
 
-pp.pprint(Rlrval.interpret('abc = * * ops'))
-pp.pprint(Rlrval.interpret('* abc = * * * ops'))
+# pp.pprint(g_LRVal.interpret('abc = * * ops'))
+# pp.pprint(g_LRVal.interpret('* abc = * * * ops'))
 
-# pp.pprint(Qlrval.interpret('abc = * * ops'))
-# pp.pprint(Qlrval.interpret('* abc = * * * ops'))
+# pp.pprint(l_LRVal.interpret('abc'))
+# pp.pprint(l_LRVal.interpret('abc = * * ops'))
+# pp.pprint(l_LRVal.interpret('* abc = * * * ops'))
 
 class GArith(metaclass=cfg): 
     IGNORED = r'\s+' 
@@ -53,6 +56,7 @@ class GArith(metaclass=cfg):
     number = r'\d+'
     left   = r'\('
     right  = r'\)' 
+    # bla    = r'bla'
     def Expr(Expr, plus, Term):
         return Expr + Term
     def Expr(Term):
@@ -68,3 +72,6 @@ class GArith(metaclass=cfg):
     def Atom(number):
         return int(number)
 
+print('Finished.')
+
+metaparse

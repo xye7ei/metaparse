@@ -55,6 +55,7 @@ IGNORED_PATTERN_DEFAULT = r'[ \t]'
 ERROR = 'ERROR'
 ERROR_PATTERN_DEFAULT = r'.'
 
+DUMMY = '\0'
 
 class _EPSILON:
     """A singleton object representing empty productivity of nonterminals."""
@@ -185,7 +186,8 @@ class Item(object):
     def rest(s):
         return s.rules[s.r].rhs[s.pos:]
 
-    def over_rest(s):
+    @property
+    def look_over(s):
         return s.rules[s.r].rhs[s.pos+1:]
 
     @property
@@ -377,6 +379,19 @@ class Grammar(object):
         G.FIRST = FIRST
         G.first1 = first1
 
+        def first_of_seq(seq, tail=DUMMY):
+            fs = set()
+            for X in seq:
+                fs.update(G.first1(X))
+                if EPSILON not in fs:
+                    return fs
+            fs.discard(EPSILON)
+            # Note :tail: can also be EPSILON
+            fs.add(tail)
+            return fs
+
+        G.first_of_seq = first_of_seq
+
     def tokenize(G, inp: str, with_end: False):
         """Perform lexical analysis
         with given string. Yield feasible matches with defined lexical patterns.
@@ -466,15 +481,20 @@ class Grammar(object):
             if not itm.ended():
                 for j, jrl in enumerate(G.rules):
                     if itm.actor == jrl.lhs:
-                        jlk = []
-                        beta = itm.over_rest()
-                        for X in beta + [a]:
-                            for b in G.first1(X):
-                                if b is not EPSILON and b not in jlk:
-                                    jlk.append(b)
-                            if EPSILON not in G.first1(X):
-                                break
-                        for b in jlk:
+                        # Dreprecated way of 
+                        # beta = itm.look_over
+                        # jlk = []
+                        # for X in beta + [a]:
+                        #     for b in G.first1(X):
+                        #         if b is not EPSILON and b not in jlk:
+                        #             jlk.append(b)
+                        #     if EPSILON not in G.first1(X):
+                        #         break
+                        # for b in jlk:
+                        #     jtm = G.make_item(j, 0)
+                        #     if (jtm, b) not in C:
+                        #         C.append((jtm, b))
+                        for b in G.first_of_seq(itm.look_over, a):
                             jtm = G.make_item(j, 0)
                             if (jtm, b) not in C:
                                 C.append((jtm, b))
@@ -727,22 +747,13 @@ class Earley(ParserBase):
     """Earley parser is able to parse any Context-Free Language properly.
 
     However the parsing process is slow due to the on-the-fly calculation
-    of item set closures, where the detection of items which also includes
-    the stack for arguments is very expensive.
+    of item set closures, as well as the subtree stacks prepared for completing
+    parse trees.
 
-    The construction of Earley parse trees is not quite straightforward.
-
-    Generally schemes:
-    - Chart structure
-    - Item pointers
     """
 
     def __init__(self, grammar):
         super(Earley, self).__init__(grammar)
-        self.reset()
-
-    def reset(self):
-        pass
 
     def recognize(self, inp: str):
         """Naive Earley's recognization algorithm. No parse produced.
@@ -805,7 +816,6 @@ class Earley(ParserBase):
                 S.append(C1)
 
         return S
-
 
     def parse_chart(self, inp: str):
         """Perform chart-parsing combined with Earley's recognition
@@ -881,8 +891,8 @@ class Earley(ParserBase):
         The most significant augmentation w.R.t. the naive recognition
         algorithm is when more than one completed items @jtm in the
         agenda matches one parent @(itm)'s need, the parent items'
-        stacks need to be forked/copied to accept these different
-        @jtm subtrees as a feasible shift.
+        stacks need to be forked/copied to accept these different @jtm
+        subtrees as a feasible shift.
 
         Since parse trees are computed on-the-fly, the result is the
         set of feasible parse trees.
@@ -892,8 +902,8 @@ class Earley(ParserBase):
         behaviors should be preserved for their parent tree, whereas
         during AGENDA completion the execution of some shared item's
         behavior may be interleaving (rigor proof still absent). OTOS,
-        after all top trees have been constructed, the thorough traverse
-        by each can deliver right semantic results.
+        after all top trees have been constructed, the thorough
+        traverse by each can deliver right semantic results.
 
         """
         G = self.grammar
@@ -919,7 +929,7 @@ class Earley(ParserBase):
 
                 for (j, jtm), j_stks in s_act.items():
                     # prediction
-                    # TODO: Support nullable grammar (without LOOP) by applying
+                    # TODO: Support nullable grammar (cancel LOOP) by applying
                     # predictor which
                     # - can predict with overlooking sequential nullable symbols
                     # - can conclude completion of nullable symbols
@@ -967,7 +977,6 @@ class Earley(ParserBase):
 
         return ss
 
-
     def parse(self, inp: str, interp=False):
         """Fully parse. Use parse_forest as default parsing method and final
         parse forest constructed is returned. 
@@ -992,22 +1001,181 @@ class Earley(ParserBase):
 
 
 @meta
-class LALR(ParserBase):
+class GLR(ParserBase):
+
+    """GLR parser as an instance of non-deterministic parsers. Typically,
+    non-deterministic parsers produce parse forest other than exactly
+    one parse tree.
+
+    This leads to the deterministic semantic application along the
+    parse process UNABLE be performed with potential side-effects. To
+    support such application, the parse tree in the forest should be
+    modeled with corresponding semantic promises, such that one of the
+    constructed parse trees can be chosen for application whilst the
+    other are discarded.
 
     """
-    Extend base class Grammar into a LALR parser. The CLOSURE algorithm differs
-    from the default one defined in super class Grammar.
+
+    def __init__(self, grammar):
+        super(GLR, self).__init__(grammar)
+        self._calc_glr_item_sets()
+
+    def _calc_glr_item_sets(self):
+
+        """Calculate general LR-Item-Sets with no respect to look-aheads.
+        Each conflict is registered into the parsing table. For
+        practical purpose, these conflicts should be reported for the
+        grammar writer to survey the conflicts and maybe experiment
+        with potential ambiguity, thus achieving better inspection
+        into the characteristics of the grammar itself.
+
+        For LR(0) grammars, the performance of GLR is no significantly
+        worse than the LALR(1) parser.
+
+        """ 
+
+        G = self.grammar
+
+        self.Ks = Ks = [[G.make_item(0, 0)]]
+        self.GOTO = goto = []
+        self.ACTION = acts = []
+
+        # Fixed point computation. 
+        z = 0
+        while z < len(Ks):
+
+            K = Ks[z]
+            C = G.closure(K)
+            iacts = {'reduce': [], 'shift': {}}
+            igotoset = OrderedDict()
+
+            for itm in C:
+                if itm.ended():
+                    iacts['reduce'].append(itm)
+                else:
+                    X = itm.actor
+                    jtm = itm.shifted
+                    if X not in igotoset:
+                        igotoset[X] = []
+                    if jtm not in igotoset[X]:
+                        igotoset[X].append(jtm)
+
+            igoto = OrderedDict()
+            for X, J in igotoset.items():
+                if J not in Ks:
+                    Ks.append(J)
+                j = Ks.index(J)
+                iacts['shift'][X] = j
+                igoto[X] = j
+            acts.append(iacts)
+            goto.append(igoto)
+            z += 1
+
+    def parse(self, inp: str): 
+
+        """
+        When forking the stack, there may be some issues:
+        - SHIFT consumes a token, while REDUCE consumes no.
+        - As the result, the single-threaded generator can not satisfy
+          the needed of feeding different stacks with token at different
+          step;
+        - So there are some possibilities to handle this:
+        - The Overall-Stack-Set can be maintained as a queue. For each stack
+          element in the Overall-Stack-Set, keep a position index in the input
+          token sequence(or a teed generator) associated with each stack element.
+          This allows virtual backtracking to another fork time-point when the
+          active stack failed. 
+            * As a result, the probes for each stack in Overall-Stack-Set can be
+            done in a DFS/BFS/Best-FS manner. 
+            * In case no lookahead information is incorperated, the GLR parser
+            can keep track of all viable Partial Parsing all along the process. 
+        """
+
+        G = self.grammar
+        GOTO = self.GOTO
+        ACTION = self.ACTION
+
+        results = []
+        tokens = list(G.tokenize(inp, False))
+        forest = [([0], [], 0)]          # forest :: [[State-Number, [Tree], InputPointer]]
+
+        while forest:
+
+            stk, trns, i = forest.pop(0) # DFS/BFS depends on the pop direction
+            act = stk[-1]
+            reds = ACTION[act]['reduce']
+            shif = ACTION[act]['shift']
+
+            # REDUCE
+            # There may be multiple reduction options. Each option leads
+            # to one fork of the parsing thread.
+            for ritm in reds:
+                # Forking, copying State-Stack and Trns
+                # Index of input remains unchanged. 
+                frk = stk[:]
+                trns1 = trns[:]
+                subts = []
+                for _ in range(ritm.size):
+                    frk.pop()   # only serves amount
+                    subts.insert(0, trns1.pop())
+                ntr = ParseTree(ritm.rule, subts)
+                trns1.append(ntr)
+
+                # Deliver/Transit after reduction
+                if ritm.target == G.start_rule.lhs:
+                    # Discard partial top-tree, which is legally completed
+                    # while i < len(tokens)
+                    if i == len(tokens):
+                        results.append(ntr)
+                else:
+                    frk.append(GOTO[frk[-1]][ritm.target])
+                    forest.append([frk, trns1, i]) # index i stays
+
+            # SHIFT
+            # There can be only 1 option for shifting given a symbol due
+            # to the nature of LR automaton.
+            if i < len(tokens):
+                tok = tokens[i]
+                if tok.symbol in shif:
+                    stk.append(GOTO[act][tok.symbol])
+                    trns.append(tok)
+                    forest.append([stk, trns, i+1]) # index i increases
+
+            # ERROR
+            if not reds and tok.symbol not in shif:
+                # Need any hints for tracing dead states? 
+                # msg = '\nWithin parsing fork {}'.format(stk)
+                # msg += '\nSyntax error ignored: {}.'.format(tok)
+                # msg += '\nChoking item set : \n{}'.format(
+                #     pp.pformat(G.closure(G.Ks[stk[-1]])))
+                # msg += '\nExpected shifters: \n{}'.format(
+                #     pp.pformat(shif))
+                # print(msg)
+                continue
+
+        return results
+
+    def interpret(self, inp: str):
+        res = self.parse(inp)
+        return [tree.translate() for tree in res]
+
+@meta
+class LALR(ParserBase):
+
+    """Lookahead Leftmost-reading Rightmost-derivation (LALR) parser may
+    be the most widely used parser type. It is a parser generator which
+    pre-computes automaton before any parsing work is executed.
+
+    Due to its deterministic nature and table-driven process does it
+    have linear-time performance.
+
     """
-    DUMMY = '\0'
 
     def __init__(self, grammar):
         super(LALR, self).__init__(grammar)
-        self.calc_lalr_item_sets()
+        self._calc_lalr_item_sets()
 
-    def reset(self):
-        self.sstack = [0]
-
-    def calc_lalr_item_sets(self):
+    def _calc_lalr_item_sets(self):
 
         G = self.grammar
 
@@ -1075,12 +1243,12 @@ class LALR(ParserBase):
 
         for i, K in enumerate(Ks):
             for ktm in K:
-                C = G.closure_with_lookahead(ktm, LALR.DUMMY)
+                C = G.closure_with_lookahead(ktm, DUMMY)
                 for ctm, a in C:
                     if not ctm.ended():
                         X = ctm.actor
                         j = goto[i][X]
-                        if a != LALR.DUMMY:
+                        if a != DUMMY:
                             spont[j][ctm.shifted].add(a)
                         else:
                             # Propagation from KERNEL to its target
@@ -1391,6 +1559,31 @@ class FLL1(ParserBase):
             raise ParserError('No enough token for complete parsing.')
 
 
+@meta
+class GLL1(ParserBase):
+    """Generalized LL(1) Parser. """
+
+    def __init__(self, grammar):
+        super(GLL1, self).__init__(grammar)
+        self._calc_gll1_table()
+
+    def _calc_gll1_table(self):
+        G = self.grammar
+        table = self.table = {}
+        for r, rule in enumerate(G.rules):
+            lhs, rhs = rule
+            if lhs not in table:
+                table[lhs] = defaultdict(list)
+            if rhs:
+                for a in G.first_of_seq(rhs, EPSILON):
+                    if a is not EPSILON:
+                        table[lhs][a].append(rule)
+
+    def parse(self, inp: str):
+        raise NotImplementedError()
+    
+
+        
 # class S(metaclass=lalr):
 
 #     a = r'a'

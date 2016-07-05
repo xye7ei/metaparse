@@ -4,7 +4,7 @@ from metaparse import *
 
 
 class GIfThenElse(metaclass=Earley.meta):
-    """Ambigious grammar with Dangling-Else. """
+    """Ambigious grammar with Dangling-Else structure. """
 
     IGNORED = r'\s'
     IF      = r'if*'
@@ -22,7 +22,10 @@ class GIfThenElse(metaclass=Earley.meta):
 
 
 class S(metaclass=Earley.meta):
-    """A special ambigious grammar partitioning x sequence."""
+    """A special ambigious grammar partitioning x sequence,
+    which demonstrates Jay Earley's error figuring out the
+    method of constructing parse forest correctly, noted by
+    Tomita."""
     IGNORED = r'\s+'
     x = r'x'
     def S(S_1, S_2):
@@ -32,7 +35,10 @@ class S(metaclass=Earley.meta):
 
 
 class A(metaclass=Earley.meta):
-    """Ambigious grammar with more-to-one completion."""
+    """Ambigious grammar with more-to-one completion. Shared completee
+    item leads to forking of parent items' stacks.
+
+    """
     IGNORED = r'\s+'
     a = r'a'
     def A(B, C): return
@@ -53,28 +59,15 @@ class A(metaclass=Earley.meta):
 
 # PHASE 1: Test Earley
 
-pp.pprint(S.recognize('x  x   x'))
+# pp.pprint(S.recognize('x  x   x'))
 # pp.pprint(S.parse('x  x   x'))
-pp.pprint(S.interpret('x  x   x'))
+# pp.pprint(S.interpret('x  x   x'))
 # pp.pprint(S.parse_chart('x  x   x'))
-# pp.pprint(A.parse_forest('a a'))
-
-# ParserC.parse_states('a b')
-# pp.pprint(ParserC.states)
-# res = ParserC.parse_forest('a b')
-# pp.pprint(res)
-# pp.pprint(ParserC.forest)
-
-# pp.pprint(list(ParserC.grammar.tokenize('a b', False)))
-# ParserC.parse_states('a b')
-# pp.pprint(ParserC.states)
-# pp.pprint(ParserC.forest)
-# ParserC.parse_chart('a b')
-# pp.pprint(ParserC.chart)
+pp.pprint(A.parse('a a'))
 
 # print()
-pp.pprint(GIfThenElse.recognize('if (e) then if (e) then if (e) then aa else bb'))
-pp.pprint(GIfThenElse.interpret('if (e) then if (e) then if (e) then aa else bb'))
+# pp.pprint(GIfThenElse.recognize('if (e) then if (e) then if (e) then aa else bb'))
+# pp.pprint(GIfThenElse.interpret('if (e) then if (e) then if (e) then aa else bb'))
 # pp.pprint(GIfThenElse.parse('if (e) then if (e) then if (e) then s else s'))
 
 

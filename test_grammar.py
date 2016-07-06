@@ -49,6 +49,7 @@ l_LRVal = LALR(LRVal)
 # pp.pprint(l_LRVal.interpret('abc = * * ops'))
 # pp.pprint(l_LRVal.interpret('* abc = * * * ops'))
 
+
 class GArith(metaclass=cfg): 
     IGNORED = r'\s+' 
     plus   = r'\+'
@@ -71,6 +72,7 @@ class GArith(metaclass=cfg):
         return Expr 
     def Atom(number):
         return int(number)
+
 
 print('Finished.')
 

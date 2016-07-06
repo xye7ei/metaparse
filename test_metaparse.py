@@ -10,8 +10,8 @@ class GIfThenElse(metaclass=Earley.meta):
     IF      = r'if'
     THEN    = r'then'
     ELSE    = r'else'
-    EXPR    = r'\(\s*e\s*\)'
-    SINGLE  = r'\w+'
+    EXPR    = r'\d+'
+    SINGLE  = r'[_a-zA-Z]\w*'
 
     def stmt(SINGLE):
         return SINGLE
@@ -59,16 +59,10 @@ class A(metaclass=Earley.meta):
 
 # PHASE 1: Test Earley
 
-# pp.pprint(S.recognize('x  x   x'))
-# pp.pprint(S.parse('x  x   x'))
-# pp.pprint(S.interpret('x  x   x'))
-# pp.pprint(S.parse_chart('x  x   x'))
-pp.pprint(A.parse('a a'))
-
-# print()
-# pp.pprint(GIfThenElse.recognize('if (e) then if (e) then if (e) then aa else bb'))
-# pp.pprint(GIfThenElse.interpret('if (e) then if (e) then if (e) then aa else bb'))
-# pp.pprint(GIfThenElse.parse('if (e) then if (e) then if (e) then s else s'))
+# Ambiguous parsing
+assert len(S.interpret('x  x   x')) == 2
+assert len(A.interpret('a    a  ')) == 6
+assert len(GIfThenElse.interpret('if 1 then if 71 then if 23 then if 987 then aa else bb')) == 4
 
 
 # PHASE 2: Test LALR
@@ -86,8 +80,10 @@ class ListParser(metaclass=LALR.meta):
 class ChurchParser(metaclass=LALR.meta):
     SUCC = 'succ'
     ZERO = 'zero'
-    def num(ZERO): return 0
-    def num(SUCC, num): return 1 + num
+    def num(ZERO):
+        return 0
+    def num(SUCC, num):
+        return 1 + num
 
 
 class SExpParser(metaclass=LALR.meta):

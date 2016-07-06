@@ -164,43 +164,43 @@ class _EPSILON:
 
 EPSILON = _EPSILON()
 
-# Object Token
-Token = namedtuple('Token', 'at symbol value')
-Token.start = property(lambda s: s.at)
-Token.end = property(lambda s: s.at + len(s.value))
-Token.__repr__ = lambda s: '({} -> {})@[{}:{}]'.format(s.symbol, repr(s.value), s.at, s.end)
-Token.is_END = lambda s: s.symbol == END
+# # Object Token
+# Token = namedtuple('Token', 'at symbol value')
+# Token.start = property(lambda s: s.at)
+# Token.end = property(lambda s: s.at + len(s.value))
+# Token.__repr__ = lambda s: '({} -> {})@[{}:{}]'.format(s.symbol, repr(s.value), s.at, s.end)
+# Token.is_END = lambda s: s.symbol == END
 
-# class Token(object):
-#
-#     def __init__(self, at, symbol, value):
-#         self.at = at
-#         self.symbol = symbol
-#         self.value = value
-#
-#     def __repr__(self):
-#         return '({} -> {})@[{}:{}]'.format(
-#             self.symbol,
-#             repr(self.value),
-#             self.at,
-#             self.at + len(self.value))
-#
-#     def __eq__(self, other):
-#         return self.symbol == other.symbol
-#
-#     def __iter__(self):
-#         yield self.at
-#         yield self.symbol
-#         yield self.value
-#
-#     @property
-#     def start(self):
-#         return self.at
-#
-#     @property
-#     def end(self):
-#         return self.at + len(self.value)
 
+class Token(object):
+
+    def __init__(self, at, symbol, value):
+        self.at = at
+        self.symbol = symbol
+        self.value = value
+
+    def __repr__(self):
+        return '({} -> {})@[{}:{}]'.format(
+            self.symbol,
+            repr(self.value),
+            self.at,
+            self.at + len(self.value))
+
+    def __eq__(self, other):
+        return self.symbol == other.symbol
+
+    def __iter__(self):
+        yield self.at
+        yield self.symbol
+        yield self.value
+
+    @property
+    def start(self):
+        return self.at
+
+    @property
+    def end(self):
+        return self.at + len(self.value)
 
 
 class Rule(object):
@@ -327,22 +327,23 @@ class Grammar(object):
         """
         Parameters:
 
-        lexes  :: odict{str<terminal-name> : str<terminal-pattern>}
-            - A ordered list of pairs representing lexical rules.
-        rules  :: [Rule]
-            - A list of grammar rules.
+        :lexes:  : odict{str<terminal-name> : str<terminal-pattern>}
+            A ordered list of pairs representing lexical rules.
+
+        :rules:  : [Rule]
+            A list of grammar rules.
 
         Notes:
 
-        - Checks whether there is a singleton TOP-rule
+        * Checks whether there is a singleton TOP-rule
           and add such one if not.
 
-        - Needs to perform validity and well-formity!!
-            - Undeclared tokens;
-            - Undeclared nonterminals;
-            - Unused tokens;
-            - Unreachable nonterminals/rules;
-            - Cyclic rules;
+        * Needs to check validity and completeness!!
+            * Undeclared tokens;
+            * Undeclared nonterminals;
+            * Unused tokens;
+            * Unreachable nonterminals/rules;
+            * Cyclic rules;
 
         """
 
@@ -400,10 +401,8 @@ class Grammar(object):
             self.nonterminals.insert(0, tp_lhs)
             rules = [tp_rl] + rules
 
-        # Register other attributes
-        for k, v in attrs:
-            assert k.startswith('_')
-            setattr(self, k, v)
+        # Register other attributes/methods
+        self.attrs = attrs
 
         self.rules = rules
         self.symbols = self.nonterminals + [a for a in lexes if a != END]
@@ -430,15 +429,15 @@ class Grammar(object):
             raise ValueError('No such LHS {} in grammar.'.format(k))
 
     def make_item(G, r: int, pos: int):
-        """Create a pair of integers indexing the rule and
-        active position.
+        """Create a pair of integers indexing the rule and active position.
+
         """
         return Item(G.rules, r, pos)
 
     def _calc_first_and_nullable(G):
-        """Calculate the FIRST set of this grammar as well
-        as the NULLABLE set. Transitive closure algorithm
-        is applied.
+        """Calculate the FIRST set of this grammar as well as the NULLABLE
+        set. Transitive closure algorithm is applied.
+
         """
         ns = set(G.nonterminals)
 
@@ -550,22 +549,21 @@ class Grammar(object):
             z += 1
         return C
 
-    def closure_with_lookahead(G, item, a):
-        """
-        Fig 4.40 in Dragon Book.
+    def closure1_with_lookahead(G, item, a):
+        """Fig 4.40 in Dragon Book.
 
         CLOSURE(I)
-            I = I.copy()
-            for (A -> α.Bβ, a) in I:
+            J = I.copy()
+            for (A -> α.Bβ, a) in J:
                 for (B -> γ) in G:
                     for b in FIRST(βa):
-                        if (B -> γ, b) not in I:
-                            I.add((B -> γ, b))
-            return I
+                        if (B -> γ, b) not in J:
+                            J.add((B -> γ, b))
+            return J
 
 
         This can be done before calculating LALR-Item-Sets, thus avoid
-        computing closures repeatedly by applying the virtual dummy
+        computing closures repeatedly by applying the virtual DUMMY
         lookahead(`#` in the dragonbook). Since this lookahead must
         not be shared by any symbols within any instance of Grammar, a
         special value is used as the dummy(Not including None, since
@@ -823,7 +821,7 @@ def meta(cls_parser):
     class meta(cfg):
         def __new__(mcls, n, bs, kw):
             grammar = cfg.__new__(mcls, n, bs, kw)
-            return cls_parser(grammar)
+            return cls_parser(grammar, kw)
 
     setattr(cls_parser, 'meta', meta)
 
@@ -836,6 +834,9 @@ class ParserBase(object):
 
     def __init__(self, grammar):
         self.grammar = grammar
+        for k, v in grammar.attrs:
+            assert k.startswith('_')
+            setattr(self, k, v) 
 
     def __repr__(self):
         # Polymorphic representation without overriding
@@ -1092,7 +1093,7 @@ class Earley(ParserBase):
 
     def parse(self, inp: str, interp=False):
         """Fully parse. Use parse_forest as default parsing method and final
-        parse forest constructed is returned. 
+        parse forest constructed is returned.
 
         """
         G = self.grammar
@@ -1144,7 +1145,7 @@ class GLR(ParserBase):
       - GOTO[i][A] == i 
 
     thus during such reduction the stack [... i] keeps growing into
-    [... i+] nonterminally with no consumption of the next token.
+    [... i i i] nonterminally with no consumption of the next token.
 
     There are methods to detect such potential LOOP, which are yet to
     be integrated.
@@ -1280,17 +1281,30 @@ class GLR(ParserBase):
                     trs.append(tok)
                     forest.append([stk, trs, i+1]) # index i increases
 
-            # ERROR
-            if not reds and tok.symbol not in shif:
-                # Need any hints for tracing dead states? 
-                # msg = '\nWithin parsing fork {}'.format(stk)
-                # msg += '\nSyntax error ignored: {}.'.format(tok)
-                # msg += '\nChoking item set : \n{}'.format(
-                #     pp.pformat(G.closure(G.Ks[stk[-1]])))
-                # msg += '\nExpected shifters: \n{}'.format(
-                #     pp.pformat(shif))
-                # print(msg)
-                continue
+                # ERROR
+                elif not reds:
+                    # Under panic mode, some unwanted prediction rules
+                    # may be proceeded till the end while discarding
+                    # arbitrarily many tokens. In other words, every
+                    # substring of the input token sequence might be
+                    # used to make a parse. This comprises another
+                    # problem: Finding the "optimal" parse which
+                    # ignores least tokens, or least significant
+                    # tokens w.R.t. some criterien.
+                    # 
+                    # msg = '\n'.join([
+                    #     '',
+                    #     '#########################',
+                    #     'GLR - Ignoring syntax error by Token {}'.format(tok),
+                    #     ' Current left-derivation fork:\n{}'.format(
+                    #         pp.pformat([self.Ks[i] for i in stk])),
+                    #     '#########################',
+                    #     '',
+                    # ]) 
+                    # warnings.warn(msg)
+                    # Push back
+                    # forest.append([stk, trs, i+1])
+                    pass
 
         return results
 
@@ -1370,7 +1384,7 @@ class LALR(ParserBase):
         # Initialize spontaneous END token for the top item set.
         init_item = Ks[0][0]
         spont[0][init_item].add(END)
-        for ctm, a in G.closure_with_lookahead(init_item, END):
+        for ctm, a in G.closure1_with_lookahead(init_item, END):
             if not ctm.ended():
                 X = ctm.actor
                 j0 = goto[0][X]
@@ -1383,7 +1397,7 @@ class LALR(ParserBase):
 
         for i, K in enumerate(Ks):
             for ktm in K:
-                C = G.closure_with_lookahead(ktm, DUMMY)
+                C = G.closure1_with_lookahead(ktm, DUMMY)
                 for ctm, a in C:
                     if not ctm.ended():
                         X = ctm.actor
@@ -1443,7 +1457,7 @@ class LALR(ParserBase):
         for i, itm_lks in enumerate(table):
             for itm, lks in itm_lks.items():
                 for lk in lks:
-                    for ctm, lk1 in G.closure_with_lookahead(itm, lk):
+                    for ctm, lk1 in G.closure1_with_lookahead(itm, lk):
                         if ctm.ended():
                             if lk1 in ACTION[i] and ACTION[i][lk1] != ('reduce', ctm):
                                 conflicts.append((i, lk1, ctm))
@@ -1452,7 +1466,6 @@ class LALR(ParserBase):
                 # # Accept-Item
                 if itm.index_pair == (0, 1):
                     ACTION[i][END] = ('accept', None)
-
         if conflicts:
             msg = ''
             for i, lk, itm in conflicts:
@@ -1488,32 +1501,37 @@ class LALR(ParserBase):
 
         toker = self.grammar.tokenize(inp, with_end=True) # Use END to force finishing by ACCEPT
         tok = next(toker)
-        # while p_tok < len(toks):
+
         try:
             while 1:
+
                 i = sstack[-1]
-                # tok = toks[p_tok]
-                at, lex, lexval = tok
-                if lex not in ACTION[i]:
-                    msg =  'LALR - Ignoring syntax error by {}'.format(tok)
-                    msg += '\n  Current predi stack: {}'.format(sstack)
-                    msg += '\n'
-                    print(msg)
-                    # p_tok += 1
+
+                if tok.symbol not in ACTION[i]:
+                    msg = '\n'.join([
+                        '',
+                        '#########################',
+                        'LALR - Ignoring syntax error by Token {}'.format(tok),
+                        ' Current left-derivation stack:\n{}'.format(
+                            pp.pformat([self.Ks[i] for i in sstack])),
+                        '#########################',
+                        '',
+                    ]) 
+                    warnings.warn(msg)
                     tok = next(toker)
 
                 else:
-                    act, arg = ACTION[i][lex]
+
+                    act, arg = ACTION[i][tok.symbol]
 
                     # SHIFT
                     if act == 'shift':
                         if interp:
-                            trees.append(lexval)
+                            trees.append(tok.value)
                         else:
                             trees.append(tok)
-                        sstack.append(GOTO[i][lex])
+                        sstack.append(GOTO[i][tok.symbol])
                         # Go on iteration/scanning
-                        # p_tok += 1
                         tok = next(toker)
 
                     # REDUCE
@@ -1553,8 +1571,8 @@ class FLL1(ParserBase):
 
     Since strong-LL(1) grammar parser includes the usage of FOLLOW
     set, which is only heuristically helpful for the recognitive
-    capability when handling NULLABLE rules, this parser suppress
-    the need of FOLLOW.
+    capability when handling NULLABLE rules, this parser suppress the
+    need of FOLLOW.
 
     When deducing a NULLABLE nonterminal A with some lookahead a, if a
     does not belong to any FIRST of A's alternatives, then the NULL

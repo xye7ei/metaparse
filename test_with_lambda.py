@@ -1,14 +1,24 @@
-"""
-A simple haskell-like grammar for basic lambda-calculus
+"""A simple haskell-like grammar for basic lambda-calculus.
+
+A GLR(0) parser can be used to find LR(0)-conflicts as well as
+contruct partial parse trees.
+
 """
 
 from metaparse import *
 
-class Lam(metaclass=cfg):
-# class Lam(metaclass=LALR.meta):
+from collections import namedtuple as data
 
-    # IGNORED = r'(^ *\n$)|[ ]' 
-    # IGNORED = r'^\s+'
+
+Let   = data('Let', 'binds body')
+Abst  = data('Abst', 'par body')
+Appl  = data('Appl', 'func arg')
+Var   = data('Var', 'symbol')
+Value = data('Value', 'value')
+
+
+class Lam(metaclass=cfg):
+
     IGNORED = r'\s+'
 
     EQ     = r'='
@@ -57,27 +67,37 @@ class Lam(metaclass=cfg):
 
     # Application (Curried)
     def appl(expr_1, expr_2):
-        return [expr_1, expr_2]
+        return Appl(expr_1, expr_2)
     def appl(appl, expr):
-        return [appl, expr]
+        return Appl(appl, expr)
 
     # Lambda-Abstraction
-    def abst(LAMBDA, varlist, ARROW, expr):
-        return (varlist, expr)
-    def varlist(VAR):
-        return {VAR}
-    def varlist(varlist, COMMA, VAR):
-        return {*varlist, VAR}
+    def abst(LAMBDA, parlist, ARROW, exprx):
+        tar = exprx
+        for par in reversed(parlist):
+            tar = Abst(par, tar)
+        return tar
+    def parlist(VAR):
+        return [VAR]
+    def parlist(parlist, COMMA, VAR):
+        return [*parlist, VAR]
 
     # Let-expression with environmental bindings
     def let(LET, binds, IN, exprx):
-        return ['LET', binds, exprx]
+        # return ['LET', binds, exprx]
+        return Let(binds, exprx)
     def bind(pat, EQ, exprx):
         return {pat: exprx}
     def binds(bind):
         return bind
     def binds(binds, SEMI, bind):
         return {**binds, **bind}
+
+    def _env():
+        print('Env!')
+
+    def _unify():
+        print('Unify!')
 
 
 psr = Earley(Lam)
@@ -90,23 +110,17 @@ psr = LALR(Lam)
 
 inp = """
 let a = 3 ;
-    P q = z x y
- in 
-   add a b y
+    P q = u v #
+ in  #
+   map (\c, d -> f c d) xs ys
 """
 
-inp = """
-let a = 1
-in (let b = 2 in f a b)
-"""
+# inp = """
+# let a = 1
+# in (let b = 2 in f a b)
+# """
 
 # print(Lam)
 
 pp.pprint(list(psr.grammar.tokenize(inp, False)))
-
-# pp.pprint(psr.recognize(inp))
-# pp.pprint(res)
-# pp.pprint(psr.parse(inp))
-# x1, x2 = psr.parse(inp)
-# assert x1.to_tuple() == x2.to_tuple()
 pp.pprint(psr.interpret(inp))

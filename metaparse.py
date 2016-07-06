@@ -851,11 +851,20 @@ class ParserBase(object):
 @meta
 class Earley(ParserBase):
 
-    """Earley parser is able to parse any Context-Free Language properly.
+    """Earley parser is able to parse ANY Context-Free Language properly
+    using the technique of dynamic programming. It performs
+    non-deterministic parsing since all parse results due to potential
+    ambiguity of given grammar should be found.
 
-    However the parsing process is slow due to the on-the-fly calculation
-    of item set closures, as well as the subtree stacks prepared for completing
-    parse trees.
+    The underlying parse forest is indeed a Tomita-style *Graph
+    Structured Stack*. But such structure cannot be directly traversed
+    for the conventional tree-based parsing semantics. In order to
+    prepare valid traverses, the result here is a list of parse trees
+    where some subtrees are replicatedly referenced by these trees.
+
+    However the parsing process is relatively slow due to the
+    on-the-fly computation of item set closures, as well as the
+    subtree stacks prepared for completing parse trees.
 
     """
 
@@ -932,26 +941,27 @@ class Earley(ParserBase):
         return S
 
     def parse_chart(self, inp: str):
-        """Perform chart-parsing combined with Earley's recognition
-        algorithm. The result is the chart, which semantically
-        includes all possible parse trees w.R.t. the input.
-
-        Parameters:
-            :inp: The input string to be parsed.
-        Returns:
-            None
+        """Perform chart-parsing framework method with Earley's recognition
+        algorithm. The result is a chart, which semantically includes
+        Graph Structured Stack i.e. all possible parse trees.
 
         Semantics of local variables:
 
-        :tokens: Caching the input tokens;
+        :tokens:
 
-        :chart: The graph recording all recognitions, where
-        chart[j][k] is a set containing all recognized parsings on
-        input segment from j'th to k'th tokens.
+            Caching the input tokens;
 
-        :agenda: During the Earley parsing process, the agenda caches
-        all items that should be processed when consuming the k'th
-        input token.
+        :chart:
+
+            The graph recording all recognitions, where chart[j][k] is
+            a set containing all recognized parsings on input segment
+            from j'th to k'th tokens.
+
+        :agenda:
+
+            During the Earley parsing process, the agenda caches all
+            items that should be processed when consuming the k'th
+            input token.
 
         """
         G = self.grammar
@@ -999,8 +1009,8 @@ class Earley(ParserBase):
 
     def parse_forest(self, inp: str):
         """Construct single-threaded parse trees (the Parse Forest based upon
-        the underlying prediction/completion-graph, i.e. the chart)
-        during computing Earley states.
+        the underlying Graph Structured Stack and from another
+        perspective, the chart) during computing Earley item sets.
 
         The most significant augmentation w.R.t. the naive recognition
         algorithm is when more than one completed items @jtm in the
@@ -1011,13 +1021,13 @@ class Earley(ParserBase):
         Since parse trees are computed on-the-fly, the result is a set
         of feasible parse trees.
 
-        CAUTION: Interpretation on-the-fly is NOT supported! Since the
+        CAUTION: Interpretation on-the-fly is NOT allowed! Since the
         traversal execution order of sibling subtrees' semantic
         behaviors should be preserved for their parent tree, whereas
         during AGENDA completion the execution of some shared item's
         behavior may be interleaving (rigor proof still absent). OTOS,
-        after all top trees have been constructed, the thorough
-        traverse by each can deliver right semantic results.
+        after all top trees have been constructed, the traverses by
+        each can deliver correct semantic results.
 
         """
         G = self.grammar
@@ -1124,9 +1134,9 @@ class GLR(ParserBase):
     parse is generated. This means execution of semantic behavior
     during parsing process is banned.
 
-    Here the application of LR(0) grammar is assumed. Nontermination
-    of reduction process may happen for Non-LR(0) grammars, e.g. for
-    the following grammar
+    Here the assumption of LR(0) grammar is assumed. Nontermination of
+    reduction process may happen for Non-LR(0) grammars, e.g. for the
+    following grammar
 
       S -> A S
       S -> b
@@ -1147,7 +1157,7 @@ class GLR(ParserBase):
     thus during such reduction the stack [... i] keeps growing into
     [... i i i] nonterminally with no consumption of the next token.
 
-    There are methods to detect such potential LOOP, which are yet to
+    There are methods to detect such potential LOOPs, which are yet to
     be integrated.
 
     """
@@ -1158,12 +1168,12 @@ class GLR(ParserBase):
 
     def _build_automaton(self):
 
-        """Calculate general LR-Item-Sets with no respect to look-aheads.
+        """Calculate general LR(0)-Item-Sets with no respect to look-aheads.
         Each conflict is registered into the parsing table. For
-        practical purpose, these conflicts should be reported for the
-        grammar writer to survey the conflicts and maybe experiment
-        with potential ambiguity, thus achieving better inspection
-        into the characteristics of the grammar itself.
+        practical purposes, these conflicts should be reported for the
+        grammar writer to survey the conflicts and experiment with
+        potential ambiguity, thus achieving better inspection into the
+        characteristics of the grammar itself.
 
         For LR(0) grammars, the performance of GLR is no significantly
         worse than the LALR(1) parser.
@@ -1211,22 +1221,31 @@ class GLR(ParserBase):
 
     def parse(self, inp: str): 
 
-        """
-        When forking the stack, there may be some issues:
+        """Note during the algorithm, When forking the stack, there may be
+        some issues:
+
         - SHIFT consumes a token, while REDUCE consumes no.
-        - As the result, the single-threaded generator can not satisfy
-          the needed of feeding different stacks with token at different
-          step;
-        - So there are some possibilities to handle this:
-        - The Overall-Stack-Set can be maintained as a queue. For each stack
-          element in the Overall-Stack-Set, keep a position index in the input
-          token sequence(or a teed generator) associated with each stack element.
-          This allows virtual backtracking to another fork time-point when the
-          active stack failed. 
-            * As a result, the probes for each stack in Overall-Stack-Set can be
-            done in a DFS/BFS/Best-FS manner. 
-            * In case no lookahead information is incorperated, the GLR parser
-            can keep track of all viable Partial Parsing all along the process. 
+
+        - The Overall-Stack-Set can be maintained as a
+          stack/queue. For each stack element in the
+          Overall-Stack-Set, keep a position index in the input token
+          sequence (or a cached stream iterator) associated with each
+          stack element. This allows virtual backtracking.
+
+            * As a result, the probes for each stack in
+              Overall-Stack-Set can be done in a DFS/BFS/Best-FS
+              manner.
+
+            * In case no lookahead information is incorperated, the
+              GLR parser can keep track of all viable Partial Parsing
+              all along the process.
+
+            * Panic-mode error ignorance does not fit good for GLR
+              parser, since ANY sub-sequence of the ordered input
+              tokens can be used to construct a parse tree. A overly
+              large amount of "partially correct" parse trees may be
+              delivered.
+
         """
 
         G = self.grammar
@@ -1289,8 +1308,8 @@ class GLR(ParserBase):
                     # substring of the input token sequence might be
                     # used to make a parse. This comprises another
                     # problem: Finding the "optimal" parse which
-                    # ignores least tokens, or least significant
-                    # tokens w.R.t. some criterien.
+                    # ignores least amount of tokens, or least
+                    # significant set of tokens w.R.t. some criterien.
                     # 
                     # msg = '\n'.join([
                     #     '',

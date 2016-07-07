@@ -5,6 +5,8 @@ contruct partial parse trees.
 
 """
 
+import pprint as pp
+
 from metaparse import *
 
 from collections import namedtuple as data

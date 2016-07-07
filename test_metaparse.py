@@ -63,6 +63,8 @@ class A(metaclass=Earley.meta):
 assert len(S.interpret('x  x   x')) == 2
 assert len(A.interpret('a    a  ')) == 6
 assert len(GIfThenElse.interpret('if 1 then if 71 then if 23 then if 987 then aa else bb')) == 4
+# Production of multiple legal parse trees
+pp.pprint(GIfThenElse.interpret('if 1 then if 71 then if 23 then if 987 then aa else bb'))
 
 
 # PHASE 2: Test LALR

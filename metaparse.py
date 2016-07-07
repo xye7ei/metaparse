@@ -38,18 +38,18 @@ In Python >= 3, a handy LALR parser for this grammar based on this
 module can be written as::
 
 
-    class P_LRVal(metaclass=LALR.meta): 
+    class P_LRVal(metaclass=LALR.meta):
 
         IGNORED = r'\s+'
         EQ   = r'='
         STAR = r'\*'
         ID   = r'\w+'
 
-        def S(L, EQ, R) : return ('assign', L, R) 
-        def S(R)        : return ('expr', R) 
-        def L(STAR, R)  : return ('deref', R) 
+        def S(L, EQ, R) : return ('assign', L, R)
+        def S(R)        : return ('expr', R)
+        def L(STAR, R)  : return ('deref', R)
         def L(ID)       : return ID
-        def R(L)        : return L 
+        def R(L)        : return L
 
 
 The usage is highly straightforward::
@@ -58,10 +58,10 @@ The usage is highly straightforward::
     ('expr', 'abc')
 
     >>> P_LRVal.interpret('abc = * * ops')
-    ('assign', 'abc', ('deref', ('deref', 'ops')))      
+    ('assign', 'abc', ('deref', ('deref', 'ops')))
 
     >>> P_LRVal.interpret('* abc = * * * ops')
-    ('assign', ('deref', 'abc'), ('deref', ('deref', ('deref', 'ops'))))      
+    ('assign', ('deref', 'abc'), ('deref', ('deref', ('deref', 'ops'))))
 
 
 * Paraphrase
@@ -408,8 +408,8 @@ class Grammar(object):
         self.symbols = self.nonterminals + [a for a in lexes if a != END]
 
         # Top rule of Augmented Grammar.
-        self.start_rule = self.rules[0]
-        self.start_symbol = self.start_rule.lhs
+        self.top_rule = self.rules[0]
+        self.top_symbol = self.top_rule.lhs
 
         # Helper for fast accessing with Trie like structure.
         self.ngraph = defaultdict(list)
@@ -581,7 +581,7 @@ class Grammar(object):
             if not itm.ended():
                 for j, jrl in enumerate(G.rules):
                     if itm.actor == jrl.lhs:
-                        # Dreprecated way of 
+                        # Dreprecated way of
                         # beta = itm.look_over
                         # jlk = []
                         # for X in beta + [a]:
@@ -684,7 +684,7 @@ class cfg(type):
 
         # ERROR pattern has the lowest priority, meaning it is only
         # matched after failing matching all other patterns. It may be
-        # overriden by the user. 
+        # overriden by the user.
         if ERROR not in lexes:
             lexes[ERROR] = ERROR_PATTERN_DEFAULT
 
@@ -714,8 +714,8 @@ class ParseTree(object):
 
     """Postorder tree traversal with double stacks scheme.
     Example:
-    - input stack
-    - args stack
+    - prediction stack
+    - processed argument stack
 
     i-  [T]$
     a- $[]
@@ -733,32 +733,32 @@ class ParseTree(object):
     =a1, a2=>>
 
     i-  [(->A) B (->T)]$
-    a- $[a1! a2!]
+    a- $[a1 a2]
 
-    =(a1! a2! ->A)=>>
+    =(a1 a2 ->A)=>>
 
     i-  [B (->T)]$
-    a- $[A!]
+    a- $[A]
 
     =(B -> b)=>>
 
     i-  [b (->B) (->T)]$
-    a- $[A!]
+    a- $[A]
 
     =b=>>
 
     i-  [(->B) (->T)]$
-    a- $[A! b!]
+    a- $[A b]
 
-    =(b! ->B)=>>
+    =(b ->B)=>>
 
     i-  [(->T)]$
-    a- $[A! B!]
+    a- $[A B]
 
-    =(A! B! ->T)=>>
+    =(A B ->T)=>>
 
     i-  []$
-    a- $[T!]
+    a- $[T]
 
     """
 
@@ -821,7 +821,7 @@ def meta(cls_parser):
     class meta(cfg):
         def __new__(mcls, n, bs, kw):
             grammar = cfg.__new__(mcls, n, bs, kw)
-            return cls_parser(grammar, kw)
+            return cls_parser(grammar)
 
     setattr(cls_parser, 'meta', meta)
 
@@ -836,7 +836,7 @@ class ParserBase(object):
         self.grammar = grammar
         for k, v in grammar.attrs:
             assert k.startswith('_')
-            setattr(self, k, v) 
+            setattr(self, k, v)
 
     def __repr__(self):
         # Polymorphic representation without overriding
@@ -1113,7 +1113,7 @@ class Earley(ParserBase):
             if i == 0 and itm.r == 0 and itm.ended():
                 for i_stk in i_stks:
                     assert len(i_stk) == 1, 'Top rule should be Singleton rule.'
-                    tree = ParseTree(G.start_rule, i_stk)
+                    tree = ParseTree(G.top_rule, i_stk)
                     if interp:
                         fin.append(tree.translate())
                     else:
@@ -1151,8 +1151,8 @@ class GLR(ParserBase):
 
     and it is clear that
 
-      - ('reduce', (A -> .)) in ACTION[i] 
-      - GOTO[i][A] == i 
+      - ('reduce', (A -> .)) in ACTION[i]
+      - GOTO[i][A] == i
 
     thus during such reduction the stack [... i] keeps growing into
     [... i i i] nonterminally with no consumption of the next token.
@@ -1178,7 +1178,7 @@ class GLR(ParserBase):
         For LR(0) grammars, the performance of GLR is no significantly
         worse than the LALR(1) parser.
 
-        """ 
+        """
 
         G = self.grammar
 
@@ -1219,7 +1219,7 @@ class GLR(ParserBase):
 
             k += 1
 
-    def parse(self, inp: str): 
+    def parse(self, inp: str):
 
         """Note during the algorithm, When forking the stack, there may be
         some issues:
@@ -1271,7 +1271,7 @@ class GLR(ParserBase):
             # to ONE NEW FORK of the parsing thread.
             for ritm in reds:
                 # Forking, copying State-Stack and trs
-                # Index of input remains unchanged. 
+                # Index of input remains unchanged.
                 frk = stk[:]
                 trs1 = trs[:]
                 subts = []
@@ -1281,7 +1281,7 @@ class GLR(ParserBase):
                 trs1.append(ParseTree(ritm.rule, subts))
 
                 # Deliver/Transit after reduction
-                if ritm.target == G.start_rule.lhs:
+                if ritm.target == G.top_rule.lhs:
                     # Discard partial top-tree, which can be legally
                     # completed while i < len(tokens)
                     if i == len(tokens):
@@ -1310,7 +1310,7 @@ class GLR(ParserBase):
                     # problem: Finding the "optimal" parse which
                     # ignores least amount of tokens, or least
                     # significant set of tokens w.R.t. some criterien.
-                    # 
+                    #
                     # msg = '\n'.join([
                     #     '',
                     #     '#########################',
@@ -1319,7 +1319,7 @@ class GLR(ParserBase):
                     #         pp.pformat([self.Ks[i] for i in stk])),
                     #     '#########################',
                     #     '',
-                    # ]) 
+                    # ])
                     # warnings.warn(msg)
                     # Push back
                     # forest.append([stk, trs, i+1])
@@ -1535,7 +1535,7 @@ class LALR(ParserBase):
                             pp.pformat([self.Ks[i] for i in sstack])),
                         '#########################',
                         '',
-                    ]) 
+                    ])
                     warnings.warn(msg)
                     tok = next(toker)
 
@@ -1585,8 +1585,8 @@ class LALR(ParserBase):
 
 
 @meta
-class FLL1(ParserBase):
-    """Fake-LL(1)-Parser.
+class WLL1(ParserBase):
+    """Weak-LL(1)-Parser.
 
     Since strong-LL(1) grammar parser includes the usage of FOLLOW
     set, which is only heuristically helpful for the recognitive
@@ -1606,7 +1606,7 @@ class FLL1(ParserBase):
     """
 
     def __init__(self, grammar):
-        super(FLL1, self).__init__(grammar)
+        super(WLL1, self).__init__(grammar)
         self._calc_ll1_table()
 
     def _calc_ll1_table(self):
@@ -1633,41 +1633,7 @@ class FLL1(ParserBase):
                 pass
 
     def parse(self, inp: str, interp=False):
-        """Table-driven FLL1 parsing.
-
-        Tracing parallel stacks, where signal (α -> A) means reducing
-        production A with sufficient amount of arguments on the
-        argument stack:
-
-        tokens:          | aβd#
-        predi stack:     | S#
-        argstack:        | #
-
-        ==(S -> aBc)==>>
-
-        tokens:          | aβd#
-        predi stack:     | aBd(aBc -> S)#
-        argstack:        | #
-
-        ==a==>>
-
-        tokens:        a | βd#
-        predi stack:   a | Bd(aBc -> S)#
-        argstack:        | #a
-
-        ==(prediction B -> β), push predicted elements into states ==>>
-
-        tokens:        a | βd#
-        predi stack:  aB | β(β -> B)d(aBc -> S)#
-        argstack:        | #a β1 β2 ... βn
-
-        ==(reduce B -> β), push result into args ==>>
-
-        tokens:        a | d#
-        predi stack:  aB | d(->S)#
-        argstack:        | #<a> <B>
-
-        and further.
+        """The process is exactly the `translate' process of a ParseTree.
 
         """
         # Backtracking is yet supported
@@ -1757,10 +1723,100 @@ class GLL1(ParserBase):
                         table[lhs][a].append(rule)
 
     def parse(self, inp: str):
-        raise NotImplementedError()
-    
+        """Table-driven GLL1 parsing based on BFS (unlike typical LL1 with
+        backtracking implementing full DFS).
 
-        
+        Tracing parallel stacks, where signal (α>A) means reducing
+        production A with sufficient amount of arguments on the
+        argument stack.
+
+        tokens:  | aβd#
+        threads: | (#      ,      S#) :: ({arg-stk}, {pred-stk})
+
+        ==(S -> aBc), (S -> aD)==>>
+
+        | aβd#
+        | (#      ,    aBd(aBd>S)#)
+          (#      ,    aDe(aD>S)#)
+
+        ==a==>>
+
+        | βd#
+        | (#a     ,     Bd(aBd>S)#)
+          (#a     ,     De(aD>S)#)
+
+        ==prediction (B -> b h)
+          prediction (D -> b m), push predicted elements into states ==>>
+
+        | βd#
+        | (#a     ,bh(bh>B)d(aBd>S)#)
+          (#a     ,bm(bm>D)De(aD>S)#)
+
+        ==b==>
+
+        | βd#
+        | (#ab    ,h(bh>B)d(aBd>S)#)
+          (#ab    ,m(bm>D)De(aD>S)#)
+
+        ==h==>
+
+        | βd#
+        | (#abh   ,(bh>B)d(aBd>S)#)
+          (#ab    ,{FAIL} m(bm>D)De(aD>S)#)
+
+        ==(reduce B -> β), push result into args ==>>
+
+        | βd#
+        | (#aB    ,d(aBd>S)#)
+
+        and further.
+
+        """
+        push, pop = list.append, list.pop
+        table = self.table
+        G = self.grammar
+        # 
+        PRED, REDU = 0, 1
+        threads = [([], [(PRED, G.top_symbol)])] 
+        # 
+        for k, tok in enumerate(G.tokenize(inp)):
+            at, look, lexeme = tok
+            acc = threads[k]
+            agenda = threads[k][:]
+            while 1:
+                agenda1 = []
+                for (astk, pstk) in agenda:
+                    if not pstk:
+                        # Deliver result?
+                        yield astk[-1]
+                    else:
+                        act, actor = pstk.pop(0)
+                        if act is PRED:
+                            if actor in G.nonterminals:
+                                if look in table[actor]:
+                                    for rule in table[actor][look]:
+                                        nps = [(PRED, x) for x in rule.rhs]
+                                        agenda1.append(
+                                            (astk[:], [*nps, (REDU, rule.lhs), *pstk]))
+                            else:
+                                if look == actor:
+                                    if interp: astk.append(lexeme)
+                                    else: astk.append(tok)
+                                    agenda1.append((astk, pstk))
+                        else:
+                            subs = []
+                            for _ in actor.rhs:
+                                subs.insert(0, astk.pop())
+                            t = ParseTree(actor.rhs, subs)
+                            if interp: astk.append(t.translate())
+                            else: astk.append(t)
+                            agenda1.append((astk, pstk))
+                if not agenda1:
+                    break
+                else: 
+                    acc.extend(agenda1)
+                    agenda = agenda1
+
 # class S(metaclass=lalr):
 
 #     a = r'a'
@@ -1786,10 +1842,10 @@ class GLL1(ParserBase):
 # class fll1(cfg):
 #     def __new__(mcls, n, bs, kw):
 #         grammar = cfg.__new__(mcls, n, bs, kw)
-#         return FLL1(grammar)
+#         return WLL1(grammar)
 
 
-# class SExp(metaclass=FLL1.meta):
+# class SExp(metaclass=WLL1.meta):
 #     l1 = r'\('
 #     r1 = r'\)'
 #     symbol = r'[^\(\)\s]+'

@@ -1,19 +1,6 @@
 import pprint as pp
-import metaparse
 
 from metaparse import *
-
-
-class G(metaclass=cfg):
-    a = r'a'
-    b = r'b'
-    def S(S, A, B): return
-    def S()       : return
-    def A(a)      : return
-    def A()       : return
-    def B(b)      : return
-
-# pp.pprint(G.first_seq(G.rules[0].rhs, '#'))
 
 
 class LRVal(metaclass=cfg): 
@@ -35,9 +22,9 @@ class LRVal(metaclass=cfg):
 
 
 # pp.pprint(Glrval.closure_with_lookahead(G.make_item(0, 0), '%'))
-e_LRVal = Earley(LRVal)
-g_LRVal = GLR(LRVal)
-l_LRVal = LALR(LRVal)
+# e_LRVal = Earley(LRVal)
+# g_LRVal = GLR(LRVal)
+# l_LRVal = LALR(LRVal)
 
 # pp.pprint(e_LRVal.interpret('abc = * * ops'))
 # pp.pprint(e_LRVal.interpret('* abc = * * * ops'))
@@ -74,6 +61,18 @@ class GArith(metaclass=cfg):
         return int(number)
 
 
-print('Finished.')
+class SExp(metaclass=cfg):
+    SINGLE = r'[^ \(\)\[\]\{\}]+'
+    L1 = r'\('
+    R1 = r'\)'
+    def sexp(SINGLE):
+        return SINGLE
+    def sexp(L1, slist, R1):
+        return slist
+    def slist(sexp, slist):
+        return [sexp, *slist]
+    def slist():
+        return []
 
-metaparse
+
+# pp.pprint(SExp)

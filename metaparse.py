@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """==============================
         metaparse.py
 ==============================
@@ -125,6 +127,7 @@ from collections import OrderedDict
 from collections import defaultdict
 from collections import namedtuple
 from collections import deque
+from collections import Iterable
 
 
 class GrammarWarning(UserWarning):
@@ -148,31 +151,44 @@ END = 'END'
 END_PATTERN_DEFAULT = r'\Z'
 
 IGNORED = 'IGNORED'
-IGNORED_PATTERN_DEFAULT = r'[ \t]'
+IGNORED_PATTERN_DEFAULT = r'[ \t\n]'
 
 ERROR = 'ERROR'
 ERROR_PATTERN_DEFAULT = r'.'
 
-DUMMY = '\0'
 
-class _EPSILON:
-    """A singleton object representing empty productivity of nonterminals."""
+class Signal(str):
+
+    """Signal object is used to direct behaviors during constructing
+    parsers or parsing. Each Signal instance should be constructed
+    only once and the comparison between them is identity comparison.
+
+    This emulates Enum data type.
+
+    """
+
+    # def __eq__(self, other):
+    #     return self is other
 
     def __repr__(self):
-        return 'EPSILON'
+        return self
 
 
-EPSILON = _EPSILON()
+DUMMY   = Signal('#')
+EPSILON = Signal('ε')
 
-# # Object Token
-# Token = namedtuple('Token', 'at symbol value')
-# Token.start = property(lambda s: s.at)
-# Token.end = property(lambda s: s.at + len(s.value))
-# Token.__repr__ = lambda s: '({} -> {})@[{}:{}]'.format(s.symbol, repr(s.value), s.at, s.end)
-# Token.is_END = lambda s: s.symbol == END
+PREDICT = Signal('?')
+SHIFT   = Signal('<')
+REDUCE  = Signal('!')
+ACCEPT  = Signal('$')
 
 
 class Token(object):
+
+    """Token object is the lexical element of a grammar, which also
+    includes the lexeme's position and literal value.
+
+    """
 
     def __init__(self, at, symbol, value):
         self.at = at
@@ -193,6 +209,9 @@ class Token(object):
         yield self.at
         yield self.symbol
         yield self.value
+
+    def is_END(self):
+        return self.symbol == END
 
     @property
     def start(self):
@@ -222,10 +241,10 @@ class Rule(object):
 
     def __init__(self, func):
         self.lhs = func.__name__
-        self.rhs = [x[:-1] if x[-1].isdigit() else x
-                    for x in inspect.signature(func).parameters]
         self.rhs = []
-        for x in inspect.signature(func).parameters:
+        # Signature only works in Python 3
+        # for x in inspect.signature(func).parameters:
+        for x in inspect.getargspec(func).args:
             # Tail digital subscript like xxx_4
             s = re.search(r'_(\d+)$', x)
             # s = re.search(r'_?(\d+)$', x)
@@ -233,10 +252,20 @@ class Rule(object):
                 x = x[:s.start()]
             self.rhs.append(x)
         self.seman = func
-        self.anno = func.__annotations__
+        # Make use of annotations?
+        # self.anno = func.__annotations__
+
+    def __eq__(self, other):
+        """Equality of Rule object relies only upon LHS and RHS, not
+        including semantics! """
+        if isinstance(other, Rule):
+            return (self.lhs == other.lhs) and (self.rhs == other.rhs)
+        else:
+            return False
 
     def __repr__(self):
-        return '( {} -> {} )'.format(self.lhs, ' '.join(self.rhs))
+        """Use '->' or '::='? """
+        return '({} -> {})'.format(self.lhs, ' '.join(self.rhs))
 
     def __iter__(self):
         yield self.lhs
@@ -248,6 +277,21 @@ class Rule(object):
         rl.lhs = lhs
         rl.rhs = list(rhs)
         return rl
+
+    def eval(self, *args):
+        return self.seman(*args)
+
+    @property
+    def size(self):
+        return len(self.rhs)
+
+    @property
+    def src_info(self):
+        """Simulates Traceback information."""
+        co = self.seman.__code__
+        info = '  File "{}", line {}, in {}\n'.format(
+            co.co_filename, co.co_firstlineno, self.seman.__module__)
+        return info
 
 
 class Item(object):
@@ -323,7 +367,7 @@ class Item(object):
 
 class Grammar(object):
 
-    def __init__(self, lexes: dict, rules: list, attrs: list):
+    def __init__(self, lexes, rules, attrs):
         """
         Parameters:
 
@@ -359,15 +403,15 @@ class Grammar(object):
                 self.nonterminals.append(rl.lhs)
 
         # This block checks completion of given grammar.
-        _t_unused = set(self.terminals).difference([IGNORED, END, ERROR])
-        _nt_unused = set(self.nonterminals).difference([rules[0].lhs])
+        unused_t = set(self.terminals).difference([IGNORED, END, ERROR])
+        unused_nt = set(self.nonterminals).difference([rules[0].lhs])
 
         # Raise grammar error in case any symbol is undeclared
         msg = ''
         for r, rl in enumerate(rules):
             for j, X in enumerate(rl.rhs):
-                _t_unused.discard(X)
-                _nt_unused.discard(X)
+                unused_t.discard(X)
+                unused_nt.discard(X)
                 if X not in self.terminals and X not in self.nonterminals:
                     msg += '\nUndeclared symbol:'
                     msg += "@{}`th symbol '{}' in {}`th rule {}.".format(j, X, r, rl)
@@ -376,10 +420,10 @@ class Grammar(object):
             raise GrammarError(msg)
 
         # Raise warnings in case any symbol is unused.
-        for t in _t_unused:
+        for t in unused_t:
             # warnings.warn('Warning: referred terminal symbol {}'.format(t))
             warnings.warn('Unreferred terminal symbol {}'.format(repr(t)))
-        for nt in _nt_unused:
+        for nt in unused_nt:
             # warnings.warn('Warning: referred nonterminal symbol {}'.format(nt))
             warnings.warn('Unreferred nonterminal symbol {}'.format(repr(nt)))
 
@@ -422,13 +466,13 @@ class Grammar(object):
     def __repr__(self):
         return 'Grammar\n{}\n'.format(pp.pformat(self.rules))
 
-    def __getitem__(self, k: str):
+    def __getitem__(self, k):
         if k in self.ngraph:
             return self.ngraph[k]
         else:
             raise ValueError('No such LHS {} in grammar.'.format(k))
 
-    def make_item(G, r: int, pos: int):
+    def item(G, r, pos):
         """Create a pair of integers indexing the rule and active position.
 
         """
@@ -481,7 +525,13 @@ class Grammar(object):
         G.FIRST = FIRST
         G.first1 = first1
 
-        def first_of_seq(seq, tail=DUMMY):
+        def first_star(seq, tail=DUMMY):
+            """Find FIRST set of a sequence of symbols.
+
+            :seq:   A list of strings
+
+            """
+            assert not isinstance(seq, str)
             fs = set()
             for X in seq:
                 fs.update(G.first1(X))
@@ -492,9 +542,9 @@ class Grammar(object):
             fs.add(tail)
             return fs
 
-        G.first_of_seq = first_of_seq
+        G.first_star = first_star
 
-    def tokenize(G, inp: str, with_end: False):
+    def tokenize(G, inp, with_end):
         """Perform lexical analysis
         with given string. Yield feasible matches with defined lexical patterns.
         Ambiguity is resolved by the order of patterns within definition.
@@ -543,7 +593,7 @@ class Grammar(object):
             if not itm.ended():
                 for j, jrl in enumerate(G.rules):
                     if itm.actor == jrl.lhs:
-                        jtm = G.make_item(j, 0)
+                        jtm = G.item(j, 0)
                         if jtm not in C:
                             C.append(jtm)
             z += 1
@@ -591,11 +641,11 @@ class Grammar(object):
                         #     if EPSILON not in G.first1(X):
                         #         break
                         # for b in jlk:
-                        #     jtm = G.make_item(j, 0)
+                        #     jtm = G.item(j, 0)
                         #     if (jtm, b) not in C:
                         #         C.append((jtm, b))
-                        for b in G.first_of_seq(itm.look_over, a):
-                            jtm = G.make_item(j, 0)
+                        for b in G.first_star(itm.look_over, a):
+                            jtm = G.item(j, 0)
                             if (jtm, b) not in C:
                                 C.append((jtm, b))
             z += 1
@@ -618,15 +668,22 @@ class assoclist(list):
     """
 
     def __setitem__(self, k, v):
+        """Overides alist[k] = v"""
         ls = super(assoclist, self)
         ls.append((k, v))
 
     def __getitem__(self, k0):
+        """Overrides: ys = alist[k]"""
         vs = [v for k, v in self if k == k0]
         if vs:
             return vs[0]
         else:
             raise KeyError('No such attribute.')
+
+    def items(self):
+        """Yield key-value pairs."""
+        for k, v in self:
+            yield (k, v)
 
 
 class cfg(type):
@@ -653,16 +710,25 @@ class cfg(type):
         attrs = []
 
         for k, v in accu:
+            # Built-ins are of no use
+            if k.startswith('__') and k.endswith('__'):
+                continue
             # Handle lexical declaration.
-            if not k.startswith('_') and isinstance(v, str):
+            elif not k.startswith('_') and isinstance(v, str):
                 if k in lexes:
                     raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
                 lexes[k] = v
             # Handle implicit rule declaration through methods.
             elif not k.startswith('_') and callable(v):
-                rules.append(Rule(v))
+                r = Rule(v)
+                if r in rules:
+                    raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
+                rules.append(r)
             # Handle explicit rule declaration through decorated methods.
             elif isinstance(v, Rule):
+                # FIXME:
+                if v in rules:
+                    raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(v, v.src_info))
                 rules.append(v)
             # Handle normal private attributes/methods.
             # These must be prefixed with (at least one) underscore
@@ -704,7 +770,7 @@ ParseLeaf = Token
 
 class ParseTree(object):
 
-    def __init__(self, rule: Rule, subs: list):
+    def __init__(self, rule, subs):
         # Contracts
         assert isinstance(rule, Rule)
         for sub in subs:
@@ -712,58 +778,57 @@ class ParseTree(object):
         self.rule = rule
         self.subs = subs
 
-    """Postorder tree traversal with double stacks scheme.
-    Example:
-    - prediction stack
-    - processed argument stack
-
-    i-  [T]$
-    a- $[]
-
-    =(T -> AB)=>>
-
-    i-  [A B (->T)]$
-    a- $[]
-
-    =(A -> a1 a2)=>>
-
-    i-  [a1 a2 (->A) B (->T)]$
-    a- $[]
-
-    =a1, a2=>>
-
-    i-  [(->A) B (->T)]$
-    a- $[a1 a2]
-
-    =(a1 a2 ->A)=>>
-
-    i-  [B (->T)]$
-    a- $[A]
-
-    =(B -> b)=>>
-
-    i-  [b (->B) (->T)]$
-    a- $[A]
-
-    =b=>>
-
-    i-  [(->B) (->T)]$
-    a- $[A b]
-
-    =(b ->B)=>>
-
-    i-  [(->T)]$
-    a- $[A B]
-
-    =(A B ->T)=>>
-
-    i-  []$
-    a- $[T]
-
-    """
-
     def translate(tree, trans_tree=None, trans_leaf=None):
-        # Direct translation
+        """Postorder tree traversal with double stacks scheme.
+
+        Example:
+        - prediction stack
+        - processed argument stack
+
+        i-  [T]$
+        a- $[]
+
+        =(T -> AB)=>>
+
+        i-  [A B (->T)]$
+        a- $[]
+
+        =(A -> a1 a2)=>>
+
+        i-  [a1 a2 (->A) B (->T)]$
+        a- $[]
+
+        =a1, a2=>>
+
+        i-  [(->A) B (->T)]$
+        a- $[a1 a2]
+
+        =(a1 a2 ->A)=>>
+
+        i-  [B (->T)]$
+        a- $[A]
+
+        =(B -> b)=>>
+
+        i-  [b (->B) (->T)]$
+        a- $[A]
+
+        =b=>>
+
+        i-  [(->B) (->T)]$
+        a- $[A b]
+
+        =(b ->B)=>>
+
+        i-  [(->T)]$
+        a- $[A B]
+
+        =(A B ->T)=>>
+
+        i-  []$
+        a- $[T]
+
+        """        # Direct translation
         if not trans_tree:
             trans_tree = lambda t, args: t.rule.seman(*args)
         if not trans_leaf:
@@ -830,22 +895,56 @@ def meta(cls_parser):
 
 class ParserBase(object):
 
-    """Abstract class for parsers. """
+    """Abstract class for both deterministic/non-deterministic parsers.
+
+    Note method *parse* produces a list of ParseTree's and *interpret*
+    a list of semantic results.
+
+    """
 
     def __init__(self, grammar):
         self.grammar = grammar
+        # Share auxiliary methods declared in Grammar instance
         for k, v in grammar.attrs:
             assert k.startswith('_')
             setattr(self, k, v)
+        # Delegation
+        self.tokenize = grammar.tokenize
 
     def __repr__(self):
         # Polymorphic representation without overriding
         # raise NotImplementedError('Parser should override __repr__ method. ')
-        return self.__class__.__name__ + 'Parser-{}'.format(self.grammar)
+        return self.__class__.__name__ + '-Parser-{}'.format(self.grammar)
 
-    def parse(self, inp: str):
+    def parse(self, inp, interp):
+        # Parse input and produc
         # Must be overriden
-        raise NotImplementedError('Any parse should have a `parse` method.')
+        raise NotImplementedError('Any parser should have a parse method.')
+
+    def interpret(self, inp):
+        return self.parse(inp, interp=True)
+
+
+class ParserDeterm(ParserBase):
+
+    """Abstract class for deterministic parsers. While the *parse* method
+    tends to return a list of results and deterministic parsers yield
+    at most ONE result, *parse1* and *interpret1* return this result
+    directly.
+
+    """
+
+    def parse(self, inp, interp):
+        return [self.parse1(inp, interp=interp)]
+
+    def interpret(self, inp):
+        return [self.interpret1(inp)]
+
+    def parse1(self, inp, interp):
+        raise NotImplementedError('Deterministic parser should have parse1 method.')
+
+    def interpret1(self, inp):
+        return self.parse1(inp, interp=True)
 
 
 @meta
@@ -871,12 +970,12 @@ class Earley(ParserBase):
     def __init__(self, grammar):
         super(Earley, self).__init__(grammar)
 
-    def recognize(self, inp: str):
+    def recognize(self, inp):
         """Naive Earley's recognization algorithm. No parse produced.
 
         """
         G = self.grammar
-        S = [[(0, G.make_item(0, 0))]]
+        S = [[(0, G.item(0, 0))]]
 
         for k, tok in enumerate(G.tokenize(inp, with_end=True)):
 
@@ -911,11 +1010,16 @@ class Earley(ParserBase):
                         if jtm.actor in G.nonterminals:
                                 for r, rule in enumerate(G.rules):
                                     if rule.lhs == jtm.actor:
-                                        ktm = G.make_item(r, pos=0)
+                                        ktm = G.item(r, pos=0)
                                         new = (k, ktm)
                                         if new not in C:
                                             C.append(new)
-                        # Scanning/proceed for next States
+                                        if not rule.rhs:
+                                            # Directly NULLABLE
+                                            enew = (j, jtm.shifted)
+                                            if enew not in C:
+                                                C.append(enew)
+                        # Scanning/proceed for the next State
                         elif jtm.actor == tok.symbol:
                             C1.append((j, jtm.shifted))
                 else: # jtm.ended() at k
@@ -940,25 +1044,23 @@ class Earley(ParserBase):
 
         return S
 
-    def parse_chart(self, inp: str):
-        """Perform chart-parsing framework method with Earley's recognition
-        algorithm. The result is a chart, which semantically includes
-        Graph Structured Stack i.e. all possible parse trees.
+    def parse_chart(self, inp):
+        """Perform general chart-parsing framework method with Earley's
+        recognition algorithm. The result is a chart, which
+        semantically includes Graph Structured Stack i.e. all possible
+        parse trees.
 
         Semantics of local variables:
 
         :tokens:
-
             Caching the input tokens;
 
         :chart:
-
             The graph recording all recognitions, where chart[j][k] is
             a set containing all recognized parsings on input segment
             from j'th to k'th tokens.
 
         :agenda:
-
             During the Earley parsing process, the agenda caches all
             items that should be processed when consuming the k'th
             input token.
@@ -967,10 +1069,17 @@ class Earley(ParserBase):
         G = self.grammar
         # chart[i][j] registers proceeding items from @i to @j
         chart = self.chart = defaultdict(lambda: defaultdict(set))
-        agenda = [(0, G.make_item(0, 0))]
+        agenda = [(0, G.item(0, 0))]
 
         for k, tok in enumerate(G.tokenize(inp, False)):
             agenda1 = []
+            # General foolish MORE-PASS scheme
+            # 
+            # - can handle null-rules correctly by repeatedly
+            #   detect new completed item which maybe induced
+            #   by completing nullable items
+            # - can be optimized into ONE-PASS like in method
+            #   
             while agenda:
                 j, jtm = agenda.pop()
                 # Directly register intermediate state item
@@ -982,7 +1091,7 @@ class Earley(ParserBase):
                         if jtm.actor in G.nonterminals:
                             for r, rule in enumerate(G.rules):
                                 if rule.lhs == jtm.actor:
-                                    ktm = G.make_item(r, 0)
+                                    ktm = G.item(r, 0)
                                     if ktm not in chart[k][k]:
                                         chart[k][k].add(ktm)
                                         agenda.append((k, ktm))
@@ -1007,14 +1116,14 @@ class Earley(ParserBase):
 
         return chart
 
-    def parse_forest(self, inp: str):
+    def parse_forest(self, inp):
         """Construct single-threaded parse trees (the Parse Forest based upon
         the underlying Graph Structured Stack and from another
         perspective, the chart) during computing Earley item sets.
 
         The most significant augmentation w.R.t. the naive recognition
-        algorithm is when more than one completed items @jtm in the
-        agenda matches one parent @(itm)'s need, the parent items'
+        algorithm is that, when more than one completed items @jtm in
+        the agenda matches one parent @(itm)'s need, the parent items'
         stacks need to be forked/copied to accept these different @jtm
         subtrees as a feasible shift.
 
@@ -1032,46 +1141,92 @@ class Earley(ParserBase):
         """
         G = self.grammar
         # state :: {<Item>: [<Stack>]}
-        s0 = {(0, G.make_item(0, 0)): [()]}
+        s0 = {(0, G.item(0, 0)): [()]}
         ss = self.forest = []
         ss.append(s0)
 
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
-
+        # Tokenizer with END token to force the tailing completion
+        # pass.
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)): 
             # Components for the behavior of One-Pass transitive closure
             # - The accumulated set as final closure
             s_acc = ss[-1]
             # - The set of active items to be processed, i.e. AGENDA
-            s_act = {**s_acc}
+            s_act = dict(s_acc)
             # - The initial set for next token position
-            s_after = {}
-
+            s_after = {} 
             while 1:
                 # - The augmention items predicted/completed by items
                 #   in the AGENDA @s_act
-                s_aug = {}
-
+                s_aug = {} 
                 for (j, jtm), j_stks in s_act.items():
-                    # prediction
-                    # TODO: Support nullable grammar (cancel LOOP) by applying
-                    # predictor which
-                    # - can predict with overlooking sequential nullable symbols
-                    # - can conclude completion of nullable symbols
+
+                    # PREDICTION
                     if not jtm.ended():
-                        if tok.symbol != END:
-                            if jtm.actor in G.nonterminals:
-                                for r, rule in enumerate(G.rules):
-                                    if rule.lhs == jtm.actor:
-                                        new = (k, G.make_item(r, 0))
-                                        if new not in s_acc:
+
+                        # *Problem of nullability* dealt with
+                        # enhanced-greedier-predictor. See book
+                        # chapter #Parsing Techniques# 7.2.3.2
+                        #
+                        # For a direct nullable item [k,(B->.)] when
+                        # 
+                        # handling [j,(A->α.Bγ)]
+                        # 
+                        # - Reduce it immediately
+                        # 
+                        # - Make prediction overlooking B for each
+                        #   item, this means [j,(A->α.BCδ)] ensures
+                        #   [j,(A->αB.Cδ)] in the augmenting AGENDA
+                        #   as well as corresponding augmented stacks.
+                        # 
+                        # - When processing [j,(A->αB.Cδ)], if there
+                        #   is nullable rule (C->), the prediction
+                        #   [j,(A->αBC.δ)] is appended further.
+                        #
+                        # More generally, any INDIRECTLY NULLABLE
+                        # symbol E with rule (E->BC) referring (B->)
+                        # and (C->) would finally be reduced, since
+                        # [j,(E->.BC)] ensures [j,(E->B.C)] to be
+                        # waiting, # which when processed ensures
+                        # [j,(E->BC.)] to be waiting further, causing
+                        # [j,(E->BC.)] finally to be completed. Thus
+                        # ONE-PASS can escape no NULLABLEs.
+                        #
+                        # Note only the DIRECT NULLABLILIDY is
+                        # concerned, rather than INDIRECT. Since the
+                        # computation of item set implictly covers
+                        # the computation of INDIRECT NULLABILITY
+                        # already.
+                        # 
+                        # FIXME: Seems rigorous?
+
+                        if jtm.actor in G.nonterminals:
+                            for r, rule in enumerate(G.rules):
+                                if rule.lhs == jtm.actor:
+                                    # Non-kernel item
+                                    new = (k, G.item(r, 0))
+                                    if new not in s_acc:
+                                        if rule.rhs:
                                             s_aug[new] = [()]
-                            # scanning
-                            elif jtm.actor == tok.symbol:
-                                if (j, jtm.shifted) not in s_after:
-                                    s_after[j, jtm.shifted] = []
-                                for j_stk in j_stks:
-                                    s_after[j, jtm.shifted].append(j_stk + (tok,))
-                    # completion
+                                        else:
+                                            # Nullable completion and
+                                            # prediction. For tricky
+                                            # grammar, commenting this
+                                            # out to see the failure.
+                                            new0 = (j, jtm.shifted)
+                                            j_tr = ParseTree(rule, [])
+                                            for j_stk in j_stks:
+                                                if new0 not in s_aug:
+                                                    s_aug[new0] = [j_stk + (j_tr,)]
+                                                else:
+                                                    s_aug[new0].append(j_stk + (j_tr,))
+                        # SCANNING
+                        elif jtm.actor == tok.symbol:
+                            if (j, jtm.shifted) not in s_after:
+                                s_after[j, jtm.shifted] = []
+                            for j_stk in j_stks:
+                                s_after[j, jtm.shifted].append(j_stk + (tok,))
+                    # COMPLETION
                     else:
                         for j_stk in j_stks:
                             j_tr = ParseTree(jtm.rule, j_stk)
@@ -1096,12 +1251,12 @@ class Earley(ParserBase):
                     # No new AGENDA items
                     break
 
-            if tok.symbol != END:
+            if not tok.is_END():
                 ss.append(s_after)
 
         return ss
 
-    def parse(self, inp: str, interp=False):
+    def parse(self, inp, interp=False):
         """Fully parse. Use parse_forest as default parsing method and final
         parse forest constructed is returned.
 
@@ -1119,9 +1274,6 @@ class Earley(ParserBase):
                     else:
                         fin.append(tree)
         return fin
-
-    def interpret(self, inp: str):
-        return self.parse(inp, True)
 
 
 @meta
@@ -1183,7 +1335,7 @@ class GLR(ParserBase):
         G = self.grammar
 
         # Kernels
-        self.Ks = Ks = [[G.make_item(0, 0)]]
+        self.Ks = Ks = [[G.item(0, 0)]]
         self.GOTO = GOTO = []
         self.ACTION = ACTION = []
 
@@ -1192,12 +1344,12 @@ class GLR(ParserBase):
         while k < len(Ks):
 
             I = Ks[k]
-            iacts = {'reduce': [], 'shift': {}}
+            iacts = {REDUCE: [], SHIFT: {}}
             igotoset = OrderedDict()
 
             for itm in G.closure(I):
                 if itm.ended():
-                    iacts['reduce'].append(itm)
+                    iacts[REDUCE].append(itm)
                 else:
                     X = itm.actor
                     jtm = itm.shifted
@@ -1211,7 +1363,7 @@ class GLR(ParserBase):
                 if J not in Ks:
                     Ks.append(J)
                 j = Ks.index(J)
-                iacts['shift'][X] = j
+                iacts[SHIFT][X] = j
                 igoto[X] = j
 
             ACTION.append(iacts)
@@ -1219,7 +1371,7 @@ class GLR(ParserBase):
 
             k += 1
 
-    def parse(self, inp: str):
+    def parse(self, inp, interp=False):
 
         """Note during the algorithm, When forking the stack, there may be
         some issues:
@@ -1263,8 +1415,8 @@ class GLR(ParserBase):
 
             # State on the stack top
             st = stk[-1]
-            reds = ACTION[st]['reduce']
-            shif = ACTION[st]['shift']
+            reds = ACTION[st][REDUCE]
+            shif = ACTION[st][SHIFT]
 
             # REDUCE
             # There may be multiple reduction options. Each option leads
@@ -1325,15 +1477,14 @@ class GLR(ParserBase):
                     # forest.append([stk, trs, i+1])
                     pass
 
-        return results
-
-    def interpret(self, inp: str):
-        res = self.parse(inp)
-        return [tree.translate() for tree in res]
+        if interp:
+            return [tree.translate() for tree in results]
+        else:
+            return results
 
 
 @meta
-class LALR(ParserBase):
+class LALR(ParserDeterm):
 
     """Lookahead Leftmost-reading Rightmost-derivation (LALR) parser may
     be the most widely used parser type. It is a parser generator which
@@ -1352,7 +1503,7 @@ class LALR(ParserBase):
 
         G = self.grammar
 
-        Ks = [[G.make_item(0, 0)]]   # Kernels
+        Ks = [[G.item(0, 0)]]   # Kernels
         goto = []
 
         # Calculate Item Sets, GOTO and propagation graph in one pass.
@@ -1469,7 +1620,7 @@ class LALR(ParserBase):
         for i, xto in enumerate(goto):
             for a, j in xto.items():
                 if a in G.terminals:
-                    ACTION[i][a] = ('shift', j)
+                    ACTION[i][a] = (SHIFT, j)
 
         # REDUCE for ended to reduce.
         conflicts = []
@@ -1478,13 +1629,13 @@ class LALR(ParserBase):
                 for lk in lks:
                     for ctm, lk1 in G.closure1_with_lookahead(itm, lk):
                         if ctm.ended():
-                            if lk1 in ACTION[i] and ACTION[i][lk1] != ('reduce', ctm):
+                            if lk1 in ACTION[i] and ACTION[i][lk1] != (REDUCE, ctm):
                                 conflicts.append((i, lk1, ctm))
                             else:
-                                ACTION[i][lk1] = ('reduce', ctm)
+                                ACTION[i][lk1] = (REDUCE, ctm)
                 # # Accept-Item
                 if itm.index_pair == (0, 1):
-                    ACTION[i][END] = ('accept', None)
+                    ACTION[i][END] = (ACCEPT, None)
         if conflicts:
             msg = ''
             for i, lk, itm in conflicts:
@@ -1493,14 +1644,14 @@ class LALR(ParserBase):
                     '  - in ACTION[{}]: '.format(i),
                     '{}'.format(pp.pformat(ACTION[i])),
                     "  * conflicting action on token {}: ".format(repr(lk)),
-                    "{{{}: ('reduce', {})}}".format(repr(lk), itm)
+                    "{{{}: (REDUCE, {})}}".format(repr(lk), itm)
                 ])
             msg = '\n########## Error ##########\n {} \n#########################\n'.format(msg)
             raise ParserError(msg)
 
         self.ACTION = ACTION
 
-    def parse(self, inp: str, interp=False):
+    def parse1(self, inp, interp=False):
 
         """Perform table-driven deterministic parsing process. Only one parse
         tree is to be constructed.
@@ -1544,7 +1695,7 @@ class LALR(ParserBase):
                     act, arg = ACTION[i][tok.symbol]
 
                     # SHIFT
-                    if act == 'shift':
+                    if act == SHIFT:
                         if interp:
                             trees.append(tok.value)
                         else:
@@ -1554,7 +1705,7 @@ class LALR(ParserBase):
                         tok = next(toker)
 
                     # REDUCE
-                    elif act == 'reduce':
+                    elif act == REDUCE:
                         rtm = arg
                         ntar = rtm.target
                         subts = []
@@ -1571,7 +1722,7 @@ class LALR(ParserBase):
                         sstack.append(GOTO[sstack[-1]][ntar])
 
                     # ACCEPT
-                    elif act == 'accept':
+                    elif act == ACCEPT:
                         return trees[-1]
 
                     else:
@@ -1580,12 +1731,9 @@ class LALR(ParserBase):
         except StopIteration:
             raise ParserError('No enough tokens for completing the parse. ')
 
-    def interpret(self, inp):
-        return self.parse(inp, interp=True)
-
 
 @meta
-class WLL1(ParserBase):
+class WLL1(ParserDeterm):
     """Weak-LL(1)-Parser.
 
     Since strong-LL(1) grammar parser includes the usage of FOLLOW
@@ -1632,7 +1780,7 @@ class WLL1(ParserBase):
             else:
                 pass
 
-    def parse(self, inp: str, interp=False):
+    def parse1(self, inp, interp=False):
         """The process is exactly the `translate' process of a ParseTree.
 
         """
@@ -1698,16 +1846,28 @@ class WLL1(ParserBase):
                         else:
                             argstack.append(tok)
                     k, tok = next(toker)
-        except StopIteration as e:
+        except StopIteration:
             raise ParserError('No enough token for complete parsing.')
 
 
 @meta
-class GLL1(ParserBase):
-    """Generalized LL(1) Parser. """
+class GLL(ParserBase):
+    """Generalized LL(1) Parser.
+
+    Honestly, GLL(1) Parser is just the prototype of Earley Parser
+    with BFS nature but without integration of *Dynamic Programming*
+    techniques (thus unable to detect left-recursion). The
+    augmentation by memoizing recognition at certain postitions is
+    quite straightforward.
+
+    Since all LL(1) prediction conflicts in the table are traced by
+    forking parallel stacks during parsing, left-sharing problem gets
+    handled elegantly and correctly.
+
+    """
 
     def __init__(self, grammar):
-        super(GLL1, self).__init__(grammar)
+        super(GLL, self).__init__(grammar)
         self._calc_gll1_table()
 
     def _calc_gll1_table(self):
@@ -1718,150 +1878,120 @@ class GLL1(ParserBase):
             if lhs not in table:
                 table[lhs] = defaultdict(list)
             if rhs:
-                for a in G.first_of_seq(rhs, EPSILON):
+                for a in G.first_star(rhs, EPSILON):
                     if a is not EPSILON:
                         table[lhs][a].append(rule)
+            else:
+                table[lhs][EPSILON].append(rule)
 
-    def parse(self, inp: str):
-        """Table-driven GLL1 parsing based on BFS (unlike typical LL1 with
-        backtracking implementing full DFS).
+    def parse(self, inp, interp=False):
+        """ 
+        """ 
+        # Tracing parallel stacks, where signal (α>A) means reducing
+        # production A with sufficient amount of arguments on the
+        # argument stack. 
+        # | aβd#               :: {inp-stk}
+        # | (#      ,      S#) :: ({arg-stk}, {pred-stk}) 
+        # ==(S -> aBc), (S -> aD)==>> 
+        # | aβd#
+        # | (#      ,    aBd(aBd>S)#)
+        #   (#      ,    aDe(aD>S)#) 
+        # ==a==>> 
+        # | βd#
+        # | (#a     ,     Bd(aBd>S)#)
+        #   (#a     ,     De(aD>S)#) 
+        # ==prediction (B -> b h)
+        #   prediction (D -> b m), push predicted elements into states ==>> 
+        # | βd#
+        # | (#a     ,bh(bh>B)d(aBd>S)#)
+        #   (#a     ,bm(bm>D)De(aD>S)#) 
+        # ==b==> 
+        # | βd#
+        # | (#ab    ,h(bh>B)d(aBd>S)#)
+        #   (#ab    ,m(bm>D)De(aD>S)#) 
+        # ==h==> 
+        # | βd#
+        # | (#abh   ,(bh>B)d(aBd>S)#)
+        #   (#ab    ,{FAIL} m(bm>D)De(aD>S)#) 
+        # ==(reduce B -> β), push result into args ==>> 
+        # | βd#
+        # | (#aB    ,d(aBd>S)#) 
+        # and further. 
+        # """
 
-        Tracing parallel stacks, where signal (α>A) means reducing
-        production A with sufficient amount of arguments on the
-        argument stack.
-
-        tokens:  | aβd#
-        threads: | (#      ,      S#) :: ({arg-stk}, {pred-stk})
-
-        ==(S -> aBc), (S -> aD)==>>
-
-        | aβd#
-        | (#      ,    aBd(aBd>S)#)
-          (#      ,    aDe(aD>S)#)
-
-        ==a==>>
-
-        | βd#
-        | (#a     ,     Bd(aBd>S)#)
-          (#a     ,     De(aD>S)#)
-
-        ==prediction (B -> b h)
-          prediction (D -> b m), push predicted elements into states ==>>
-
-        | βd#
-        | (#a     ,bh(bh>B)d(aBd>S)#)
-          (#a     ,bm(bm>D)De(aD>S)#)
-
-        ==b==>
-
-        | βd#
-        | (#ab    ,h(bh>B)d(aBd>S)#)
-          (#ab    ,m(bm>D)De(aD>S)#)
-
-        ==h==>
-
-        | βd#
-        | (#abh   ,(bh>B)d(aBd>S)#)
-          (#ab    ,{FAIL} m(bm>D)De(aD>S)#)
-
-        ==(reduce B -> β), push result into args ==>>
-
-        | βd#
-        | (#aB    ,d(aBd>S)#)
-
-        and further.
-
-        """
         push, pop = list.append, list.pop
         table = self.table
         G = self.grammar
-        # 
-        PRED, REDU = 0, 1
-        threads = [([], [(PRED, G.top_symbol)])] 
-        # 
-        for k, tok in enumerate(G.tokenize(inp)):
+        #
+        PRED, REDU = '<', '>'
+        agenda = [([], [(PRED, G.top_symbol)])]
+        results = []
+        #
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
             at, look, lexeme = tok
-            acc = threads[k]
-            agenda = threads[k][:]
-            while 1:
-                agenda1 = []
-                for (astk, pstk) in agenda:
-                    if not pstk:
-                        # Deliver result?
-                        yield astk[-1]
-                    else:
-                        act, actor = pstk.pop(0)
-                        if act is PRED:
-                            if actor in G.nonterminals:
-                                if look in table[actor]:
-                                    for rule in table[actor][look]:
-                                        nps = [(PRED, x) for x in rule.rhs]
-                                        agenda1.append(
-                                            (astk[:], [*nps, (REDU, rule.lhs), *pstk]))
-                            else:
-                                if look == actor:
-                                    if interp: astk.append(lexeme)
-                                    else: astk.append(tok)
-                                    agenda1.append((astk, pstk))
+            agenda1 = []
+            while agenda:
+                (astk, pstk) = agenda.pop(0)
+                if not pstk and len(astk) == 1: # and tok.symbol == END:
+                    # Deliver partial result?
+                    if tok.is_END():
+                        results.append(astk[0])
+                else:
+                    act, actor = pstk.pop(0)
+                    # Prediction
+                    if act is PRED:
+                        if actor in G.nonterminals:
+                            if look in table[actor]:
+                                for rule in table[actor][look]:
+                                    nps = [(PRED, x) for x in rule.rhs] + [(REDU, rule)]
+                                    agenda.append(
+                                        (astk[:], nps + pstk))
+                            if EPSILON in table[actor]:
+                                # Directly nullable!
+                                #
+                                # - Indirectly nullable symbol
+                                #   would get computed
+                                #   on-the-fly
+                                erule = table[actor][EPSILON][0]
+                                if interp:
+                                    arg = erule.eval()
+                                else:
+                                    arg = ParseTree(erule, [])
+                                agenda.append(
+                                    (astk + [arg], pstk[:]))
                         else:
-                            subs = []
-                            for _ in actor.rhs:
-                                subs.insert(0, astk.pop())
-                            t = ParseTree(actor.rhs, subs)
-                            if interp: astk.append(t.translate())
-                            else: astk.append(t)
-                            agenda1.append((astk, pstk))
-                if not agenda1:
-                    break
-                else: 
-                    acc.extend(agenda1)
-                    agenda = agenda1
+                            assert isinstance(actor, str)
+                            if look == actor:
+                                if interp: astk.append(lexeme)
+                                else: astk.append(tok)
+                                agenda1.append(
+                                    (astk, pstk))
+                            else:
+                                # # May report dead state here for inspection
+                                # print('Expecting \'{}\', but got {}: \n{}\n'.format(
+                                #     actor,
+                                #     tok,
+                                #     pp.pformat((astk, pstk))))
+                                pass
+                    # Completion
+                    else:
+                        assert isinstance(actor, Rule)
+                        subs = []
+                        for _ in actor.rhs:
+                            subs.insert(0, astk.pop())
+                        if interp:
+                            astk.append(actor.eval(*subs))
+                        else:
+                            astk.append(ParseTree(actor, subs))
+                        agenda.append(
+                            (astk, pstk))
+            if not agenda1:
+                if tok.symbol == END:
+                    pass
+                # raise ParserError('No parse @ {}.'.format(tok))
+            else:
+                agenda = agenda1
 
-# class S(metaclass=lalr):
-
-#     a = r'a'
-
-#     @Rule
-#     def S(a, S):
-#         return a + S
-#     @Rule
-#     def S(a):
-#         return 'A'
-
-# pp.pprint(S)
-# pp.pprint(S.interpret('a  a   a  a'))
-
-# S -> a A b
-#    | b A a
-# A -> c S
-#    | ε
-#
-# {a, b, c}
-
-
-# class fll1(cfg):
-#     def __new__(mcls, n, bs, kw):
-#         grammar = cfg.__new__(mcls, n, bs, kw)
-#         return WLL1(grammar)
+        return results
 
 
-# class SExp(metaclass=WLL1.meta):
-#     l1 = r'\('
-#     r1 = r'\)'
-#     symbol = r'[^\(\)\s]+'
-#     def SExp(symbol):
-#         return symbol
-#     def SExp(l1, SExps, r1):
-#         return SExps
-#     def SExps():
-#         return []
-#     def SExps(SExp, SExps):
-#         return [SExp] + SExps
-
-
-# # pp.pprint(SExp.table)
-# res = SExp.parse('( ( (a ab  xyz  cdef) just ))', interp=0)
-# pp.pprint(res)
-# # pp.pprint(res.to_tuple())
-# pp.pprint(res.translate())
-# # pp.pprint(SExp.parse('( ( (a ab  xyz  cdef) just ))', interp=1))

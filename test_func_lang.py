@@ -103,11 +103,13 @@ class Lam(metaclass=cfg):
 
 
 psr = Earley(Lam)
-psr = GLR(Lam)
 
 # Test whether the grammar is LALR to exclude potential ambiguity
 # and prepare for better performance
-psr = LALR(Lam)
+psr_ear = Earley(Lam)
+psr_gll = GLL(Lam)
+psr_glr = GLR(Lam)
+psr_lalr = LALR(Lam)
 
 
 inp = """
@@ -117,12 +119,26 @@ let a = 3 ;
    map (\c, d -> f c d) xs ys
 """
 
+inp = """
+let a = 3 ;
+    P q = u v
+ in
+   map (\c, d -> f c d) xs ys
+"""
+
 # inp = """
 # let a = 1
 # in (let b = 2 in f a b)
 # """
 
 # print(Lam)
+# psr_gll.interpret(inp) # LEFT-RECURSION!!!!
+# psr_glr.interpret(inp)
+# psr_lalr.interpret(inp)
+# timeit psr_ear.interpret(inp)
+# timeit psr_gll.interpret(inp)
+# timeit psr_glr.interpret(inp)
+# timeit psr_lalr.interpret(inp)
 
 pp.pprint(list(psr.grammar.tokenize(inp, False)))
 pp.pprint(psr.interpret(inp))

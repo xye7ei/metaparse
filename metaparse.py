@@ -1105,7 +1105,7 @@ class Earley(ParserBase):
                                                     s_aug[new0] = [j_stk + (j_tr,)]
                                                 else:
                                                     s_aug[new0].append(j_stk + (j_tr,))
-                        # SCANNI
+                        # SCANNING
                         elif jtm.actor == tok.symbol:
                             if (j, jtm.shifted) not in s_after:
                                 s_after[j, jtm.shifted] = []

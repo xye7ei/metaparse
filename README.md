@@ -146,17 +146,20 @@ and it yields multiple legal results properly:
 ## Parse Trees
 
 In case only parse trees are needed, method bodies can be left emtpy. For exmaple, given the tricky grammar
-
 ```
-class G(metaclass=cfg):
+A → A B
+A → 
+B → b B
+B →
+```
 
-    a = r'a'
-    
-    def S(S, A, B): return
-    def S()       : return
-    def A(a, A)   : return
-    def A()       : return
-    def B(a)      : return
+``` python
+class A(metaclass=Earley.meta):
+    b = r'b'
+    def A(A, B): return
+    def A(): return
+    def B(b, B): return
+    def B(): return
 ```
 
 

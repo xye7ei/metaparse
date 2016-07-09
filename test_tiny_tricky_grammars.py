@@ -3,6 +3,21 @@ import pprint as pp
 from metaparse import *
 
 
+class A(metaclass=Earley.meta):
+    b = r'b'
+    def A(A, B): return
+    def A(): return
+    def B(b, B): return
+    def B(): return
+
+pp.pprint(A.recognize('   b b'))
+pp.pprint(A.parse_chart('   b b'))
+# res = A.parse('   a a')
+# pp.pprint(res)
+assert 0
+
+
+
 class G(metaclass=cfg):
     """Ambigious grammar with Null-rules."""
     a = r'a'
@@ -18,9 +33,11 @@ p_G = Earley(G)
 # p_G = GLR(G)
 # p_G = GLL(G)
 # print(*p_G.tokenize('  a a', with_end=True))
-res = p_G.parse('  a  a')
+# pp.pprint(p_G.recognize('  a  a'))
+# res = p_G.parse('  a  a')
 # pp.pprint(res)
-# assert 0
+
+assert 0
 
 
 class S(metaclass=cfg):

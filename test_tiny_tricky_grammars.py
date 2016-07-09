@@ -7,37 +7,42 @@ class G(metaclass=cfg):
     """Ambigious grammar with Null-rules."""
     a = r'a'
     def S(S, A, B): return
-    def S()       : return
+    # def S()       : return  # What if NULLABLE????
+    def S(a)       : return
     def A(a, A)   : return
     def A()       : return
     def B(a)      : return
+    def B()       : return
+
+p_G = Earley(G)
+# p_G = GLR(G)
+# p_G = GLL(G)
+# print(*p_G.tokenize('  a a', with_end=True))
+res = p_G.parse('  a  a')
+# pp.pprint(res)
+# assert 0
 
 
 class S(metaclass=cfg):
-    """Ambiguous grammar with no left-recursion."""
+    """Ambiguous grammar with strong ambiguity. """
     u = r'u'
-    def S(A, B, C): return
-    def A(u): return
-    def A(): return
-    def B(E): return
-    def B(F): return
-    def C(u): return
-    def C(): return
-    def E(u): return
-    def E(): return
-    def F(u): return
-    def F(): return
+    def S(S, B, C) : return
+    def S(u)       : return
+    def S()        : return
+    def B(E)       : return
+    def B(F)       : return
+    def C(u)       : return
+    def C()        : return
+    def E(u)       : return
+    def E()        : return
+    def F(u)       : return
+    def F()        : return
 
 
-# p_G = Earley(G)
-# res = p_G.parse('  a  b')
-# pp.pprint(res)
-
-
-# p_S = Earley(S)
-# res = p_S.parse('u')
-# pp.pprint(res) 
-# assert 0
+p_S = Earley(S)
+res = p_S.parse('u')
+pp.pprint(res) 
+assert 0
 
 
 class GIfThenElse(metaclass=cfg):

@@ -2,8 +2,9 @@ import pprint as pp
 
 from metaparse import *
 
+ids = []
 
-class LRVal(metaclass=cfg): 
+class LRVal(metaclass=cfg):
 
     # Lexical elements in attribute form:
     #
@@ -11,29 +12,63 @@ class LRVal(metaclass=cfg):
     #
     EQ   = r'='
     STAR = r'\*'
-    ID   = r'\w+'
+    ID   = r'[_a-zA-Z]\w*'
 
     # Rules in method form:
     #
-    #   def <symbol> (<symbol> ... ):
-    #       <do-sth>                    # Semantics in pure Python code!
-    #       ...
+    #   def <symbol> (<symbol> ... ):       # Syntatic rule by signature
+    #       <do-sth> ...                    # Semantics in pure Python code!
     #       return <symbol-value>
-    #    
+    #
     def S(L, EQ, R):
-        return ('stmt', L, R) 
+        print('Got ids:', ids)
+        print('assign %s to %s' % (L, R))
+        ids.clear()
+        
     def S(R):
-        return ('expr', R) 
+        print('Got ids:', ids)
+        return ('expr', R)
 
     def L(STAR, R):
-        # print('Got a pointer to %s' % [R])
-        return ('pointer-to', R) 
+        return ('REF', R)
     def L(ID):
-        # print('Got a ID: %s' % [ID])
+        ids.append(ID)
         return ID
 
     def R(L):
-        return L 
+        return L
+
+from metaparse import cfg2, rule
+
+@cfg2
+class LRVal:
+
+    EQ   = r'='
+    STAR = r'\*'
+    ID   = r'[_a-zA-Z]\w*'
+
+    @rule
+    def S(L, EQ, R):
+        print('Got ids:', ids)
+        print('assign %s to %s' % (L, R))
+        ids.clear()
+        
+    @rule
+    def S(R):
+        print('Got ids:', ids)
+        return ('expr', R)
+
+    @rule
+    def L(STAR, R):
+        return ('REF', R)
+    @rule
+    def L(ID):
+        ids.append(ID)
+        return ID
+
+    @rule
+    def R(L):
+        return L
 
 
 # pp.pprint(Glrval.closure_with_lookahead(G.make_item(0, 0), '%'))
@@ -47,31 +82,31 @@ l_LRVal = LALR(LRVal)
 # pp.pprint(g_LRVal.interpret('abc = * * ops'))
 # pp.pprint(g_LRVal.interpret('* abc = * * * ops'))
 
-pp.pprint(l_LRVal.interpret('abc'))
-pp.pprint(l_LRVal.interpret('abc = * * ops'))
-pp.pprint(l_LRVal.interpret('* abc = * * * ops'))
+# pp.pprint(l_LRVal.interpret1('abc'))
+# pp.pprint(l_LRVal.interpret1('abc = * * ops'))
+pp.pprint(l_LRVal.interpret1('* abc = *  ** ops'))
 
 
-class GArith(metaclass=cfg): 
-    IGNORED = r'\s+' 
+class GArith(metaclass=cfg):
+    IGNORED = r'\s+'
     plus   = r'\+'
     times  = r'\*'
     number = r'\d+'
     left   = r'\('
-    right  = r'\)' 
+    right  = r'\)'
     # bla    = r'bla'
     def Expr(Expr, plus, Term):
         return Expr + Term
     def Expr(Term):
-        return Term 
+        return Term
     def Term(Term, times, Factor):
         return Term * Factor
     def Term(Factor):
-        return Factor 
+        return Factor
     def Factor(Atom):
         return Atom
     def Factor(left, Expr, right):
-        return Expr 
+        return Expr
     def Atom(number):
         return int(number)
 

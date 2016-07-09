@@ -1100,11 +1100,12 @@ class Earley(ParserBase):
                                             new0 = (j, jtm.shifted)
                                             j_tr = ParseTree(rule, [])
                                             for j_stk in j_stks:
+                                                # if new0 not in s_acc:
                                                 if new0 not in s_aug:
                                                     s_aug[new0] = [j_stk + (j_tr,)]
                                                 else:
                                                     s_aug[new0].append(j_stk + (j_tr,))
-                        # SCANNING
+                        # SCANNI
                         elif jtm.actor == tok.symbol:
                             if (j, jtm.shifted) not in s_after:
                                 s_after[j, jtm.shifted] = []
@@ -1124,11 +1125,11 @@ class Earley(ParserBase):
                 if s_aug:
                     # Register new AGENDA items as well as their
                     # corresponding completion stacks
-                    for (i, itm), i_stk in s_aug.items():
+                    for (i, itm), i_stks in s_aug.items():
                         if (i, itm) in s_acc:
-                            s_acc[i, itm].extend(i_stk)
+                            s_acc[i, itm].extend(i_stks)
                         else:
-                            s_acc[i, itm] = i_stk
+                            s_acc[i, itm] = i_stks
                     # Next pass of AGENDA
                     s_act = s_aug
                 else:
@@ -1879,3 +1880,81 @@ class GLL(ParserBase):
         return results
 
 
+
+class _cfg2(object):
+
+    _rule_list = []
+
+    def flush():
+        _cfg2._rule_list = []
+
+    def rule(method):
+        _cfg2._rule_list.append(Rule(method))
+
+    def cfg2(cls_grammar):
+        """Prepare alternative parser front-end functionalities for Python 2
+        environment without metaprogramming tricks.
+
+        In order to ease the use, a shared instance of rule_list is
+        referred in this method. Each time after the decorator @cfg2
+        is called and ended, this list is flushed. After that the next
+        call of @rule would log Rule instance in the fresh list.
+
+        """
+
+        # In Python 2, OrderedDict is not easy to use.
+        # lexes = OrderedDict()
+        lexes = []
+        lexpats = []
+        rules = []
+        attrs = []
+
+        for k, v in cls_grammar.__dict__.items():
+            # Ignore Built-ins
+            if k.startswith('__') and k.endswith('__'):
+                continue
+            # Lexical declaration.
+            if isinstance(v, str) and not k.startswith('_'):
+                if k in lexes:
+                    raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
+                lexes.append(k)
+                lexpats.append(v)
+            # Attributes
+            elif not isinstance(v, Rule) and k.startswith('_'):
+                attrs.append((k, v))
+
+        for rule in _cfg2._rule_list:
+            if rule not in rules:
+                rules.append(rule)
+            else:
+                _cfg2.flush()
+                raise GrammarError('Repeated declaration of Rule {}.'.format(rule))
+        _cfg2.flush()
+
+        # Default matching order of special patterns:
+
+        # Always match IGNORED secondly after END, if it is not specified;
+        if IGNORED not in lexes:
+            # lexes.move_to_end(IGNORED, last=False)
+            lexes.append(IGNORED)
+            lexpats.append(IGNORED_PATTERN_DEFAULT)
+
+        # Always match END first
+        # END pattern is not overridable.
+        # lexes[END] = END_PATTERN_DEFAULT
+        lexes.insert(0, END)
+        lexpats.insert(0, END_PATTERN_DEFAULT)
+        # lexes.move_to_end(END, last=False)
+
+        # Always match ERROR at last
+        # It may be overriden by the user.
+        if ERROR not in lexes:
+            # lexes[ERROR] = ERROR_PATTERN_DEFAULT
+            lexes.append(ERROR)
+            lexpats.append(ERROR_PATTERN_DEFAULT)
+
+        return Grammar(OrderedDict(zip(lexes, lexpats)), rules, attrs)
+
+
+rule = _cfg2.rule
+cfg2 = _cfg2.cfg2

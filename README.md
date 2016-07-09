@@ -1,6 +1,204 @@
 metaparse
 =====
 
+[Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"
+[DSL]: https://en.wikipedia.org/wiki/Domain-specific_language "DSL"
+[BNF]: https://en.wikipedia.org/wiki/Backus%E2%80%93Naur_Form "BNF"
+[Earley]: https://en.wikipedia.org/wiki/Earley_parser "Earley"
+[LL]: https://en.wikipedia.org/wiki/LL_parser "LL"
+[GLL]: http://dotat.at/tmp/gll.pdf "GLL"
+[GLR]: https://en.wikipedia.org/wiki/GLR_parser "GLR"
+[LALR]: https://en.wikipedia.org/wiki/LALR_parser "LALR"
+[CFG]: https://en.wikipedia.org/wiki/Context-free_grammar "CFG"
+[Yacc]: https://en.wikipedia.org/wiki/Yacc "Yacc"
+[Bison]: https://en.wikipedia.org/wiki/GNU_bison "Bison"
+[Parsec]: http://book.realworldhaskell.org/read/using-parsec.html "Parsec"
+[instaparse]: https://github.com/Engelberg/instaparse "Instaparse"
+
+[Parsing] can be done **with full power** by merely declaring **a simple Python class**[^] in lines with
+
+* compiling just coming along. No easier.
+
+* no **docstring notations**
+
+* no [DSL][DSL] (maybe untrue)
+
+
+<!-- > <sup>*. Python 3 preferred. Usage in Python 2 is a bit more verbose. </sup> -->
+> *. Python 3 preferred. Usage in Python 2 is a bit more verbose.
+
+## First view
+
+Given a left-right-value grammar in a C-like language in typical [CFG][CFG] form:
+
+```
+S  →  L = R
+   |  R
+
+L  →  * R
+   |  id
+
+R  →  L
+```
+
+A handy [LALR parser][LALR] for this grammar supported by this module can be written as (in Python 3):
+
+
+``` python
+from metaparse import LALR
+
+class P_LRVal(metaclass=LALR.meta):     # Use metaclass
+
+    # Lexical elements in attribute form:
+    #
+    #   <lex-name> = <re-pattern>
+    #
+    EQ      = r'='
+    STAR    = r'\*'
+    ID      = r'\w+'
+
+    # Rules in method form:
+    #
+    #   def <symbol> (<symbol> ... ):
+    #       <do-sth>                    # Semantics in pure Python code!
+    #       ...
+    #       return <symbol-value>
+    #
+    def S(L, EQ, R) : return ('assign', L, R)
+    def S(R)        : return ('expr', R)
+    def L(STAR, R)  : return ('deref', R)
+    def L(ID)       : return ID
+    def R(L)        : return L
+```
+
+Usage is just easy:
+
+``` python
+>>> P_LRVal.interpret1('abc')
+('expr', 'abc')
+
+>>> P_LRVal.interpret1('abc = * * ops')
+('assign', 'abc', ('deref', ('deref', 'ops')))
+
+>>> P_LRVal.interpret1('* abc = * * * ops')
+('assign', ('deref', 'abc'), ('deref', ('deref', ('deref', 'ops'))))
+```
+
+which seems impossible to get easier for coders to get parsing work done.
+
+
+## Design
+
+This module prepares simple and powerful utilities for syntactical analyzing and even compiling in pure Python environment. It provides:
+
+- Elegant [BNF][BNF]-like syntactic definition through Python `class`.
+
+- Elegant semantics definition through `def` methods.
+
+- Token, tokenizer, parse leaf/tree structure as well as parser interface.
+
+- Parsing algorithms ([Earley][Earley], [GLR][GLR], [GLL][GLL], [LALR][LALR] etc.).
+
+<!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
+-->
+
+The design of this module is inspired by [Parsec][Parsec] in Haskell and [Instaparse][instaparse] in Clojure, which support parsing work to be done inside programming environment (unlike traditional [Yacc][Yacc]/[Bison][Bison]-style).
+
+## Highlights
+
+This module is remarkable since
+
+- Single-file module in *pure* Python
+- No dependencies except built-in Python
+- No intermediate files for parser generation
+- No separation of declaration files
+- Easy integration of Python built-in/3rd-party functionalities into rule semantics
+- etc.
+
+### Further into non-determinism
+
+While [LALR parser][LALR] is a classical *deterministic* parser, there are further parsers which can be experimented with ambiguous grammars, which may be helpful to inspect ambiguity issues when designing a grammar.
+
+For example, the *non-deterministic* [GLL parser][Gll] can be used to process the famous ambiguous [Dangling-Else](https://en.wikipedia.org/wiki/Dangling_else) grammar correctly. Thanks to the powerful [GLL][Gll] algorithm, there is no need for [Left-factoring](http://www.csd.uwo.ca/~moreno//CS447/Lectures/Syntax.html/node9.html), which is a serious headache of designing [LL][LL] grammars for top-down parsing (even the extremly notable [Parsec][Parsec] in Haskell cannot handle this with ease).
+
+``` python
+from metaparse import GLL
+
+class P_IfThenElse(metaclass=GLL.meta):
+
+    IGNORED = r'\s'
+    IF      = r'if'
+    THEN    = r'then'
+    ELSE    = r'else'
+    EXPR    = r'\d+'
+    SINGLE  = r'[_a-zA-Z]\w*'
+
+    def stmt(SINGLE):
+        return SINGLE
+    def stmt(IF, EXPR, THEN, stmt):
+        return ('it', stmt)
+    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
+        # Symbol instances refering to the same symbol
+        # are differed by subsription, here stmt_1 and
+        # stmt_2
+        return ('ite', stmt_1, stmt_2)
+```
+with multiple legally interpreted results delivered:
+
+``` python
+>>> P_IfThenElse.interpret('if 1 then if 2 then if 3 then x else yy else zzz')
+[('ite', ('ite', ('it', 'x'), 'yy'), 'zzz'),
+ ('ite', ('it', ('ite', 'x', 'yy')), 'zzz'),
+ ('it', ('ite', ('ite', 'x', 'yy'), 'zzz'))]
+```
+
+## Explanation
+
+It may seem unusual but interesting that such a kind of method declaration can play two roles at the same time, one is the formal syntactic rule represented by the method signature literals, while the other is the semantic behavior interpreting the rule in the Python runtime environment.
+
+
+<!-- By applying the metaclass, the original behavior of Python class declaration
+is overriden (this style of using metaclass is only available in Python 3.X),
+which has the following new meanings:
+
+
+- Attribute declarations
+
+    - LHS is the name of the Token (lexical unit)
+
+    - RHS is the pattern of the Token, which obeys the Python regular
+    expression syntax (see documentation of the `re` module)
+
+    - The order of declarations matters. Since there may be patterns
+    that overlap, the patterns in prior positions are matched first
+    during tokenizing
+
+
+- Class level method declarations
+
+  - Method name is the rule-LHS, i.e. nonterminal symbol
+
+  - Method paramter list is the rule-RHS, i.e. a sequence of
+  symbols. Moreover, each parameter binds to the successful
+  subtree or result of executing the subtree's semantic rule
+  during parsing the symbol
+
+  - Method body specifies the semantic behavior associated with the
+  rule. The returned value is treated as the result of successfully
+  parsing input with this rule
+ -->
+
+## Limitations
+
+Though this module supplies many advantageous features, there are also limitations:
+
+- One limitation is that non-alphabetic word and keywords reserved for Python language are not usable as literals for declaring grammars (Similar restricltions also raise when using [Parsec][Parsec])
+
+    - Although the representation of rule is somewhat verbose especially by the definition of alternative productions, it clearly specifies alternative semantic behaviors with NAMED parameters, which appears to be more self-descriptive than POSITIONAL parameters, like $1, $2 ... in [Yacc][Yacc]/[Bison][Bison] tool sets.
+
+- Since the implementation of algorithms is in pure Python, performance may seem unsatisfying
+
+<!--
 This package provides (subjectively) the most simple and elegant way of getting parsing work done due to its dedicated parser front-end. It aims to be a remarkable alternative of traditional [yacc](https://en.wikipedia.org/wiki/Yacc)-style toolset in Python environment.
 
 Summary of this toolset:
@@ -19,13 +217,13 @@ Summary of this toolset:
 The initiative for creating this package is to support studying and analyzing **[Context Free Grammars (CFG)](https://en.wikipedia.org/wiki/Context- free_grammar)** parser algorithms with the most easy parser front-end in a handy language environment like `Python`.
 
 After the dedicated front-end is designed, various parsers like Earley, GLR(0), LALR(1) parsers can be implemented as backend.
-
+ -->
 <!--
 Also LL(1) and *parsec* parser based upon Parsing Expression
 Grammar(PEG) is being integrated but still not completed.
 -->
 
-
+<!--
 ## Rationale
 
 This package is remarkable for its amazing simplicity and elegancy thanks to the extreme reflexibility of Python 3 language. It differentiates itself with the two traditional parsing tooling approaches, which IMHO yield some limitations:
@@ -33,13 +231,6 @@ This package is remarkable for its amazing simplicity and elegancy thanks to the
 - About [GNU bison](https://en.wikipedia.org/wiki/GNU_bison)
 
 Traditional parsing work is mostly supported with the toolset flex/bison (trad. lex/yacc). Such toolset is found to be hard and complex to handle even for experienced programmers who just wants to do some handy parsing. It was also constrained in `C/C++` language environment as well as corresponding data structures and 3rd party libraries which are somewhat difficult for non-C/C++ programmers.
-
-<!--
-The biggest reason for that is the complexity raised by integrating the
-*Backus-Naur-Form*-grammar as **Domain-Specific Language** into *C*-style
-coding environment. The compilation process and maintainance of intermediate
-files(**\*.l**, **\*.y**) are old-fashioned.
- -->
 
 - About [parsec](https://wiki.haskell.org/Parsec)
 
@@ -169,23 +360,10 @@ The key trick supporting this style is `Python 3`'s reflection and metaprogrammi
 
 Based upon the concepts above, grammar representations are easily translated into grammar objects. Upon that, it is natural to prepare various parser algorithms as the back-end for various purposes. Some of them perform parsing process directly (like [Earley's parsing algorithm](https://en.wikipedia.org/wiki/Earley_parser)) whilst some generates parser instead (like [LALR parser generator](https://en.wikipedia.org/wiki/LALR_parser_generator)).
 
-<!--
-One benefit of `Python` is the ease of using primitive data structures.
--->
-
 ### Issues by non-deterministic parsing
 
 Theoretically, some grammars are to-some-level ambiguous and the intermediate or final output of a parser may contain more than one parse trees. Parsers which can preserve all such parse trees at each intermediate parser state are characterized as *Non-deterministic Parsers*.
 
-<!--
-When the grammar defined by the user is to-some-level ambiguous, the parsing job
-should either be banned by prompting ambiguity before starting the job or producing
-viable parse trees (a parse forest) during and after the job.
-
-_Since side effects may exist when parsing with instant interpretation acoording to
-the user purpose, temporal ambiguity by some parser states may cause some process
-to be performed more than once and unexpected results may occur._
--->
 
 Example of using non-deterministic parser, e.g. the Earley parser for ambiguous grammar is like below:
 
@@ -271,3 +449,4 @@ p = LALR(Gif)
 In such case, the generated parser structure, i.e. the underlying parser automaton states with corresponding transition tokens can be then inspected and analyzed with ease based on the OO-designed parser object.
 
 Another popular package [PLY](http://www.dabeaz.com/ply/) supplies extensive functionalities also based on LR-parsing. That implementation has more traditional front-end rule representation and yields better performance of parsing algorithm (ca. 130% speed-up of mine according to my nonserious benchmarking). Maybe the benefits of the efficiency can be learned for future optimization of this package.
+-->

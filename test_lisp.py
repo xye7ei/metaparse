@@ -53,17 +53,6 @@ class LispParser(metaclass=cfg):
     def sexps():
         return []
 
-# xx = '<person name="john"></person>'
-# li = 'a bc def g'
-
-# print()
-# pp.pprint(ListParser.parse('x x  x'))
-# pp.pprint(ListParser.interpret('x x  x'))
-
-# print()
-# pp.pprint(ChurchParser.interpret('succ succ succ succ zero'))
-
-
 # print()
 # pp.pprint(list(SExpParser.grammar.tokenize('(lambda (x y) (+ x y))', True)))
 # res = SExpParser.parse('(lambda (x y) (+ x y))')

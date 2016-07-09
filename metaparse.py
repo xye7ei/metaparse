@@ -1,123 +1,5 @@
 # -*- coding: utf-8 -*-
 
-"""==============================
-        metaparse.py
-==============================
-
-
-* Intro and Highlights
-
-This module prepares alternative utilities for syntactical
-analyzing in pure Python environment. It includes:
-
-    * OO-style grammar object system for context-free languages with
-      completeness check.
-
-    * Elegant grammar definer based upon metaprogramming.
-
-    * Parser interface.
-
-    * Optional parsing algorithms (Earley, GLR, LALR etc.).
-
-To allow the ultimate ease of usage, the OO-style grammar definition
-is approached by the Python class structure by treating the method
-definitions as syntactic rules associated with semantic behaviors.
-
-
-* Example
-
-For a left-right-value grammar in C-style language::
-
-        '''
-        S -> L = R
-        S -> R
-        L -> * R
-        L -> id
-        R -> L
-        '''
-
-In Python >= 3, a handy LALR parser for this grammar based on this
-module can be written as::
-
-
-    class P_LRVal(metaclass=LALR.meta):
-
-        IGNORED = r'\s+'
-        EQ   = r'='
-        STAR = r'\*'
-        ID   = r'\w+'
-
-        def S(L, EQ, R) : return ('assign', L, R)
-        def S(R)        : return ('expr', R)
-        def L(STAR, R)  : return ('deref', R)
-        def L(ID)       : return ID
-        def R(L)        : return L
-
-
-The usage is highly straightforward::
-
-    >>> P_LRVal.interpret('abc')
-    ('expr', 'abc')
-
-    >>> P_LRVal.interpret('abc = * * ops')
-    ('assign', 'abc', ('deref', ('deref', 'ops')))
-
-    >>> P_LRVal.interpret('* abc = * * * ops')
-    ('assign', ('deref', 'abc'), ('deref', ('deref', ('deref', 'ops'))))
-
-
-* Paraphrase
-
-It may seem unusual but interesting that such sort of a method
-declaration can play two roles at the same time, one is the formal
-syntactic rule represented by the signature literals, while the other
-is the semantic behavior interpreting the rule in the Python runtime
-environment.
-
-By applying the metaclass, the original behavior of Python class
-declaration is overriden (this style of using metaclass is only
-available in Python 3.X), which has the following new meanings:
-
-
-    Attribute declarations
-
-        * LHS is the name of the Token (lexical unit)
-
-        * RHS is the pattern of the Token, which obeys the Python regular
-        expression syntax (see documentation of the `re` module)
-
-        * The order of declarations matters. Since there may be patterns
-        that overlap, the patterns in prior positions are matched first
-        during tokenizing
-
-
-    Class level method declarations
-
-        * Method name is the rule-LHS, i.e. nonterminal symbol
-
-        * Method paramter list is the rule-RHS, i.e. a sequence of
-        symbols. Moreover, each parameter binds to the successful
-        subtree or result of executing the subtree's semantic rule
-        during parsing the symbol
-
-        * Method body specifies the semantic behavior associated with the
-        rule. The returned value is treated as the result of successfully
-        parsing input with this rule
-
-
-* Notes
-
-A limitation is that certain symbols reserved for Python are not usable
-to declare grammar in OO-style
-
-Although such representation of grammar is somewhat verbose especially
-by the definition of alternative productions, it clearly specifies
-alternative semantic behaviors with NAMED parameters, which appears to
-be more expressive than POSITIONAL parameters, like %1, %2 ... in
-YACC/BISON tool-sets.
-
-"""
-
 import re
 import warnings
 import inspect
@@ -135,6 +17,7 @@ class GrammarWarning(UserWarning):
 
 
 class GrammarError(Exception):
+    """Specifies exceptions raised when constructing a grammar."""
     pass
 
 
@@ -143,6 +26,7 @@ class ParserWarning(UserWarning):
 
 
 class ParserError(Exception):
+    """Specifies exceptions raised when error occured during parsing."""
     pass
 
 

@@ -4,19 +4,34 @@ from metaparse import *
 
 
 class LRVal(metaclass=cfg): 
-    IGNORED = r'\s+'
+
+    # Lexical elements in attribute form:
+    #
+    #   <lex-name> = <re-pattern>
+    #
     EQ   = r'='
     STAR = r'\*'
     ID   = r'\w+'
 
+    # Rules in method form:
+    #
+    #   def <symbol> (<symbol> ... ):
+    #       <do-sth>                    # Semantics in pure Python code!
+    #       ...
+    #       return <symbol-value>
+    #    
     def S(L, EQ, R):
-        return ('assign', L, R) 
+        return ('stmt', L, R) 
     def S(R):
         return ('expr', R) 
+
     def L(STAR, R):
-        return ('deref', R) 
+        # print('Got a pointer to %s' % [R])
+        return ('pointer-to', R) 
     def L(ID):
+        # print('Got a ID: %s' % [ID])
         return ID
+
     def R(L):
         return L 
 
@@ -24,7 +39,7 @@ class LRVal(metaclass=cfg):
 # pp.pprint(Glrval.closure_with_lookahead(G.make_item(0, 0), '%'))
 # e_LRVal = Earley(LRVal)
 # g_LRVal = GLR(LRVal)
-# l_LRVal = LALR(LRVal)
+l_LRVal = LALR(LRVal)
 
 # pp.pprint(e_LRVal.interpret('abc = * * ops'))
 # pp.pprint(e_LRVal.interpret('* abc = * * * ops'))
@@ -32,9 +47,9 @@ class LRVal(metaclass=cfg):
 # pp.pprint(g_LRVal.interpret('abc = * * ops'))
 # pp.pprint(g_LRVal.interpret('* abc = * * * ops'))
 
-# pp.pprint(l_LRVal.interpret('abc'))
-# pp.pprint(l_LRVal.interpret('abc = * * ops'))
-# pp.pprint(l_LRVal.interpret('* abc = * * * ops'))
+pp.pprint(l_LRVal.interpret('abc'))
+pp.pprint(l_LRVal.interpret('abc = * * ops'))
+pp.pprint(l_LRVal.interpret('* abc = * * * ops'))
 
 
 class GArith(metaclass=cfg): 

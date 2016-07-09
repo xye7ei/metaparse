@@ -34,10 +34,10 @@ class S(metaclass=cfg):
 # pp.pprint(res)
 
 
-p_S = Earley(S)
-res = p_S.parse('u')
-pp.pprint(res) 
-assert 0
+# p_S = Earley(S)
+# res = p_S.parse('u')
+# pp.pprint(res) 
+# assert 0
 
 
 class GIfThenElse(metaclass=cfg):
@@ -110,3 +110,4 @@ assert ear_ife.interpret(i3e1) == gll_ife.interpret(i3e1) == [('ite', ('it', ('i
                                                                ('it', ('it', ('ite', ('it', 'aa'), 'bb'))),
                                                                ('it', ('it', ('it', ('ite', 'aa', 'bb'))))]
 
+pp.pprint(gll_ife.interpret('if 1 then if 2 then if 3 then x else yy else zzz'))

@@ -1118,6 +1118,10 @@ class Earley(ParserBase):
                             for (i, itm), i_stks in ss[j].items():
                                 if not itm.ended() and itm.actor == jtm.target:
                                     new = (i, itm.shifted)
+                                    # FIXME: if new in s_acc????
+                                    # nontermination?? by
+                                    # (A -> A B)
+                                    # (A -> )
                                     if new not in s_aug:
                                         s_aug[new] = []
                                     for i_stk in i_stks:
@@ -1125,6 +1129,7 @@ class Earley(ParserBase):
                 if s_aug:
                     # Register new AGENDA items as well as their
                     # corresponding completion stacks
+                    # 
                     for (i, itm), i_stks in s_aug.items():
                         if (i, itm) in s_acc:
                             s_acc[i, itm].extend(i_stks)

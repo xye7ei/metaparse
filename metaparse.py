@@ -362,6 +362,12 @@ class Grammar(object):
         """
         return Item(G.rules, r, pos)
 
+    def rules_start_with(G, sym):
+        """Yield enumerated matching rules."""
+        for r, rl in enumerate(G.rules):
+            if rl.lhs == sym:
+                yield r, rl
+
     def _calc_first_and_nullable(G):
         """Calculate the FIRST set of this grammar as well as the NULLABLE
         set. Transitive closure algorithm is applied.
@@ -892,17 +898,16 @@ class Earley(ParserBase):
                     if not tok.is_END():
                         # Prediction: find nonkernels
                         if jtm.actor in G.nonterminals:
-                                for r, rule in enumerate(G.rules):
-                                    if rule.lhs == jtm.actor:
-                                        ktm = G.item(r, pos=0)
-                                        new = (k, ktm)
-                                        if new not in C:
-                                            C.append(new)
-                                        if not rule.rhs:
-                                            # Directly NULLABLE
-                                            enew = (j, jtm.shifted)
-                                            if enew not in C:
-                                                C.append(enew)
+                            for r, rule in G.ruels_start_with(jtm.actor):
+                                ktm = G.item(r, pos=0)
+                                new = (k, ktm)
+                                if new not in C:
+                                    C.append(new)
+                                if not rule.rhs:
+                                    # Directly NULLABLE
+                                    enew = (j, jtm.shifted)
+                                    if enew not in C:
+                                        C.append(enew)
                         # Scanning/proceed for the next State
                         elif jtm.actor == tok.symbol:
                             C1.append((j, jtm.shifted))
@@ -1085,26 +1090,27 @@ class Earley(ParserBase):
                         # FIXME: Seems rigorous?
 
                         if jtm.actor in G.nonterminals:
-                            for r, rule in enumerate(G.rules):
-                                if rule.lhs == jtm.actor:
-                                    # Non-kernel item
-                                    new = (k, G.item(r, 0))
-                                    if new not in s_acc:
-                                        if rule.rhs:
-                                            s_aug[new] = [()]
-                                        else:
-                                            # Nullable completion and
-                                            # prediction. For tricky
-                                            # grammar, commenting this
-                                            # out to see the failure.
-                                            new0 = (j, jtm.shifted)
-                                            j_tr = ParseTree(rule, [])
-                                            for j_stk in j_stks:
-                                                # if new0 not in s_acc:
-                                                if new0 not in s_aug:
-                                                    s_aug[new0] = [j_stk + (j_tr,)]
-                                                else:
-                                                    s_aug[new0].append(j_stk + (j_tr,))
+                            # for r, rule in enumerate(G.rules):
+                            #     if rule.lhs == jtm.actor:
+                            for r, rule in G.rules_start_with(jtm.actor):
+                                # Non-kernel item
+                                new = (k, G.item(r, 0))
+                                if new not in s_acc:
+                                    if rule.rhs:
+                                        s_aug[new] = [()]
+                                    else:
+                                        # Nullable completion and
+                                        # prediction. For tricky
+                                        # grammar, commenting this
+                                        # out to see the failure.
+                                        new0 = (j, jtm.shifted)
+                                        j_tr = ParseTree(rule, [])
+                                        for j_stk in j_stks:
+                                            # if new0 not in s_acc:
+                                            if new0 not in s_aug:
+                                                s_aug[new0] = [j_stk + (j_tr,)]
+                                            else:
+                                                s_aug[new0].append(j_stk + (j_tr,))
                         # SCANNING
                         elif jtm.actor == tok.symbol:
                             if (j, jtm.shifted) not in s_after:
@@ -1145,6 +1151,78 @@ class Earley(ParserBase):
                 ss.append(s_after)
 
         return ss
+
+
+    def parse_forest(self, inp):
+        """Construct single-threaded parse trees (the Parse Forest based upon
+        the underlying Graph Structured Stack and from another
+        perspective, the chart) during computing Earley item sets.
+
+        The most significant augmentation w.R.t. the naive recognition
+        algorithm is that, when more than one completed items @jtm in
+        the agenda matches one parent @(itm)'s need, the parent items'
+        stacks need to be forked/copied to accept these different @jtm
+        subtrees as a feasible shift.
+
+        Since parse trees are computed on-the-fly, the result is a set
+        of feasible parse trees.
+
+        CAUTION: Interpretation on-the-fly is NOT allowed! Since the
+        traversal execution order of sibling subtrees' semantic
+        behaviors should be preserved for their parent tree, whereas
+        during AGENDA completion the execution of some shared item's
+        behavior may be interleaving (rigor proof still absent). OTOS,
+        after all top trees have been constructed, the traverses by
+        each can deliver correct semantic results.
+
+        """
+        G = self.grammar
+        # Parallel stacks:
+        # [Item1, Item2, ...]
+        # [Stacks1, Stacks2, ...]
+        SS = states = [[(0, G.item(0, 0))]]
+        SK = stacks = [[[]]]
+
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+            C, T = states[k], stacks[k]
+            C1, T1 = [], []
+
+            c = 0
+            while c < len(C):
+                (j, jtm), j_stk = C[c], T[c]
+                if not jtm.ended():
+                    # Prediction
+                    if jtm.actor in G.nonterminals:
+                        for r, rule in G.rules_start_with(jtm.actor):
+                            new = (k, ktm)
+                            if new not in C:
+                                C.append(new)
+                                T.append([])
+                            # 
+                            if not rule.rhs:
+                                enew = (j, jtm.shifted)
+                                e_tr = ParseTree(jtm.rule, [])
+                                if enew not in C:
+                                    C.append(enew)
+                                    T.append(
+                                        [stk + (e_tr,) for stk in SK[j]])
+                    # Scanning
+                    elif jtm.actor == tok.symbol:
+                        C1.append((j, jtm.shifted))
+                        T1.append(
+                            [stk + (tok,) for stk in SK[j]])
+                    else:
+                        pass
+                # Completion
+                else:
+                    for (i, itm), i_stks in zip(SS[j], SK[j]):
+                        if not jtm.ended() and itm.actor == jtm.target:
+                            new = (i, itm.shifted)
+                            if new not in C:
+                                C.append(new)
+                                T.append(
+                                    [stk + ParseTree(jt.rule, )])
+                    
 
     def parse(self, inp, interp=False):
         """Fully parse. Use parse_forest as default parsing method and final

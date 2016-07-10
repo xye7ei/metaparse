@@ -7,13 +7,13 @@ class A(metaclass=Earley.meta):
     b = r'b'
     def A(A, B): return
     def A(): return
-    def B(b, B): return
+    def B(b): return
     def B(): return
 
-pp.pprint(A.recognize('   b b'))
-pp.pprint(A.parse_chart('   b b'))
-res = A.parse('   a a')
-pp.pprint(res)
+# pp.pprint(A.recognize('   b b'))
+# pp.pprint(A.parse_chart('   b b'))
+res = A.parse('  b  ')
+# pp.pprint(res)
 assert 0
 
 
@@ -34,6 +34,7 @@ p_G = Earley(G)
 # p_G = GLL(G)
 # print(*p_G.tokenize('  a a', with_end=True))
 # pp.pprint(p_G.recognize('  a  a'))
+# res = p_G.recognize('  a  a')
 # res = p_G.parse('  a  a')
 # pp.pprint(res)
 

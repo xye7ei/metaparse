@@ -12,8 +12,8 @@ class A(metaclass=Earley.meta):
 
 pp.pprint(A.recognize('   b b'))
 pp.pprint(A.parse_chart('   b b'))
-# res = A.parse('   a a')
-# pp.pprint(res)
+res = A.parse('   a a')
+pp.pprint(res)
 assert 0
 
 

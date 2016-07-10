@@ -1189,7 +1189,7 @@ class Earley(ParserBase):
 
             c = 0
             while c < len(C):
-                (j, jtm), j_stk = C[c], T[c]
+                (j, jtm), j_stks = C[c], T[c]
                 if not jtm.ended():
                     # Prediction
                     if jtm.actor in G.nonterminals:
@@ -1215,13 +1215,16 @@ class Earley(ParserBase):
                         pass
                 # Completion
                 else:
+                    j_trs = [ParseTree(jtm.rule, stk) for stk in j_stks]
                     for (i, itm), i_stks in zip(SS[j], SK[j]):
-                        if not jtm.ended() and itm.actor == jtm.target:
+                        if not itm.ended() and itm.actor == jtm.target:
                             new = (i, itm.shifted)
                             if new not in C:
                                 C.append(new)
+                                @@@ FIXING @@@
                                 T.append(
-                                    [stk + ParseTree(jt.rule, )])
+                                    [stk + (j_tr,) for j_tr in j_trs])
+                            else: ?
                     
 
     def parse(self, inp, interp=False):

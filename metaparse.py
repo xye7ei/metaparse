@@ -13,6 +13,7 @@ from collections import Iterable
 
 
 class GrammarWarning(UserWarning):
+    """Any way to specify user warning? """
     pass
 
 
@@ -22,6 +23,7 @@ class GrammarError(Exception):
 
 
 class ParserWarning(UserWarning):
+    """Any way to specify user warning? """
     pass
 
 
@@ -855,6 +857,17 @@ class Earley(ParserBase):
     on-the-fly computation of item set closures, as well as the
     subtree stacks prepared for completing parse trees.
 
+    WARNING: In case with grammar having NULLABLE-LOOPs like:
+
+      A -> A B
+      A ->
+      B -> b
+      B -> 
+
+    where A => ... => A consuming no input tokens, the on-the-fly
+    computation of parse trees will not terminate. However,
+    recognition without building parse trees stays intact.
+
     """
 
     def __init__(self, grammar):
@@ -890,7 +903,9 @@ class Earley(ParserBase):
                 #   completion, meaning prediction may result in new
                 #   completion items, leading to repeated processing
                 #   of the identical completion item. Thus
-                #   LOOP-closure is needed.
+                #   LOOP-closure is needed. But this can be avoided
+                #   with an enhanced predictor which can predict one
+                #   more symbol over a nullable actor.
                 #
                 if not jtm.ended():
                     # Prediction/Completion no more needed when
@@ -898,7 +913,7 @@ class Earley(ParserBase):
                     if not tok.is_END():
                         # Prediction: find nonkernels
                         if jtm.actor in G.nonterminals:
-                            for r, rule in G.ruels_start_with(jtm.actor):
+                            for r, rule in G.rules_start_with(jtm.actor):
                                 ktm = G.item(r, pos=0)
                                 new = (k, ktm)
                                 if new not in C:
@@ -956,19 +971,12 @@ class Earley(ParserBase):
 
         """
         G = self.grammar
-        # chart[i][j] registers proceeding items from @i to @j
+        # chart[i][j] registers active items from @i to @j
         chart = self.chart = defaultdict(lambda: defaultdict(set))
         agenda = [(0, G.item(0, 0))]
 
-        for k, tok in enumerate(G.tokenize(inp, False)):
+        for k, tok in enumerate(G.tokenize(inp, True)):
             agenda1 = []
-            # General foolish MORE-PASS scheme
-            # 
-            # - can handle null-rules correctly by repeatedly
-            #   detect new completed item which maybe induced
-            #   by completing nullable items
-            # - can be optimized into ONE-PASS like in method
-            #   
             while agenda:
                 j, jtm = agenda.pop()
                 # Directly register intermediate state item
@@ -978,12 +986,17 @@ class Earley(ParserBase):
                     if not tok.is_END():
                         # Prediction
                         if jtm.actor in G.nonterminals:
-                            for r, rule in enumerate(G.rules):
-                                if rule.lhs == jtm.actor:
-                                    ktm = G.item(r, 0)
-                                    if ktm not in chart[k][k]:
-                                        chart[k][k].add(ktm)
-                                        agenda.append((k, ktm))
+                            for r, rule in G.rules_start_with(jtm.actor):
+                                ktm = G.item(r, 0)
+                                if ktm not in chart[k][k]:
+                                    chart[k][k].add(ktm)
+                                    agenda.append((k, ktm)) 
+                                # Prediction over NULLABLE1 symbol
+                                if not rule.rhs:
+                                    jtm1 = jtm.shifted
+                                    if jtm1 not in chart[k][k]:
+                                        chart[j][k].add(jtm1)
+                                        agenda.append((k, jtm1))
                         # Scanning
                         elif jtm.actor == tok.symbol:
                             chart[k][k+1].add(jtm.shifted)
@@ -999,9 +1012,9 @@ class Earley(ParserBase):
                                         agenda.append((i, itm.shifted))
             if agenda1:
                 agenda = agenda1
-            else:
-                raise ParserError('Fail: empty new agenda by {}\nchart:\n{}'.format(tok,
-                    pp.pformat(chart)))
+            # else:
+            #     raise ParserError('Fail: empty new agenda by {}\nchart:\n{}'.format(tok,
+            #         pp.pformat(chart)))
 
         return chart
 
@@ -1038,15 +1051,17 @@ class Earley(ParserBase):
         # pass.
         for k, tok in enumerate(G.tokenize(inp, with_end=True)): 
             # Components for the behavior of One-Pass transitive closure
-            # - The accumulated set as final closure
+            # 
+            # - The accumulated set of items/stacks as final closure.
+            #   It plays the role of the chart column k
             s_acc = ss[-1]
             # - The set of active items to be processed, i.e. AGENDA
             s_act = dict(s_acc)
-            # - The initial set for next token position
-            s_after = {} 
+            # - The initial set for after reading current token
+            s_acc1 = {} 
             while 1:
-                # - The augmention items predicted/completed by items
-                #   in the AGENDA @s_act
+                # - The items induced while processing items in the
+                #   AGENDA, named AUGMENTATION AGENDA.
                 s_aug = {} 
                 for (j, jtm), j_stks in s_act.items():
 
@@ -1054,32 +1069,27 @@ class Earley(ParserBase):
                     if not jtm.ended():
 
                         # *Problem of nullability* dealt with
-                        # enhanced-greedier-predictor. See book
-                        # chapter #Parsing Techniques# 7.2.3.2
+                        # enhanced-predictor. See book chapter
+                        # #Parsing Techniques# 7.2.3.2 and references.
                         #
-                        # For a direct nullable item [k,(B->.)] when
-                        # 
-                        # handling [j,(A->α.Bγ)]
-                        # 
-                        # - Reduce it immediately
-                        # 
-                        # - Make prediction overlooking B for each
-                        #   item, this means [j,(A->α.BCδ)] ensures
-                        #   [j,(A->αB.Cδ)] in the augmenting AGENDA
-                        #   as well as corresponding augmented stacks.
-                        # 
-                        # - When processing [j,(A->αB.Cδ)], if there
-                        #   is nullable rule (C->), the prediction
-                        #   [j,(A->αBC.δ)] is appended further.
-                        #
-                        # More generally, any INDIRECTLY NULLABLE
-                        # symbol E with rule (E->BC) referring (B->)
+                        # In general cases, any INDIRECTLY NULLABLE
+                        # symbol E with rule (E->αBC) referring (B->)
                         # and (C->) would finally be reduced, since
-                        # [j,(E->.BC)] ensures [j,(E->B.C)] to be
-                        # waiting, # which when processed ensures
-                        # [j,(E->BC.)] to be waiting further, causing
-                        # [j,(E->BC.)] finally to be completed. Thus
-                        # ONE-PASS can escape no NULLABLEs.
+                        # [j,(E->α.BC)] ensures [j,(E->αB.C)] to be
+                        # appended and waiting, which when processed
+                        # ensures [j,(E->αBC.)] to be waiting further,
+                        # causing [j,(E->αBC.)] finally to be
+                        # completed. Thus ONE-PASS can escape no
+                        # NULLABLEs.
+                        #
+                        # INVARIANT during processing:
+                        # 
+                        # - No completion can induce any new
+                        #   prediction at this position k (Thus no
+                        #   prediction can induce any new completion).
+                        #
+                        # - Each completion induces shfited items in
+                        #   the next item set independently
                         #
                         # Note only the DIRECT NULLABLILIDY is
                         # concerned, rather than INDIRECT. Since the
@@ -1087,36 +1097,35 @@ class Earley(ParserBase):
                         # the computation of INDIRECT NULLABILITY
                         # already.
                         # 
+                        # More details see the referenced book.
                         # FIXME: Seems rigorous?
+                        # if not tok.is_END():
+                        # Even when the token has ended must the predictor
+                        # find some potentially ended items after looking
+                        # over nullable symbols!
 
                         if jtm.actor in G.nonterminals:
-                            # for r, rule in enumerate(G.rules):
-                            #     if rule.lhs == jtm.actor:
                             for r, rule in G.rules_start_with(jtm.actor):
-                                # Non-kernel item
                                 new = (k, G.item(r, 0))
                                 if new not in s_acc:
                                     if rule.rhs:
                                         s_aug[new] = [()]
                                     else:
                                         # Nullable completion and
-                                        # prediction. For tricky
-                                        # grammar, commenting this
-                                        # out to see the failure.
+                                        # prediction.
                                         new0 = (j, jtm.shifted)
                                         j_tr = ParseTree(rule, [])
                                         for j_stk in j_stks:
-                                            # if new0 not in s_acc:
                                             if new0 not in s_aug:
                                                 s_aug[new0] = [j_stk + (j_tr,)]
                                             else:
                                                 s_aug[new0].append(j_stk + (j_tr,))
                         # SCANNING
                         elif jtm.actor == tok.symbol:
-                            if (j, jtm.shifted) not in s_after:
-                                s_after[j, jtm.shifted] = []
+                            if (j, jtm.shifted) not in s_acc1:
+                                s_acc1[j, jtm.shifted] = []
                             for j_stk in j_stks:
-                                s_after[j, jtm.shifted].append(j_stk + (tok,))
+                                s_acc1[j, jtm.shifted].append(j_stk + (tok,))
                     # COMPLETION
                     else:
                         for j_stk in j_stks:
@@ -1124,18 +1133,13 @@ class Earley(ParserBase):
                             for (i, itm), i_stks in ss[j].items():
                                 if not itm.ended() and itm.actor == jtm.target:
                                     new = (i, itm.shifted)
-                                    # FIXME: if new in s_acc????
-                                    # nontermination?? by
-                                    # (A -> A B)
-                                    # (A -> )
                                     if new not in s_aug:
                                         s_aug[new] = []
                                     for i_stk in i_stks:
                                         s_aug[new].append(i_stk + (j_tr,))
                 if s_aug:
                     # Register new AGENDA items as well as their
-                    # corresponding completion stacks
-                    # 
+                    # corresponding completed stacks
                     for (i, itm), i_stks in s_aug.items():
                         if (i, itm) in s_acc:
                             s_acc[i, itm].extend(i_stks)
@@ -1148,84 +1152,9 @@ class Earley(ParserBase):
                     break
 
             if not tok.is_END():
-                ss.append(s_after)
+                ss.append(s_acc1)
 
         return ss
-
-
-    def parse_forest(self, inp):
-        """Construct single-threaded parse trees (the Parse Forest based upon
-        the underlying Graph Structured Stack and from another
-        perspective, the chart) during computing Earley item sets.
-
-        The most significant augmentation w.R.t. the naive recognition
-        algorithm is that, when more than one completed items @jtm in
-        the agenda matches one parent @(itm)'s need, the parent items'
-        stacks need to be forked/copied to accept these different @jtm
-        subtrees as a feasible shift.
-
-        Since parse trees are computed on-the-fly, the result is a set
-        of feasible parse trees.
-
-        CAUTION: Interpretation on-the-fly is NOT allowed! Since the
-        traversal execution order of sibling subtrees' semantic
-        behaviors should be preserved for their parent tree, whereas
-        during AGENDA completion the execution of some shared item's
-        behavior may be interleaving (rigor proof still absent). OTOS,
-        after all top trees have been constructed, the traverses by
-        each can deliver correct semantic results.
-
-        """
-        G = self.grammar
-        # Parallel stacks:
-        # [Item1, Item2, ...]
-        # [Stacks1, Stacks2, ...]
-        SS = states = [[(0, G.item(0, 0))]]
-        SK = stacks = [[[]]]
-
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
-            C, T = states[k], stacks[k]
-            C1, T1 = [], []
-
-            c = 0
-            while c < len(C):
-                (j, jtm), j_stks = C[c], T[c]
-                if not jtm.ended():
-                    # Prediction
-                    if jtm.actor in G.nonterminals:
-                        for r, rule in G.rules_start_with(jtm.actor):
-                            new = (k, ktm)
-                            if new not in C:
-                                C.append(new)
-                                T.append([])
-                            # 
-                            if not rule.rhs:
-                                enew = (j, jtm.shifted)
-                                e_tr = ParseTree(jtm.rule, [])
-                                if enew not in C:
-                                    C.append(enew)
-                                    T.append(
-                                        [stk + (e_tr,) for stk in SK[j]])
-                    # Scanning
-                    elif jtm.actor == tok.symbol:
-                        C1.append((j, jtm.shifted))
-                        T1.append(
-                            [stk + (tok,) for stk in SK[j]])
-                    else:
-                        pass
-                # Completion
-                else:
-                    j_trs = [ParseTree(jtm.rule, stk) for stk in j_stks]
-                    for (i, itm), i_stks in zip(SS[j], SK[j]):
-                        if not itm.ended() and itm.actor == jtm.target:
-                            new = (i, itm.shifted)
-                            if new not in C:
-                                C.append(new)
-                                @@@ FIXING @@@
-                                T.append(
-                                    [stk + (j_tr,) for j_tr in j_trs])
-                            else: ?
-                    
 
     def parse(self, inp, interp=False):
         """Fully parse. Use parse_forest as default parsing method and final
@@ -1894,8 +1823,7 @@ class GLL(ParserBase):
         table = self.table
         G = self.grammar
         #
-        PRED, REDU = '<', '>'
-        agenda = [([], [(PRED, G.top_symbol)])]
+        agenda = [([], [(PREDICT, G.top_symbol)])]
         results = []
         #
         for k, tok in enumerate(G.tokenize(inp, with_end=True)):
@@ -1910,39 +1838,29 @@ class GLL(ParserBase):
                 else:
                     act, actor = pstk.pop(0)
                     # Prediction
-                    if act is PRED:
+                    if act is PREDICT:
                         if actor in G.nonterminals:
                             if look in table[actor]:
                                 for rule in table[actor][look]:
-                                    nps = [(PRED, x) for x in rule.rhs] + [(REDU, rule)]
-                                    agenda.append(
-                                        (astk[:], nps + pstk))
+                                    nps = [(PREDICT, x) for x in rule.rhs] + [(REDUCE, rule)]
+                                    agenda.append((astk[:], nps + pstk))
+                            # NULLABLE
                             if EPSILON in table[actor]:
-                                # Directly nullable!
-                                #
-                                # - Indirectly nullable symbol
-                                #   would get computed
-                                #   on-the-fly
                                 erule = table[actor][EPSILON][0]
-                                if interp:
-                                    arg = erule.eval()
-                                else:
-                                    arg = ParseTree(erule, [])
-                                agenda.append(
-                                    (astk + [arg], pstk[:]))
+                                arg = ParseTree(erule, [])
+                                agenda.append((astk + [arg], pstk[:]))
                         else:
                             assert isinstance(actor, str)
                             if look == actor:
-                                if interp: astk.append(lexeme)
-                                else: astk.append(tok)
-                                agenda1.append(
-                                    (astk, pstk))
+                                astk.append(tok)
+                                agenda1.append((astk, pstk))
                             else:
                                 # # May report dead state here for inspection
                                 # print('Expecting \'{}\', but got {}: \n{}\n'.format(
                                 #     actor,
                                 #     tok,
                                 #     pp.pformat((astk, pstk))))
+                                # # BUT this can be quite many!!
                                 pass
                     # Completion
                     else:
@@ -1950,12 +1868,8 @@ class GLL(ParserBase):
                         subs = []
                         for _ in actor.rhs:
                             subs.insert(0, astk.pop())
-                        if interp:
-                            astk.append(actor.eval(*subs))
-                        else:
-                            astk.append(ParseTree(actor, subs))
-                        agenda.append(
-                            (astk, pstk))
+                        astk.append(ParseTree(actor, subs))
+                        agenda.append((astk, pstk))
             if not agenda1:
                 if tok.symbol == END:
                     pass
@@ -1963,11 +1877,24 @@ class GLL(ParserBase):
             else:
                 agenda = agenda1
 
-        return results
+        if interp:
+            return [res.translate() for res in results]
+        else:
+            return results
 
 
 
 class _cfg2(object):
+
+    """Prepare alternative parser front-end functionalities for Python 2
+    environment without metaprogramming tricks.
+
+    In order to ease the use, a shared instance of rule_list is
+    referred in this method. Each time after the decorator @cfg2
+    is called and ended, this list is flushed. After that the next
+    call of @rule would log Rule instance in the fresh list.
+
+    """
 
     _rule_list = []
 
@@ -1978,15 +1905,7 @@ class _cfg2(object):
         _cfg2._rule_list.append(Rule(method))
 
     def cfg2(cls_grammar):
-        """Prepare alternative parser front-end functionalities for Python 2
-        environment without metaprogramming tricks.
-
-        In order to ease the use, a shared instance of rule_list is
-        referred in this method. Each time after the decorator @cfg2
-        is called and ended, this list is flushed. After that the next
-        call of @rule would log Rule instance in the fresh list.
-
-        """
+        """Declare a class to represent a grammar object."""
 
         # In Python 2, OrderedDict is not easy to use.
         # lexes = OrderedDict()

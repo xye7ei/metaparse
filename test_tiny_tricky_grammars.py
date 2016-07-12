@@ -4,49 +4,95 @@ from metaparse import *
 
 
 class A(metaclass=Earley.meta):
+    """Trick of this grammar:
+        A -> A B
+        A ->
+        B ->
+    where
+        A => A B^n => A {self-LOOP!} => ε
+
+    That is, before consuming the first token, the trees
+
+      (A, []);
+      (A, [(A, []),
+           (B, [])]);
+      (A, [(A, [(A, []),
+                (B, [])])]);
+
+      ... and infinitely many
+
+    should all be completed with validity at the 0'th position. In
+    other words, there is a CYCLE in the Graph-Structured-Stack
+    representing the parse forest.
+
+    This means the on-the-fly eager construction of parse trees may
+    fail with non-termination.
+
+    For practical purpose, such kind of grammar may be of nonsense and
+    warning report should be generated.
+
+    """
     b = r'b'
     def A(A, B): return
     def A(): return
     def B(b): return
     def B(): return
 
-# pp.pprint(A.recognize('   b b'))
-# pp.pprint(A.parse_chart('   b b'))
-res = A.parse('  b  ')
+# pp.pprint(A.recognize('   b '))
+# pp.pprint(A.parse_chart('   b '))
+# # res = A.parse('  b  ')
+# res = A.parse_forest('  b  ')
 # pp.pprint(res)
-assert 0
-
+# assert 0
 
 
 class G(metaclass=cfg):
-    """Ambigious grammar with Null-rules."""
+    """Ambigious grammar containing self-LOOP.
+
+    G => G A B => G ε ε => G
+    
+    (G -> .) induces completion of (G -> G A B.)
+    """ 
     a = r'a'
-    def S(S, A, B): return
-    # def S()       : return  # What if NULLABLE????
-    def S(a)       : return
+    def G(G, A, B): return
+    def G(a)       : return
     def A(a, A)   : return
     def A()       : return
     def B(a)      : return
     def B()       : return
+
 
 p_G = Earley(G)
 # p_G = GLR(G)
 # p_G = GLL(G)
 # print(*p_G.tokenize('  a a', with_end=True))
 # pp.pprint(p_G.recognize('  a  a'))
-# res = p_G.recognize('  a  a')
-# res = p_G.parse('  a  a')
-# pp.pprint(res)
+# pp.pprint(p_G.parse('  a  a'))
+# assert 0
 
-assert 0
+
+class L(metaclass=cfg):
+    """Ambigious grammar containing mutual-LOOP.
+
+    (L -> M.) completes (M -> L.), again completes (L -> M.),
+    thus non-termination."""
+    a = r'a'
+    def L(M): return
+    def M(L): return
+    def M(a): return
+
+# p_L = Earley(L)
+# pp.pprint(p_L.recognize('a'))
+# p_L.parse('a')
+# assert 0
 
 
 class S(metaclass=cfg):
-    """Ambiguous grammar with strong ambiguity. """
+    """Ambiguous grammar with strong ambiguity, but no LOOPs."""
     u = r'u'
-    def S(S, B, C) : return
-    def S(u)       : return
-    def S()        : return
+    def S(A, B, C) : return
+    def A(u)       : return
+    def A()        : return
     def B(E)       : return
     def B(F)       : return
     def C(u)       : return
@@ -58,9 +104,24 @@ class S(metaclass=cfg):
 
 
 p_S = Earley(S)
-res = p_S.parse('u')
-pp.pprint(res) 
-assert 0
+# res = p_S.parse('u')
+# pp.pprint(p_S.parse('u'))
+# assert 0
+
+
+class aSa(metaclass=cfg):
+    """A grammar which can trick LL(1)'s backtracking."""
+    a = r'a'
+    def S(a_1, S, a_2):
+        return (a_1, S, a_2)
+    def S(a_1, a_2):
+        return (a_1, a_2)
+
+p_aSa = GLL(aSa)
+res = p_aSa.interpret('a      a')
+res = p_aSa.interpret('a    a  a  a')
+res = p_aSa.interpret('a    a  a  a a a')
+print(res)
 
 
 class GIfThenElse(metaclass=cfg):
@@ -119,8 +180,8 @@ class A(metaclass=Earley.meta):
 
 
 # Ambiguous parsing
-assert len(S.interpret('x  x   x')) == 2
-assert len(A.interpret('a    a  ')) == 6
+# assert len(S.interpret('x  x   x')) == 2
+# assert len(A.interpret('a    a  ')) == 6
 
 ear_ife = Earley(GIfThenElse)
 gll_ife = GLL(GIfThenElse)
@@ -133,4 +194,3 @@ assert ear_ife.interpret(i3e1) == gll_ife.interpret(i3e1) == [('ite', ('it', ('i
                                                                ('it', ('it', ('ite', ('it', 'aa'), 'bb'))),
                                                                ('it', ('it', ('it', ('ite', 'aa', 'bb'))))]
 
-pp.pprint(gll_ife.interpret('if 1 then if 2 then if 3 then x else yy else zzz'))

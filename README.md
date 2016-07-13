@@ -20,7 +20,7 @@ L  →  * R
 R  →  L
 ```
 
-We can write a handy [LALR][]-parser/interpreter in Python 3 for this grammar in [SDD][]-style:
+We can write a handy [LALR][]-parser/interpreter in Python 3 for this grammar in [SDT][]-style:
 
 ``` python
 from metaparse import cfg, LALR
@@ -83,27 +83,27 @@ If merely the parse tree is needed rather than the semantic result, use method `
 >>> tr = l_LRVal.parse('* abc = *  ** ops')
 >>> tr
 (S,
- [(L, [(STAR -> '*')@[0:1], (R, [(L, [(ID -> 'abc')@[2:5]])])]),
-  (EQ -> '=')@[6:7],
+ [(L, [(STAR: '*')@[0:1], (R, [(L, [(ID: 'abc')@[2:5]])])]),
+  (EQ: '=')@[6:7],
   (R,
    [(L,
-     [(STAR -> '*')@[8:9],
+     [(STAR: '*')@[8:9],
       (R,
        [(L,
-         [(STAR -> '*')@[11:12],
+         [(STAR: '*')@[11:12],
           (R,
            [(L,
-             [(STAR -> '*')@[12:13],
-              (R, [(L, [(ID -> 'ops')@[14:17]])])])])])])])])])
+             [(STAR: '*')@[12:13],
+              (R, [(L, [(ID: 'ops')@[14:17]])])])])])])])])])
 ```
 
-The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as `(<token-symbol> -> '<lexeme>')@[<position-in-input>]`.
+The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as `(<token-symbol>: '<lexeme>')@[<position-in-input>]`.
 
 After this, calling
 
 ```>>> tr.translate()```
 
-delivers the same result as using `interpret` for the input.
+delivers the same result as using `interpret` for the input. The difference is, for LALR here `interpret` is performed on-the-fly during parsing.
 
 
 # Design and Usage
@@ -375,7 +375,7 @@ The resulted grammar instance is created by `cfg2` decorator which utilizes info
 [Bison]: https://en.wikipedia.org/wiki/GNU_bison "Bison"
 [Parsec]: http://book.realworldhaskell.org/read/using-parsec.html "Parsec"
 [instaparse]: https://github.com/Engelberg/instaparse "Instaparse"
-[SDD]: https://en.wikipedia.org/wiki/Syntax-directed_translation "Syntax-directed Translation"
+[SDT]: https://en.wikipedia.org/wiki/Syntax-directed_translation "Syntax-directed Translation"
 [LF]: http://www.csd.uwo.ca/~moreno//CS447/Lectures/Syntax.html/node9.html "Left-factoring"
 [ANTLR]: http://www.antlr.org/ "ANother Tool for Language Recognition"
 

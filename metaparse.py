@@ -82,7 +82,7 @@ class Token(object):
         self.value = value
 
     def __repr__(self):
-        return '({} -> {})@[{}:{}]'.format(
+        return '({}: {})@[{}:{}]'.format(
             self.symbol,
             repr(self.value),
             self.at,

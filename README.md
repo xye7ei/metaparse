@@ -1,14 +1,16 @@
 metaparse
 =====
 
-[Parsing][] and [Interpreting][interpreting] can be done with **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
+[Parsing][] and [Interpreting][interpreting] get done with **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
 
 <sub>[1]. Python 3 preferred.</sub>
 
 
 # Quick Example
 
-With this module, syntax and semantics are defined by class **methods**. Given a left-right-value statement grammar in *C*-style in conventional [CFG][CFG] form:
+Based on this module, syntax and semantics can be defined with class **methods**.
+
+Given a *C*-style statement grammar in conventional [CFG][CFG] form:
 
 ```
 S  →  L = R
@@ -71,7 +73,7 @@ Got ids: ['abc', 'ops']
 assign ('REF', ('REF', ('REF', 'ops'))) to ('REF', 'abc')
 ```
 
-Tools under State-of-the-Art can hardly get more handy and expressive than this (In Python 2, there goes [a more verbose way](#python-2-compatibility)).
+Tools under State-of-the-Art hardly gets more handy than this (In Python 2, there goes [a more verbose way](#python-2-compatibility)).
 
 ## Retrieving the Parse Tree
 
@@ -131,6 +133,7 @@ The design of this module is inspired by [Parsec] in Haskell and [instaparse] in
 Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extreme handy and its integration in Python projects is seamless.
 
 Formally, the code structure for grammar declaration with `metaparse` can be described as
+
 ``` python
 from metaparse import cfg, <parser>
 

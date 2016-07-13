@@ -8,7 +8,7 @@ metaparse
 
 # Quick Example
 
-Using `metaparse`, syntax and semantics are defined by class **methods**. Given a left-right-value grammar in a C-like language in conventional [CFG][CFG] form:
+With this module, syntax and semantics are defined by class **methods**. Given a left-right-value statement grammar in *C*-style in conventional [CFG][CFG] form:
 
 ```
 S  →  L = R
@@ -18,7 +18,7 @@ L  →  * R
 R  →  L
 ```
 
-we write a handy [LALR]-parser/interpreter in `metaparse` for this grammar in [SDD]-style:
+We can write a handy [LALR][]-parser/interpreter in Python 3 for this grammar in [SDD][]-style:
 
 ``` python
 from metaparse import cfg, LALR
@@ -26,10 +26,10 @@ from metaparse import cfg, LALR
 # Helper for translated results
 ids = []
 
-class LRVal(metaclass=cfg):    # Using Python 3 metaclass
+class LRVal(metaclass=cfg):
 
     # Lexical rules with re-patterns
-    IGNORED = r'\s+'           # Special token ignored by the underlying tokenizer
+    IGNORED = r'\s+'                   # Special pattern ignored by the underlying tokenizer
     EQ   = r'='
     STAR = r'\*'
     ID   = r'[_a-zA-Z]\w*'
@@ -62,7 +62,7 @@ P_LRVal = LALR(LRVal)
 #     <same-stuff> ...
 ```
 
-Usage is just easy:
+Using it is just easy:
 
 ``` python
 >>> P_LRVal.interpret('abc')
@@ -93,16 +93,16 @@ This module provides:
 
 The design of this module is inspired by [Parsec] in Haskell and [instaparse] in Clojure, targeting at "native parsing". It is remarkable for
 
-* no **string notations** for grammar (like in [Instaparse][]) and
+* no **literal string notations** for grammar (like in [Instaparse][])
 * no [DSL][] feeling<sup>[2]</sup>
 * no dependencies
-* no helper/intermediate files when using
+* no helper/intermediate files generated
 * rule semantics in *pure* Python
 * etc.
 
 <sub>[2]. may be untrue.</sub>
 
-Though this slim module does not target at replacing more extensive tools, it is extreme handy and its integration in Python projects is seamless.
+Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extreme handy and its integration in Python projects is seamless.
 
 # Going into non-determinism
 
@@ -149,7 +149,7 @@ and it yields multiple legal results properly:
  ('it', ('ite', ('ite', 'x', 'yy'), 'zzz'))]
 ```
 
-On the otherside, using LALR parser would report LR-conflicts for this grammar:
+On the otherside, using LALR parser would report LR-conflicts due to ambiguity:
 ``` python
 >>> from metaparse import LALR
 >>> LALR(G_IfThenElse)
@@ -204,7 +204,7 @@ class S(metaclass=cfg):
     def F()        : return
 ```
 
-Earley parser is used here and all ambiguous parse trees are produced:
+Using Earley parser, we get all ambiguous parse trees:
 ``` python
 >>> p_S = Earley(S)
 >>> p_S.parse_many('u')
@@ -216,30 +216,31 @@ Earley parser is used here and all ambiguous parse trees are produced:
  ('S^', [('S', [('A', [(u = 'u')@[0:1]]), ('B', [('F', [])]), ('C', [])])])]
 ```
 
-This may have merits for inspecting grammar characteristics.
+This may be helpful for inspecting the grammar's characteristics.
 
 # Limitations
 
 Though this module provides advantageous features, there are also limitations:
 
-* Parsing grammars with **loop**s is yet supported. For example
+* Parsing grammars with **loop**s is yet to be supported. For example, the grammar
   ```
   P → Q | a
   Q → P
   ```
-  Such a grammar is *infinitely ambiguous*, which generates unbounded amount of parse trees after consuming only finite input, e.g. `a`:
+  is *infinitely ambiguous*, which has infinite number of derivations while processing only finite input, e.g. `a`:
   ```
   P ⇒ a
   P ⇒ Q ⇒ P ⇒ a
+  ...
   P ⇒ Q ⇒ ... ⇒ P ⇒ a
   ```
-  Such support seems not useful practically.
+  where each derivation corresponds to a parse tree.
 
 * Only **legal Python identifier**, rather than non-alphabetic symbols (like `<fo#o>`, `==`, `raise`, etc) can be used as symbols in grammar (seems no serious).
 
 * Algorithms in pure Python lowers performance, but lots can be optimized.
 
-* GLL parser is yet able to handle left recursion.
+* GLL parser is yet able to handle *left-recursion*.
 
 
 # TODO-List
@@ -251,7 +252,7 @@ Though this module provides advantageous features, there are also limitations:
 
 # Python 2 compatibility
 
-The following version of the grammar in 1st section works for both Python 2 and Python 3, relying on provided decorators `cfg2` and `rule`:
+The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, relying on provided decorators `cfg2` and `rule`:
 
 ``` python
 from metaparse import cfg2, rule
@@ -287,7 +288,7 @@ class LRVal:
         return L
 ```
 
-The problem is that `type.__prepare__` for a method collector is not supported in Python 2, so that repeatedly declared methods can not be collected without the help with some decorator like the `rule`.
+The problem is that `type.__prepare__` creating a method collector is not supported in Python 2, so that repeatedly declared methods can not be collected without the help of some decorator like the `rule`.
 
 The resulted grammar instance is created by `cfg2` decorator which utilizes information collected by `rule`. Here no `metaclass` is needed.
 
@@ -307,3 +308,5 @@ The resulted grammar instance is created by `cfg2` decorator which utilizes info
 [instaparse]: https://github.com/Engelberg/instaparse "Instaparse"
 [SDD]: https://en.wikipedia.org/wiki/Syntax-directed_translation "Syntax-directed Translation"
 [LF]: http://www.csd.uwo.ca/~moreno//CS447/Lectures/Syntax.html/node9.html "Left-factoring"
+[ANTLR]: http://www.antlr.org/ "ANother Tool for Language Recognition"
+

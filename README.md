@@ -38,7 +38,7 @@ class LRVal(metaclass=cfg):    # Using Python 3 metaclass
     # Syntax-directed translation rules
 
     def S(L, EQ, R):
-        print('Got identifiers:', ids)
+        print('Got ids:', ids)
         print('assign %s to %s' % (R, L))
         ids.clear()
 
@@ -90,7 +90,8 @@ This module provides:
 - Parsing algorithms ([Earley], [GLR], [GLL], [LALR] etc.).
 
  -->
- <!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
+
+<!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
 -->
 
 The design of this module is inspired by [Parsec] in Haskell and [instaparse] in Clojure, targeting at "native" parsing. It is remarkable for

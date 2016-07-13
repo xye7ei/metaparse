@@ -151,7 +151,7 @@ class Rule(object):
 
     def __repr__(self):
         """Use '->' or '::='? """
-        return '({} -> {})'.format(self.lhs, ' '.join(self.rhs))
+        return '({} = {})'.format(self.lhs, ' '.join(self.rhs))
 
     def __iter__(self):
         yield self.lhs
@@ -197,7 +197,7 @@ class Item(object):
         lhs = rule.lhs
         rhs1 = ' '.join(rule.rhs[:s.pos])
         rhs2 = ' '.join(rule.rhs[s.pos:])
-        return '({} -> {}.{})'.format(lhs, rhs1, rhs2)
+        return '({} = {}.{})'.format(lhs, rhs1, rhs2)
 
     def __eq__(self, x):
         return self.r == x.r and self.pos == x.pos

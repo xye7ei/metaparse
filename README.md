@@ -165,9 +165,9 @@ metaparse.ParserError:
 
 ! LALR-Conflict raised:
   - in ACTION[7]:
-{'ELSE': (SHIFT, 8), 'END': (REDUCE, (ifstmt -> IF EXPR THEN stmt.))}
+{'ELSE': (SHIFT, 8), 'END': (REDUCE, (ifstmt = IF EXPR THEN stmt.))}
   * conflicting action on token 'ELSE':
-{'ELSE': (REDUCE, (ifstmt -> IF EXPR THEN stmt.))}
+{'ELSE': (REDUCE, (ifstmt = IF EXPR THEN stmt.))}
 #########################
 ```
 
@@ -208,12 +208,12 @@ Earley parser is used here and all ambiguous parse trees are produced:
 ``` python
 >>> p_S = Earley(S)
 >>> p_S.parse_many('u')
-[('S^', [('S', [('A', []), ('B', [('F', [])]), ('C', [(u -> 'u')@[0:1]])])]),
- ('S^', [('S', [('A', []), ('B', [('E', [])]), ('C', [(u -> 'u')@[0:1]])])]),
- ('S^', [('S', [('A', []), ('B', [('F', [(u -> 'u')@[0:1]])]), ('C', [])])]),
- ('S^', [('S', [('A', []), ('B', [('E', [(u -> 'u')@[0:1]])]), ('C', [])])]),
- ('S^', [('S', [('A', [(u -> 'u')@[0:1]]), ('B', [('E', [])]), ('C', [])])]),
- ('S^', [('S', [('A', [(u -> 'u')@[0:1]]), ('B', [('F', [])]), ('C', [])])])]
+[('S^', [('S', [('A', []), ('B', [('F', [])]), ('C', [(u = 'u')@[0:1]])])]),
+ ('S^', [('S', [('A', []), ('B', [('E', [])]), ('C', [(u = 'u')@[0:1]])])]),
+ ('S^', [('S', [('A', []), ('B', [('F', [(u = 'u')@[0:1]])]), ('C', [])])]),
+ ('S^', [('S', [('A', []), ('B', [('E', [(u = 'u')@[0:1]])]), ('C', [])])]),
+ ('S^', [('S', [('A', [(u = 'u')@[0:1]]), ('B', [('E', [])]), ('C', [])])]),
+ ('S^', [('S', [('A', [(u = 'u')@[0:1]]), ('B', [('F', [])]), ('C', [])])])]
 ```
 
 This may have merits for inspecting grammar characteristics.

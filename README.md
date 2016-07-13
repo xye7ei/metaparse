@@ -1,16 +1,14 @@
 metaparse
 =====
 
-[Parsing][] can be done with almost **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
+[Parsing][] and [Interpreting][interpreting] can be done with **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
 
 <sub>[1]. Python 3 preferred.</sub>
 
 
 # Quick Example
 
-Using `metaparse`, syntax and semantics are defined by class methods.
-
-Given a left-right-value grammar in a C-like language in conventional [CFG][CFG] form:
+Using `metaparse`, syntax and semantics are defined by class **methods**. Given a left-right-value grammar in a C-like language in conventional [CFG][CFG] form:
 
 ```
 S  →  L = R
@@ -20,7 +18,7 @@ L  →  * R
 R  →  L
 ```
 
-A handy [LALR]-parser/translator for this grammar supported by this module can be written in [SDD]-style as:
+we write a handy [LALR]-parser/interpreter in `metaparse` for this grammar [SDD]-style:
 
 ``` python
 from metaparse import cfg, LALR
@@ -30,7 +28,8 @@ ids = []
 
 class LRVal(metaclass=cfg):    # Using Python 3 metaclass
 
-    # Lexical rules
+    # Lexical rules with re-patterns
+    IGNORED = r'\s+'           # Special token ignored by the underlying tokenizer
     EQ   = r'='
     STAR = r'\*'
     ID   = r'[_a-zA-Z]\w*'
@@ -75,9 +74,7 @@ Got ids: ['abc', 'ops']
 assign ('REF', ('REF', ('REF', 'ops'))) to ('REF', 'abc')
 ```
 
-Tools under State-of-the-Art can hardly get more handy and expressive than this.
-
-In Python 2 there goes [another way](#python-2-compatibility).
+Tools under State-of-the-Art can hardly get more handy and expressive than this (In Python 2, there goes [another way](#python-2-compatibility)).
 
 
 # Design
@@ -94,9 +91,8 @@ This module provides:
 <!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
 -->
 
-The design of this module is inspired by [Parsec] in Haskell and [instaparse] in Clojure, targeting at "native" parsing. It is remarkable for
+The design of this module is inspired by [Parsec] in Haskell and [instaparse] in Clojure, targeting at "native parsing". It is remarkable for
 
-<!-- - *Pure* Python -->
 * no **string notations** for grammar (like in [Instaparse][]) and
 * no [DSL][] feeling<sup>[2]</sup>
 * no dependencies
@@ -106,7 +102,7 @@ The design of this module is inspired by [Parsec] in Haskell and [instaparse] in
 
 <sub>[2]. may be untrue.</sub>
 
-Though this module does not target at replacing other more extensive tools, it is extreme handy and its integration in Python projects is seamless.
+Though this slim module does not target at replacing more extensive tools, it is extreme handy and its integration in Python projects is seamless.
 
 # Going into non-determinism
 
@@ -122,9 +118,9 @@ For example, given the famous [Dangling-Else](https://en.wikipedia.org/wiki/Dang
 
 We declare a powerful *non-deterministic* [GLL parser][Gll] to process it directly:
 ``` python
-from metaparse import GLL
+from metaparse import cfg, GLL, LALR
 
-class P_IfThenElse(metaclass=GLL.meta):
+class G_IfThenElse(metaclass=cfg):
 
     IGNORED = r'\s'
     IF      = r'if'
@@ -137,16 +133,40 @@ class P_IfThenElse(metaclass=GLL.meta):
         return SINGLE
     def stmt(IF, EXPR, THEN, stmt):
         return ('it', stmt)
-    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):    # differ stmt from stmt in param list
+    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
+        # The trailing substring '_1' and '_2' denotes instances of
+        # the nonterminal 'stmt' in parameter list
         return ('ite', stmt_1, stmt_2)
 ```
 and it yields multiple legal results properly:
 
 ``` python
+>>> P_IfThenElse = GLL(G_IfThenElse)
 >>> P_IfThenElse.interpret_many('if 1 then if 2 then if 3 then x else yy else zzz')
 [('ite', ('ite', ('it', 'x'), 'yy'), 'zzz'),
  ('ite', ('it', ('ite', 'x', 'yy')), 'zzz'),
  ('it', ('ite', ('ite', 'x', 'yy'), 'zzz'))]
+```
+
+On the otherside, using LALR parser would report LR-conflicts for this grammar:
+``` python
+>>> LALR(G_IfThenElse)
+Traceback (most recent call last):
+  File "c:/Users/Shellay/Documents/GitHub/metaparse/tests/test_if_else.py", line 117, in <module>
+    LALR(Gif)
+  File "c:\Users\Shellay\Documents\GitHub\metaparse\metaparse.py", line 1414, in __init__
+    self._build_automaton()
+  File "c:\Users\Shellay\Documents\GitHub\metaparse\metaparse.py", line 1564, in _build_automaton
+    raise ParserError(msg)
+metaparse.ParserError:
+########## Error ##########
+
+! LALR-Conflict raised:
+  - in ACTION[7]:
+{'ELSE': (SHIFT, 8), 'END': (REDUCE, (ifstmt -> IF EXPR THEN stmt.))}
+  * conflicting action on token 'ELSE':
+{'ELSE': (REDUCE, (ifstmt -> IF EXPR THEN stmt.))}
+#########################
 ```
 
 # Retrieving Parse Trees
@@ -270,6 +290,7 @@ The problem is that `type.__prepare__` for a method collector is not supported i
 The resulted grammar instance is created by `cfg2` decorator which utilizes information collected by `rule`. Here no `metaclass` is needed.
 
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"
+[Interpreting]: https://en.wikipedia.org/wiki/Interpreter_(computing) "Interpreter"
 [DSL]: https://en.wikipedia.org/wiki/Domain-specific_language "Domain-specific Language"
 [BNF]: https://en.wikipedia.org/wiki/Backus%E2%80%93Naur_Form "Backus-Naur From"
 [Earley]: https://en.wikipedia.org/wiki/Earley_parser "Earley"

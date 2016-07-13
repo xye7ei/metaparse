@@ -63,10 +63,10 @@ class Signal(str):
 DUMMY   = Signal('#')
 EPSILON = Signal('ε')
 
-PREDICT = Signal('?')
-SHIFT   = Signal('<')
-REDUCE  = Signal('!')
-ACCEPT  = Signal('$')
+PREDICT = Signal('PREDICT')
+SHIFT   = Signal('SHIFT')
+REDUCE  = Signal('REDUCE')
+ACCEPT  = Signal('ACCEPT')
 
 
 class Token(object):

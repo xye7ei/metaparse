@@ -100,7 +100,7 @@ If merely the parse tree is needed rather than the semantic result, use method `
 The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as
 ```(<token-symbol>: '<lexeme>')@[<position-in-input>]```.
 
-After this, calling ```tr.translate()``` delivers the same result as using `interpret` for the input. The difference is, for LALR `interpret` is performed on-the-fly without producing parse tree explicitly.
+After this, calling ```tr.translate()``` delivers the same result as using `interpret` for the input. The difference is, method `interpret` performs on-the-fly interpretation without producing parse trees explicitly.
 
 
 # Design and Usage
@@ -194,21 +194,21 @@ Using Earley/GLR parser, we get all ambiguous parse trees properly:
 ``` python
 >>> p_S = Earley(S)
 >>> p_S.parse_many('u')
-[(S, [(A, []), (B, [(F, [])]), (C, [(u -> 'u')@[0:1]])]),
- (S, [(A, []), (B, [(E, [])]), (C, [(u -> 'u')@[0:1]])]),
- (S, [(A, []), (B, [(F, [(u -> 'u')@[0:1]])]), (C, [])]),
- (S, [(A, []), (B, [(E, [(u -> 'u')@[0:1]])]), (C, [])]),
- (S, [(A, [(u -> 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
- (S, [(A, [(u -> 'u')@[0:1]]), (B, [(F, [])]), (C, [])])]
+[(S, [(A, []), (B, [(F, [])]), (C, [(u: 'u')@[0:1]])]),
+ (S, [(A, []), (B, [(E, [])]), (C, [(u: 'u')@[0:1]])]),
+ (S, [(A, []), (B, [(F, [(u: 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, []), (B, [(E, [(u: 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, [(u: 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
+ (S, [(A, [(u: 'u')@[0:1]]), (B, [(F, [])]), (C, [])])]
 
 >>> p_S = GLR(S)
 >>> p_S.parse_many('u')
-[(S, [(A, [(u -> 'u')@[0:1]]), (B, [(F, [])]), (C, [])]),
- (S, [(A, [(u -> 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
- (S, [(A, []), (B, [(F, [(u -> 'u')@[0:1]])]), (C, [])]),
- (S, [(A, []), (B, [(E, [(u -> 'u')@[0:1]])]), (C, [])]),
- (S, [(A, []), (B, [(F, [])]), (C, [(u -> 'u')@[0:1]])]),
- (S, [(A, []), (B, [(E, [])]), (C, [(u -> 'u')@[0:1]])])]
+[(S, [(A, [(u: 'u')@[0:1]]), (B, [(F, [])]), (C, [])]),
+ (S, [(A, [(u: 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
+ (S, [(A, []), (B, [(F, [(u: 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, []), (B, [(E, [(u: 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, []), (B, [(F, [])]), (C, [(u: 'u')@[0:1]])]),
+ (S, [(A, []), (B, [(E, [])]), (C, [(u: 'u')@[0:1]])])]
 ```
 
 These may be helpful for inspecting the grammar's characteristics.

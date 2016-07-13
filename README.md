@@ -97,13 +97,10 @@ If merely the parse tree is needed rather than the semantic result, use method `
               (R, [(L, [(ID: 'ops')@[14:17]])])])])])])])])])
 ```
 
-The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as `(<token-symbol>: '<lexeme>')@[<position-in-input>]`.
+The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as
+```(<token-symbol>: '<lexeme>')@[<position-in-input>]```.
 
-After this, calling
-
-```>>> tr.translate()```
-
-delivers the same result as using `interpret` for the input. The difference is, for LALR here `interpret` is performed on-the-fly during parsing.
+After this, calling ```tr.translate()``` delivers the same result as using `interpret` for the input. The difference is, for LALR `interpret` is performed on-the-fly without producing parse tree explicitly.
 
 
 # Design and Usage

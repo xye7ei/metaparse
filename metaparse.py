@@ -43,10 +43,10 @@ ERROR = 'ERROR'
 ERROR_PATTERN_DEFAULT = r'.'
 
 
-class Signal(str):
+class Symbol(str):
 
-    """Signal object is used to direct behaviors during constructing
-    parsers or parsing. Each Signal instance should be constructed
+    """Symbol object is used to direct behaviors during constructing
+    parsers or parsing. Each Symbol instance should be constructed
     only once and the comparison between them is identity comparison.
 
     This emulates Enum data type.
@@ -60,13 +60,13 @@ class Signal(str):
         return self
 
 
-DUMMY   = Signal('#')
-EPSILON = Signal('ε')
+DUMMY   = Symbol('#')
+EPSILON = Symbol('ε')
 
-PREDICT = Signal('PREDICT')
-SHIFT   = Signal('SHIFT')
-REDUCE  = Signal('REDUCE')
-ACCEPT  = Signal('ACCEPT')
+PREDICT = Symbol('PREDICT')
+SHIFT   = Symbol('SHIFT')
+REDUCE  = Symbol('REDUCE')
+ACCEPT  = Symbol('ACCEPT')
 
 
 class Token(object):
@@ -753,7 +753,7 @@ class ParseTree(object):
 
     def to_tuple(self):
         """Translate the parse tree into Python tuple form. """
-        return self.translate(lambda t, subs: (t.rule.lhs, subs),
+        return self.translate(lambda t, subs: (Symbol(t.rule.lhs), subs),
                               lambda tok: tok)
 
     def __eq__(self, other):
@@ -1182,7 +1182,8 @@ class Earley(ParserBase):
             if i == 0 and itm.r == 0 and itm.ended():
                 for i_stk in i_stks:
                     assert len(i_stk) == 1, 'Top rule should be Singleton rule.'
-                    tree = ParseTree(G.top_rule, i_stk)
+                    # tree = ParseTree(G.top_rule, i_stk)
+                    tree = i_stk[0]
                     if interp:
                         fin.append(tree.translate())
                     else:
@@ -1340,19 +1341,21 @@ class GLR(ParserBase):
                 # Index of input remains unchanged.
                 frk = stk[:]
                 trs1 = trs[:]
-                subts = []
+
+                subs = []
                 for _ in range(ritm.size):
                     frk.pop()   # only serves amount
-                    subts.insert(0, trs1.pop())
-                trs1.append(ParseTree(ritm.rule, subts))
+                    subs.insert(0, trs1.pop())
 
                 # Deliver/Transit after reduction
                 if ritm.target == G.top_rule.lhs:
                     # Discard partial top-tree, which can be legally
                     # completed while i < len(tokens)
                     if i == len(tokens):
-                        results.append(trs1[0])
-                else:
+                        # Not delivering augmented top tree
+                        results.append(subs[0])
+                else: 
+                    trs1.append(ParseTree(ritm.rule, subs))
                     frk.append(GOTO[frk[-1]][ritm.target])
                     forest.append([frk, trs1, i]) # index i stays
 
@@ -1884,18 +1887,13 @@ class GLL(ParserBase):
                             subs.insert(0, astk.pop())
                         astk.append(ParseTree(actor, subs))
                         agenda.append((astk, pstk))
-            if not agenda1:
-                if tok.symbol == END:
-                    pass
-                # raise ParserError('No parse @ {}.'.format(tok))
-            else:
+            if agenda1:
                 agenda = agenda1
 
         if interp:
             return [res.translate() for res in results]
         else:
             return results
-
 
 
 class _cfg2(object):

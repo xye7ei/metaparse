@@ -28,8 +28,10 @@ ids = []
 
 class LRVal(metaclass=cfg):
 
+    # Special pattern ignored by the underlying tokenizer
+    IGNORED = r'\s+'
+
     # Lexical rules with re-patterns
-    IGNORED = r'\s+'                   # Special pattern ignored by the underlying tokenizer
     EQ   = r'='
     STAR = r'\*'
     ID   = r'[_a-zA-Z]\w*'
@@ -55,11 +57,6 @@ class LRVal(metaclass=cfg):
         return L
 
 P_LRVal = LALR(LRVal)
-
-# Or alternatively,
-#
-# class P_LRVal(metaclass=LALR.meta):
-#     <same-stuff> ...
 ```
 
 Using it is just easy:
@@ -74,10 +71,40 @@ Got ids: ['abc', 'ops']
 assign ('REF', ('REF', ('REF', 'ops'))) to ('REF', 'abc')
 ```
 
-Tools under State-of-the-Art can hardly get more handy and expressive than this (In Python 2, there goes [another way](#python-2-compatibility)).
+Tools under State-of-the-Art can hardly get more handy and expressive than this (In Python 2, there goes [a more verbose way](#python-2-compatibility)).
+
+## Retrieving the Parse Tree
+
+If merely the parse tree is needed rather than the semantic result, use method `parse` instead of `interpret`:
+
+``` python
+>>> tr = l_LRVal.parse('* abc = *  ** ops')
+>>> tr
+(S,
+ [(L, [(STAR -> '*')@[0:1], (R, [(L, [(ID -> 'abc')@[2:5]])])]),
+  (EQ -> '=')@[6:7],
+  (R,
+   [(L,
+     [(STAR -> '*')@[8:9],
+      (R,
+       [(L,
+         [(STAR -> '*')@[11:12],
+          (R,
+           [(L,
+             [(STAR -> '*')@[12:13],
+              (R, [(L, [(ID -> 'ops')@[14:17]])])])])])])])])])
+```
+
+The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as `(<token-symbol> -> '<lexeme>')@[<position-in-input>]`.
+
+After this, calling
+
+```>>> tr.translate()```
+
+delivers the same result as using `interpret` for the input.
 
 
-# Design
+# Design and Usage
 
 <!--
 This module provides:
@@ -86,7 +113,7 @@ This module provides:
 - Token, tokenizer, parse leaf/tree structure as well as parser interface.
 - Parsing algorithms ([Earley], [GLR], [GLL], [LALR] etc.).
 
- -->
+-->
 
 <!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
 -->
@@ -99,12 +126,98 @@ The design of this module is inspired by [Parsec] in Haskell and [instaparse] in
 * no helper/intermediate files generated
 * rule semantics in *pure* Python
 * etc.
-
-<sub>[2]. may be untrue.</sub>
+  <sub>[2]. may be untrue.</sub>
 
 Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extreme handy and its integration in Python projects is seamless.
 
-# Going into non-determinism
+Formally, the code structure for grammar declaration with `metaparse` can be described as
+``` python
+from metaparse import cfg, <parser>
+
+
+class <grammar-object> ( metaclass=cfg ) :
+
+    IGNORED = <ignore-pattern>           # when not given, default pattern is r"\s"
+
+    <terminal> = <lexeme-pattern>
+    ...
+
+    def <rule-LHS> ( <rule-RHS> ) :
+        <semantic-behavior>
+        ...
+        return <subtree-value>
+
+    ...
+
+
+<parser> = <parser-name> ( <grammar-object> )
+```
+
+Literally, lexical rule is represented by **class attribute** assignment, whilst syntactical rule by method **signature** and semantic behavior by method **body**. In method body, the call arguments represents the value interpreted by successful parsing of subtrees.
+
+
+
+# Further into Non-determinism
+
+Sections above only show the *front-end* of using this module. In the *back-end*, various parsing algorithms have been/can be implemented.
+
+`metaparse` provides `Earley` parser, which can parse any [CFG][] (currently except those with **loop**s). For exmaple, given the tricky ambiguous grammar
+```
+S → A B C
+A → u | ε
+B → E | F
+C → u | ε
+E → u | ε
+F → u | ε
+```
+where `ε` denotes empty production. The corresponding `metaparse` declaration (here only syntax is concerned and semantic bodies are ignored)
+
+``` python
+from metaparse import cfg, Earley, GLR
+
+class S(metaclass=cfg):
+    u = r'u'
+    def S(A, B, C) : pass
+    def A(u)       : pass
+    def A()        : pass
+    def B(E)       : pass
+    def B(F)       : pass
+    def C(u)       : pass
+    def C()        : pass
+    def E(u)       : pass
+    def E()        : pass
+    def F(u)       : pass
+    def F()        : pass
+```
+
+Using Earley/GLR parser, we get all ambiguous parse trees properly:
+``` python
+>>> p_S = Earley(S)
+>>> p_S.parse_many('u')
+[(S, [(A, []), (B, [(F, [])]), (C, [(u -> 'u')@[0:1]])]),
+ (S, [(A, []), (B, [(E, [])]), (C, [(u -> 'u')@[0:1]])]),
+ (S, [(A, []), (B, [(F, [(u -> 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, []), (B, [(E, [(u -> 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, [(u -> 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
+ (S, [(A, [(u -> 'u')@[0:1]]), (B, [(F, [])]), (C, [])])]
+
+>>> p_S = GLR(S)
+>>> p_S.parse_many('u')
+[(S, [(A, [(u -> 'u')@[0:1]]), (B, [(F, [])]), (C, [])]),
+ (S, [(A, [(u -> 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
+ (S, [(A, []), (B, [(F, [(u -> 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, []), (B, [(E, [(u -> 'u')@[0:1]])]), (C, [])]),
+ (S, [(A, []), (B, [(F, [])]), (C, [(u -> 'u')@[0:1]])]),
+ (S, [(A, []), (B, [(E, [])]), (C, [(u -> 'u')@[0:1]])])]
+```
+
+These may be helpful for inspecting the grammar's characteristics.
+
+Note for *non-deterministic* parsers like `Earley`, method `parse_many` should be used instead of `parse`.
+
+
+<!--
+## Non-determinism and ambiguity
 
 While [LALR parser][LALR] is a classical *deterministic* parser, further parsers can be use to experiment with trickier grammars for heuristic exploration.
 
@@ -112,9 +225,6 @@ For example, given the famous [Dangling-Else](https://en.wikipedia.org/wiki/Dang
 
 * is ambiguous and
 * needs [left-factoring][LF] to be [LL(k)][LL].
-
-<!-- Thanks to the powerful [GLL] algorithm, there is no need for **full backtracking**, which is a serious headache when designing performant and practical [LL(1)][LL] grammars. Even the highly notable [Parsec] in Haskell [cannot handle this with ease](http://hackage.haskell.org/package/parsec-3.1.11/docs/Text-Parsec-Prim.html#v:try).
--->
 
 We declare a powerful *non-deterministic* [GLL parser][Gll] to process it directly:
 ``` python
@@ -170,53 +280,7 @@ metaparse.ParserError:
 {'ELSE': (REDUCE, (ifstmt = IF EXPR THEN stmt.))}
 #########################
 ```
-
-# Retrieving Parse Trees
-
-In case only parse trees are needed, method bodies can be left emtpy. Method `parse`/`parse_many` is used instead of `interpret`/`interpret_many`.
-
-For exmaple, given the tricky grammar (where `ε` denotes empty production)
-```
-S → A B C
-A → u | ε
-B → E | F
-C → u | ε
-E → u | ε
-F → u | ε
-```
-and corresponding `metaparse` declaration
-
-``` python
-from metaparse import cfg, Earley
-
-class S(metaclass=cfg):
-    u = r'u'
-    def S(A, B, C) : return
-    def A(u)       : return
-    def A()        : return
-    def B(E)       : return
-    def B(F)       : return
-    def C(u)       : return
-    def C()        : return
-    def E(u)       : return
-    def E()        : return
-    def F(u)       : return
-    def F()        : return
-```
-
-Using Earley parser, we get all ambiguous parse trees:
-``` python
->>> p_S = Earley(S)
->>> p_S.parse_many('u')
-[('S^', [('S', [('A', []), ('B', [('F', [])]), ('C', [(u = 'u')@[0:1]])])]),
- ('S^', [('S', [('A', []), ('B', [('E', [])]), ('C', [(u = 'u')@[0:1]])])]),
- ('S^', [('S', [('A', []), ('B', [('F', [(u = 'u')@[0:1]])]), ('C', [])])]),
- ('S^', [('S', [('A', []), ('B', [('E', [(u = 'u')@[0:1]])]), ('C', [])])]),
- ('S^', [('S', [('A', [(u = 'u')@[0:1]]), ('B', [('E', [])]), ('C', [])])]),
- ('S^', [('S', [('A', [(u = 'u')@[0:1]]), ('B', [('F', [])]), ('C', [])])])]
-```
-
-This may be helpful for inspecting the grammar's characteristics.
+-->
 
 # Limitations
 
@@ -235,6 +299,8 @@ Though this module provides advantageous features, there are also limitations:
   P ⇒ Q ⇒ ... ⇒ P ⇒ a
   ```
   where each derivation corresponds to a parse tree.
+
+* No specification of operator precedence.
 
 * Only **legal Python identifier**, rather than non-alphabetic symbols (like `<fo#o>`, `==`, `raise`, etc) can be used as symbols in grammar (seems no serious).
 

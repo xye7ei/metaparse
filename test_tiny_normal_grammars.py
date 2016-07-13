@@ -84,8 +84,9 @@ l_LRVal = LALR(LRVal)
 
 # pp.pprint(l_LRVal.interpret1('abc'))
 # pp.pprint(l_LRVal.interpret1('abc = * * ops'))
-pp.pprint(l_LRVal.interpret1('* abc = *  ** ops'))
+pp.pprint(l_LRVal.parse('* abc = *  ** ops'))
 
+assert 0
 
 class GArith(metaclass=cfg):
     IGNORED = r'\s+'
@@ -126,3 +127,7 @@ class SExp(metaclass=cfg):
 
 
 # pp.pprint(SExp)
+
+e_arith = Earley(GArith)
+# print(e_arith.parse_many('3 + 2 * 5'))
+

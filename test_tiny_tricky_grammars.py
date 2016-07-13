@@ -90,20 +90,22 @@ class L(metaclass=cfg):
 class S(metaclass=cfg):
     """Ambiguous grammar with strong ambiguity, but no LOOPs."""
     u = r'u'
-    def S(A, B, C) : return
-    def A(u)       : return
-    def A()        : return
-    def B(E)       : return
-    def B(F)       : return
-    def C(u)       : return
-    def C()        : return
-    def E(u)       : return
-    def E()        : return
-    def F(u)       : return
-    def F()        : return
+    def S(A, B, C) : pass
+    def A(u)       : pass
+    def A()        : pass
+    def B(E)       : pass
+    def B(F)       : pass
+    def C(u)       : pass
+    def C()        : pass
+    def E(u)       : pass
+    def E()        : pass
+    def F(u)       : pass
+    def F()        : pass
 
 
-p_S = Earley(S)
+# p_S = Earley(S)
+# p_S = GLR(S)
+p_S = GLL(S)
 # res = p_S.parse('u')
 pp.pprint(p_S.parse_many('u'))
 assert 0

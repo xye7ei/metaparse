@@ -18,7 +18,7 @@ L  →  * R
 R  →  L
 ```
 
-we write a handy [LALR]-parser/interpreter in `metaparse` for this grammar [SDD]-style:
+we write a handy [LALR]-parser/interpreter in `metaparse` for this grammar in [SDD]-style:
 
 ``` python
 from metaparse import cfg, LALR
@@ -118,7 +118,7 @@ For example, given the famous [Dangling-Else](https://en.wikipedia.org/wiki/Dang
 
 We declare a powerful *non-deterministic* [GLL parser][Gll] to process it directly:
 ``` python
-from metaparse import cfg, GLL, LALR
+from metaparse import cfg, GLL
 
 class G_IfThenElse(metaclass=cfg):
 
@@ -137,11 +137,12 @@ class G_IfThenElse(metaclass=cfg):
         # The trailing substring '_1' and '_2' denotes instances of
         # the nonterminal 'stmt' in parameter list
         return ('ite', stmt_1, stmt_2)
+
+P_IfThenElse = GLL(G_IfThenElse)
 ```
 and it yields multiple legal results properly:
 
 ``` python
->>> P_IfThenElse = GLL(G_IfThenElse)
 >>> P_IfThenElse.interpret_many('if 1 then if 2 then if 3 then x else yy else zzz')
 [('ite', ('ite', ('it', 'x'), 'yy'), 'zzz'),
  ('ite', ('it', ('ite', 'x', 'yy')), 'zzz'),
@@ -150,6 +151,7 @@ and it yields multiple legal results properly:
 
 On the otherside, using LALR parser would report LR-conflicts for this grammar:
 ``` python
+>>> from metaparse import LALR
 >>> LALR(G_IfThenElse)
 Traceback (most recent call last):
   File "c:/Users/Shellay/Documents/GitHub/metaparse/tests/test_if_else.py", line 117, in <module>

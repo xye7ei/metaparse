@@ -1,9 +1,17 @@
+"""This module contains experimental fundamental Parsec-like utilities
+with Python style (iterative) implementations.
+
+"""
+
 import warnings
 import io
 
 reader = io.StringIO
 
 from collections import namedtuple
+
+
+# Structures
 
 L = Left = namedtuple('Left', 'info')
 L.__add__ = lambda l1, l2: Left('{}\n{}'.format(l1, l2))
@@ -13,6 +21,8 @@ R = Right = namedtuple('Right', 'value')
 isL = lambda x: isinstance(x, Left)
 isR = lambda x: isinstance(x, Right)
 
+
+# Core combinators
 
 def _id(x):
     return x
@@ -32,14 +42,14 @@ def token(tk, trans1=_id):
     return _t
 
 
-def sequence(ps, trans_tuple=_id):
+def seq(ps, trans_tuple=_id):
     def _s(inp):
         args = ()               # tuple for heterogenous elements in sequence
         inpr = inp
         for p in ps:
             res, inpr = p(inpr)
             if isL(res):
-                return L('Sequence failed: {}'.format(p.__name__, repr(inp))) + res, inp
+                return L('seq failed: {}'.format(p.__name__, repr(inp))) + res, inp
             else:
                 args += (res.value,)
         return R(trans_tuple(args)), inpr
@@ -76,7 +86,7 @@ def many1(par, trans_list=_id):
     return _m1
 
 
-def alter(pars):
+def alt(pars):
     def _a(inp):
         for par in pars:
             res, inpr = par(inp) # full backtracking with :inp:
@@ -87,100 +97,95 @@ def alter(pars):
 
 
 # Test core unitilities
-assert token('a')('abc') == (Right('a'), 'bc')
-assert many(token('a'))('aaac') == (Right(['a', 'a', 'a']), 'c')
-assert alter([token('a'), token('b')])('abc') == (Right('a'), 'bc')
-assert alter((token('a'), token('b')))('bbc') == (Right('b'), 'bc')
-assert alter([sequence([*map(token, 'ab')]),
-              sequence([*map(token, 'ac')])])('ac') == \
-              (Right(('a', 'c')), '')
-assert alter([])('') == (Left(info='No matching alternatives.'), '')
+
+assert token('a')('abc') == (R('a'), 'bc')
+assert many(token('a'))('aaac') == (R(['a', 'a', 'a']), 'c')
+assert alt([token('a'), token('b')])('abc') == (R('a'), 'bc')
+assert alt((token('a'), token('b')))('bbc') == (R('b'), 'bc')
+assert alt([seq([*map(token, 'ab')]),
+            seq([*map(token, 'ac')])])('ac') == (R(('a', 'c')), '')
+assert alt([])('') == (L(info='No matching alternatives.'), '')
 
 
-digit = alter([token(str(i), lambda x: ord(x) - ord('0')) for i in range(10)])
+# Extended basic utilities
+        
+# Single whitespace
+whitespace = alt([
+    token(' '),
+    token('\t'),
+    token('\n'),
+    token('\r'),
+])
+# Multiple whitespaces
+whitespaces = many(whitespace, lambda s: ' ')
 
-def integer(inp: str) -> (int, str):
+assert whitespaces('') == (R(' '), ''), whitespaces('')
+assert whitespaces('    \t   \r   \n\n ') == (R(' '), '')
+
+char = alt([token(x) for x in 'abcdefghijklmnopqrstuvwxyz'])
+symbol = many1(char, lambda cs: ''.join(cs))
+
+assert symbol('abcd efg') == (Right('abcd'), ' efg')
+
+def trailed(par):
+    return seq((par, many(whitespace)), lambda s: s[0])
+
+def tokenw(lit):
+    return seq([token(lit), whitespaces], lambda sw: sw[0])
+
+print(tokenw('abcd')('abcd   cfg'))
+assert tokenw('xy')('xy') == (R('xy'), ''), tokenw('xy')('xy')
+assert tokenw('abcd')('abcd   efg') == (R('abcd'), 'efg'), tokenw('abcd')('abcd   efg')
+
+
+# Exemplar usages for practical structure
+
+digit = alt([token(str(i), lambda x: ord(x) - ord('0')) for i in range(10)])
+
+def integer(inp):
     dlst, inpr =  many(digit)(inp)
-    if dlst:
+    if isR(dlst):
         num = 0
         for d in dlst.value:
             num = num * 10 + d
         return R(num), inpr
     else:
         return L('Not a integer.'), inp
-            
+
+
 assert digit('159') == (Right(1), '59')
 assert digit('9') == (Right(9), '')
 assert integer('12345 67') == (Right(12345), ' 67')
 
-whitespace = alter([
-    token(' '),
-    token('\t'),
-    token('\n'),
-    token('\r'),
-])
-whitespaces = many(whitespace, lambda s: ' ')
-whitespaces('    \t   \r   \n\n ')
-
-char = alter([token(x) for x in 'abcdefghijklmnopqrstuvwxyz'])
-symbol = many1(char, lambda cs: ''.join(cs))
-
-
-assert symbol('abcd efg') == (Right('abcd'), ' efg')
-
-def trailed(par):
-    return sequence([par, many(whitespace)],
-                    lambda ctnt_w: ctnt_w[0])
-
-def tokenw(lit):
-    return sequence([token(lit), whitespaces], lambda sw: sw[0])
-
-word = trailed(symbol)
-
-print(word(' ')[0].info)
-assert word('abcd   efg') == (Right('abcd'), 'efg')
-
-
 pa_l1 = trailed(token('('))
 pa_r1 = trailed(token(')')) 
 def parens(inp: str) -> (int, str):
-    return alter([
-        sequence([tokenw('('),
+    return alt([
+        seq([tokenw('('),
                   parens,
                   tokenw(')'),
               ], lambda seq: seq[1] + 1),
               # ]),
-        sequence([], lambda x: 0)
-        # sequence([]),
+        seq([], lambda x: 0)
+        # seq([]),
     ])(inp)
 
 assert parens('   ') == (Right(0), '   ')
 assert parens('( )') == (Right(1), '')
 assert parens('((( (  ) )  ))') == (Right(4), '')
 
-
 def sexp(inp):
-    return alter([
-        word,
-        sequence([
-            tokenw('('),
-            many(sexp),
-            tokenw(')'),
-        ], lambda s: s[1])
+    return alt([
+        seq([symbol,
+             whitespaces], lambda s: s[0]),
+        seq([tokenw('('),
+             many(sexp),
+             tokenw(')')], lambda s: s[1])
     ])(inp)
-
-# # sexp get recursive reference...
-# sexp = alter([
-#     sequence([tokenw('('),
-#               many(sexp),
-#               tokenw(')')],
-#              lambda s: s[1]), 
-#     word
-# ])
 
 assert sexp('a') == (R('a'), '')
 assert sexp('()') == (R([]), '')
-assert sexp('(  b b   ops )') == (R(['b', 'b', 'ops']), '')
+assert sexp('(  b b   ops )') == (R(['b', 'b', 'ops']), ''), sexp('(  b b   ops )')
 assert sexp('( a (b (c d)) ((e)))') == (R(['a', ['b', ['c', 'd']], [['e']]]), '')
 
 # Rule representation and semantics
@@ -214,12 +219,12 @@ assert sexp('( a (b (c d)) ((e)))') == (R(['a', ['b', ['c', 'd']], [['e']]]), ''
 # |a| == 8: S(|a|) == (8, 0) 
 # |a| == 9: S(|a|) == (2, 7) 
 
-aSa = lambda inp: alter([
-    sequence([tokenw('a'),
-              aSa,
-              tokenw('a')]),
-    sequence([tokenw('a'),
-              tokenw('a')]),
+aSa = lambda inp: alt([
+    seq([tokenw('a'),
+         aSa,
+         tokenw('a')]),
+    seq([tokenw('a'),
+         tokenw('a')]),
 ])(inp)
 
 print(aSa(' a'))

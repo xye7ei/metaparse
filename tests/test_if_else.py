@@ -1,9 +1,7 @@
 import preamble
+import unittest
 
-from grammar import cfg
-from earley import Earley
-from lalr import LALR
-from glr import GLR
+from metaparse import *
 
 import pprint as pp
 
@@ -84,27 +82,35 @@ ACTION
         return ('it', EXPR, stmt)
 
 
+class TestLRGrammar(unittest.TestCase):
+
+    def test_LALR_report(self):
+        """LALR parser should report conflicts for ambiguous grammar! """
+        with self.assertRaises(ParserError):
+            LALR(Gif)
+
+    def test_many(self):
+
+        p_ear = Earley(Gif)
+        p_gll = GLL(Gif)
+        p_glr = GLR(Gif)
+
+        inp = 'if e then if e then if e then s else s else s'
+
+        p1 = sorted(p_ear.interpret_many(inp))
+        p2 = sorted(p_glr.interpret_many(inp))
+        p3 = sorted(p_gll.interpret_many(inp))
+
+        pp.pprint(p1)
+        pp.pprint(p2)
+        pp.pprint(p3)
+
+        self.assertEqual(p1, p2)
+        self.assertEqual(p2, p3)
+        self.assertEqual(len(p1), 3)
+
+
 if __name__ == '__main__':
 
-    # Should warn conflicts by consturcting LALR parser!
-    plalr = LALR(Gif)
-    
-    pglr = GLR(Gif)
-    # pear = Earley(Gif)
+    unittest.main()
 
-    import timeit
-
-    # Errored input
-    inp = 'if e then if e then if e then else s'
-    pglr.parse(inp)
-    # timeit.timeit('pglr.parse(inp)')
-
-    # Right input - 3 parse trees
-    inp = 'if e then if e then if e then s else s'
-    ps = pglr.parse(inp)
-    assert len(ps) == 3
-
-    # Right input - 4 parse trees
-    inp = 'if e then if e then if e then if e then s else s'
-    ps = pglr.parse(inp)
-    assert len(ps) == 4

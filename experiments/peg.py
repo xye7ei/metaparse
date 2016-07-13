@@ -1,5 +1,5 @@
-# This experiment starts without concerning lexical analysis, which
-# can be extended afterwards.
+# Experimental implementation for Parser Expression Grammar,
+# represented by EBNF-like notation.
 
 import re
 
@@ -145,8 +145,7 @@ def parse_opt(G, sub: Expr, inp: str) -> (tuple, str):
 # parse_seq(None, i2.subs, '123 456')
 
 # parse(None, i1, '123 456')
-# parse(None, i2, '123 456')
-
+# parse(None, i2, '123 456') 
 G1 = {Nonterminal('E'): Seq([Nonterminal('T'),
                              Star(Seq([Terminal('PLUS', r'\+'), Nonterminal('T')]))]),
       Nonterminal('T'): Seq([Nonterminal('F'),

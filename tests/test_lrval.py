@@ -1,8 +1,8 @@
 import preamble
 
-from earley import earley
+from metaparse import *
 
-class Glrval(metaclass=earley):
+class Glrval(metaclass=LALR.meta):
 
     EQ   = r'='
     STAR = r'\*'

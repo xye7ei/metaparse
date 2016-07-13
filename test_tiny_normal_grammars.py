@@ -22,7 +22,7 @@ class LRVal(metaclass=cfg):
     #
     def S(L, EQ, R):
         print('Got ids:', ids)
-        print('assign %s to %s' % (L, R))
+        print('assign %s to %s' % (R, L))
         ids.clear()
         
     def S(R):
@@ -40,35 +40,35 @@ class LRVal(metaclass=cfg):
 
 from metaparse import cfg2, rule
 
-@cfg2
-class LRVal:
+# @cfg2
+# class LRVal:
 
-    EQ   = r'='
-    STAR = r'\*'
-    ID   = r'[_a-zA-Z]\w*'
+#     EQ   = r'='
+#     STAR = r'\*'
+#     ID   = r'[_a-zA-Z]\w*'
 
-    @rule
-    def S(L, EQ, R):
-        print('Got ids:', ids)
-        print('assign %s to %s' % (L, R))
-        ids.clear()
+#     @rule
+#     def S(L, EQ, R):
+#         print('Got ids:', ids)
+#         print('assign %s to %s' % (L, R))
+#         ids.clear()
         
-    @rule
-    def S(R):
-        print('Got ids:', ids)
-        return ('expr', R)
+#     @rule
+#     def S(R):
+#         print('Got ids:', ids)
+#         return ('expr', R)
 
-    @rule
-    def L(STAR, R):
-        return ('REF', R)
-    @rule
-    def L(ID):
-        ids.append(ID)
-        return ID
+#     @rule
+#     def L(STAR, R):
+#         return ('REF', R)
+#     @rule
+#     def L(ID):
+#         ids.append(ID)
+#         return ID
 
-    @rule
-    def R(L):
-        return L
+#     @rule
+#     def R(L):
+#         return L
 
 
 # pp.pprint(Glrval.closure_with_lookahead(G.make_item(0, 0), '%'))

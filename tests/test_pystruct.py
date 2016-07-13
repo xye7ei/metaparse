@@ -1,11 +1,11 @@
 import preamble
 import unittest
 
-from metaparse import Rule, lalr
+from metaparse import *
 # from earley import earley
 
 # class PyStructReader(metaclass=earley):
-class PyStructReader(metaclass=lalr):
+class PyStructReader(metaclass=LALR.meta):
 
     """
     Grammar for python object and built-in container types.
@@ -44,17 +44,15 @@ class PyStructReader(metaclass=lalr):
     def DTerm(Obj_1, colon, Obj_2)   : return (Obj_1, Obj_2)
 
 
-target = PyStructReader.interpret
+target = PyStructReader.interpret1
 
 class TestPyStructParser(unittest.TestCase):
 
     def test_empty_list(self):
-        r = target('[]')
-        self.assertEqual(r, ('Lst', []))
+        self.assertEqual(target('[]'), ('Lst', []))
 
     def test_empty_dict(self):
-        r = target('{}')
-        self.assertEqual(r, ('Dic', []))
+        self.assertEqual(target('{}'), ('Dic', []))
 
     def test_symbol(self):
         self.assertEqual(target('a'), ('Sym', 'a'))

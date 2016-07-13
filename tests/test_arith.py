@@ -1,9 +1,7 @@
 import preamble
+import unittest
 
-from grammar import cfg
-from earley import Earley
-from lalr import LALR
-from glr import GLR
+from metaparse import *
 
 class GArith(metaclass=cfg):
 
@@ -44,53 +42,39 @@ class GArith(metaclass=cfg):
 
 ari_earl = Earley(GArith)
 ari_lalr = LALR(GArith)
+# Naive GLL still cannot handle left-recursion
+# ari_gll = GLR(GArith)
 ari_glr = GLR(GArith)
 
-inp = '3 + 2 * (5 + 11)'
 
-tough_inp = ' + '.join(inp for _ in range(10000))
+class TestArithParser(unittest.TestCase):
 
+    def test_single(self):
+        inp = '0'
+        ps1 = ari_earl.interpret_many(inp)
+        ps2 = ari_lalr.interpret_many(inp)
+        ps3 = ari_glr.interpret_many(inp)
+        self.assertEqual(ps1, ps2)
+        self.assertEqual(ps2, ps3)
+
+    def test_normal(self):
+        inp = '3 + 2 * (5 + 11) * 2 + 3'
+        ps1 = ari_earl.interpret_many(inp)
+        ps2 = ari_lalr.interpret_many(inp)
+        ps3 = ari_glr.interpret_many(inp)
+        self.assertEqual(ps1, ps2)
+        self.assertEqual(ps2, ps3)
+
+    def test_tough(self):
+        inp = '3 + 2 * (5 + 11)'
+        tough_inp = ' + '.join(inp for _ in range(100))
+        ps1 = ari_earl.interpret_many(tough_inp)
+        ps2 = ari_lalr.interpret_many(tough_inp)
+        ps3 = ari_glr.interpret_many(tough_inp)
+        self.assertEqual(ps1, ps2)
+        self.assertEqual(ps2, ps3)
+        
 
 if __name__ == '__main__':
 
-    from pprint import pprint as pp
-
-    ps1 = ari_earl.parse(inp)
-    p2 = ari_lalr.parse(inp)
-    ps3 = ari_glr.parse(inp)
-
-    assert p2 == ps3[0], \
-        'Result from LALR should be equal to the first result from GLR'
-
-    assert 1 == ari_lalr.interpret('1')
-    assert 3 == ari_lalr.interpret('1 + 2')
-    assert 35 == ari_lalr.interpret('3 + 2 * (5 + 11)')
-    assert 135 == ari_lalr.interpret('3 + 2 * (5 + 11) + ((100))')
-
-    # print(inp)
-    # pp.pprint(s)
-    # pp.pprint(t)
-    # pp.pprint(r)
-
-    # %timeit ari_earl.parse(tough_inp)
-    # 1 loops, best of 3: 12.7 s per loop
-
-    # %timeit ari_lalr.parse(tough_inp)
-    # 1 loops, best of 3: 3.07 s per loop
-    # This is 133% of the speed compared to LALR parser in `ply` package.
-
-    y = ari_glr.parse(tough_inp)
-    # %timeit ari_glr.parse(tough_inp)
-    # 1 loops, best of 3: 3.46 s per loop
-    # This GLR parser is comparable to LALR parser in this
-    # case.
-
-    # %timeit ari_glr.interpret(tough_inp)
-    # 1 loops, best of 3: 3.37 s per loop
-    # Interpretation is slightly more time-consuming than
-    # parsing.
-
-    # pp.pprint(ari_lalr.Ks)
-    # pp.pprint(ari_lalr.ACTION)
-
-    pass
+    unittest.main()

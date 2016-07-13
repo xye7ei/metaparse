@@ -62,7 +62,7 @@ class G(metaclass=cfg):
     def B()       : return
 
 
-p_G = Earley(G)
+# p_G = Earley(G)
 # p_G = GLR(G)
 # p_G = GLL(G)
 # print(*p_G.tokenize('  a a', with_end=True))
@@ -105,41 +105,23 @@ class S(metaclass=cfg):
 
 p_S = Earley(S)
 # res = p_S.parse('u')
-# pp.pprint(p_S.parse('u'))
-# assert 0
+pp.pprint(p_S.parse_many('u'))
+assert 0
 
 
-class aSa(metaclass=cfg):
-    """A grammar which can trick LL(1)'s backtracking."""
-    a = r'a'
-    def S(a_1, S, a_2):
-        return (a_1, S, a_2)
-    def S(a_1, a_2):
-        return (a_1, a_2)
+# class aSa(metaclass=cfg):
+#     """A grammar which can trick LL(1)'s backtracking."""
+#     a = r'a'
+#     def S(a_1, S, a_2):
+#         return (a_1, S, a_2)
+#     def S(a_1, a_2):
+#         return (a_1, a_2)
 
-p_aSa = GLL(aSa)
-res = p_aSa.interpret('a      a')
-res = p_aSa.interpret('a    a  a  a')
-res = p_aSa.interpret('a    a  a  a a a')
-print(res)
-
-
-class GIfThenElse(metaclass=cfg):
-    """Ambigious grammar with Dangling-Else structure."""
-
-    IGNORED = r'\s'
-    IF      = r'if'
-    THEN    = r'then'
-    ELSE    = r'else'
-    EXPR    = r'\d+'
-    SINGLE  = r'[_a-zA-Z]\w*'
-
-    def stmt(SINGLE):
-        return SINGLE
-    def stmt(IF, EXPR, THEN, stmt):
-        return ('it', stmt)
-    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
-        return ('ite', stmt_1, stmt_2)
+# p_aSa = GLL(aSa)
+# res = p_aSa.interpret('a      a')
+# res = p_aSa.interpret('a    a  a  a')
+# res = p_aSa.interpret('a    a  a  a a a')
+# print(res)
 
 
 class S(metaclass=Earley.meta):
@@ -178,19 +160,4 @@ class A(metaclass=Earley.meta):
     def G(a):    return
     def H(a):    return
 
-
-# Ambiguous parsing
-# assert len(S.interpret('x  x   x')) == 2
-# assert len(A.interpret('a    a  ')) == 6
-
-ear_ife = Earley(GIfThenElse)
-gll_ife = GLL(GIfThenElse)
-
-i3e1 = 'if 1 then if 71 then if 23 then if 987 then aa else bb'
-
-assert len(ear_ife.interpret(i3e1)) == 4
-assert ear_ife.interpret(i3e1) == gll_ife.interpret(i3e1) == [('ite', ('it', ('it', ('it', 'aa'))), 'bb'),
-                                                               ('it', ('ite', ('it', ('it', 'aa')), 'bb')),
-                                                               ('it', ('it', ('ite', ('it', 'aa'), 'bb'))),
-                                                               ('it', ('it', ('it', ('ite', 'aa', 'bb'))))]
 

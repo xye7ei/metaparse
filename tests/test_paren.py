@@ -1,8 +1,8 @@
 import preamble
 
-from earley import earley
+from metaparse import *
 
-class Gparen(metaclass=earley):
+class Gparen(metaclass=Earley.meta):
 
     """
     Grammar for matching arbitrary paired parenthesises.
@@ -29,6 +29,6 @@ if __name__ == '__main__':
     # import pprint as pp
     # s = Gparen.parse('( ( ) ) ( )')
     # pp.pprint(s)
-    assert Gparen.interpret('()') == '<>'
-    assert Gparen.interpret('( ( ) )') == '<<>>'
-    assert Gparen.interpret('( ( ) ) ( )') == '<<>><>'
+    assert Gparen.interpret1('()') == '<>'
+    assert Gparen.interpret1('( ( ) )') == '<<>>'
+    assert Gparen.interpret1('( ( ) ) ( )') == '<<>><>'

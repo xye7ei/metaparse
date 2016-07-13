@@ -757,7 +757,12 @@ class ParseTree(object):
                               lambda tok: tok)
 
     def __eq__(self, other):
-        return self.to_tuple() == other.to_tuple()
+        if isinstance(other, ParseTree):
+            return self.to_tuple() == other.to_tuple()
+        elif isinstance(other, Iterable):
+            return self.to_tuple() == other
+        else:
+            return False
 
     def __repr__(self):
         """Use pformat to handle structural hierarchy."""
@@ -808,35 +813,44 @@ class ParserBase(object):
         # raise NotImplementedError('Parser should override __repr__ method. ')
         return self.__class__.__name__ + '-Parser-{}'.format(self.grammar)
 
-    def parse(self, inp, interp):
-        # Parse input and produc
+    def parse_many(self, inp, interp=False):
         # Must be overriden
         raise NotImplementedError('Any parser should have a parse method.')
 
-    def interpret(self, inp):
-        return self.parse(inp, interp=True)
+    def interpret_many(self, inp):
+        return self.parse_many(inp, interp=True)
+
+    def parse1(self, inp, interp=False):
+        res = self.parse_many(inp, interp)
+        if res:
+            return res[0]
+        else:
+            raise ParserError("No parse.")
+
+    def interpret1(self, inp):
+        return self.parse1(inp, interp=True)
 
 
 class ParserDeterm(ParserBase):
 
-    """Abstract class for deterministic parsers. While the *parse* method
+    """Abstract class for deterministic parsers. While the *parse_many* method
     tends to return a list of results and deterministic parsers yield
-    at most ONE result, *parse1* and *interpret1* return this result
+    at most ONE result, *parse* and *interpret* return this result
     directly.
 
     """
 
+    def parse_many(self, inp, interp=False):
+        return [self.parse(inp, interp=interp)]
+
+    def interpret_many(self, inp):
+        return [self.interpret(inp)]
+
     def parse(self, inp, interp):
-        return [self.parse1(inp, interp=interp)]
-
-    def interpret(self, inp):
-        return [self.interpret1(inp)]
-
-    def parse1(self, inp, interp):
         raise NotImplementedError('Deterministic parser should have parse1 method.')
 
-    def interpret1(self, inp):
-        return self.parse1(inp, interp=True)
+    def interpret(self, inp):
+        return self.parse(inp, interp=True)
 
 
 @meta
@@ -1156,7 +1170,7 @@ class Earley(ParserBase):
 
         return ss
 
-    def parse(self, inp, interp=False):
+    def parse_many(self, inp, interp=False):
         """Fully parse. Use parse_forest as default parsing method and final
         parse forest constructed is returned.
 
@@ -1271,7 +1285,7 @@ class GLR(ParserBase):
 
             k += 1
 
-    def parse(self, inp, interp=False):
+    def parse_many(self, inp, interp=False):
 
         """Note during the algorithm, When forking the stack, there may be
         some issues:
@@ -1551,7 +1565,7 @@ class LALR(ParserDeterm):
 
         self.ACTION = ACTION
 
-    def parse1(self, inp, interp=False):
+    def parse(self, inp, interp=False):
 
         """Perform table-driven deterministic parsing process. Only one parse
         tree is to be constructed.
@@ -1680,7 +1694,7 @@ class WLL1(ParserDeterm):
             else:
                 pass
 
-    def parse1(self, inp, interp=False):
+    def parse(self, inp, interp=False):
         """The process is exactly the `translate' process of a ParseTree.
 
         """
@@ -1784,7 +1798,7 @@ class GLL(ParserBase):
             else:
                 table[lhs][EPSILON].append(rule)
 
-    def parse(self, inp, interp=False):
+    def parse_many(self, inp, interp=False):
         """ 
         """ 
         # Tracing parallel stacks, where signal (α>A) means reducing

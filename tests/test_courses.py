@@ -1,13 +1,13 @@
 import preamble
 
-from earley import earley
-from lalr import lalr
+from metaparse import *
+
 
 def fappend(l, x):
     l.append(x)
     return l
 
-class Gcourses(metaclass=lalr):
+class Gcourses(metaclass=Earley.meta):
 
     """
     Grammar to assign multiple numbers to precedend course name.

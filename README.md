@@ -1,11 +1,14 @@
 metaparse
 =====
 
-[Parsing][] can be done **with full power** by merely declaring **a simple Python class**<sup>[1]</sup> and semantics for compiling just comes along.
+[Parsing][] can be done with almost **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
 
-<sub>[1]. Python 3 preferred however.</sub>
+<sub>[1]. Python 3 preferred.</sub>
+
 
 ## Quick Example
+
+Using `metaparse`, syntax and semantics are defined by class methods.
 
 Given a left-right-value grammar in a C-like language in conventional [CFG][CFG] form:
 
@@ -32,12 +35,11 @@ class LRVal(metaclass=cfg):    # Using Python 3 metaclass
     STAR = r'\*'
     ID   = r'[_a-zA-Z]\w*'
 
-
     # Syntax-directed translation rules
 
     def S(L, EQ, R):
         print('Got identifiers:', ids)
-        print('assign %s to %s' % (L, R))
+        print('assign %s to %s' % (R, L))
         ids.clear()
 
     def S(R):
@@ -55,7 +57,7 @@ class LRVal(metaclass=cfg):    # Using Python 3 metaclass
 
 P_LRVal = LALR(LRVal)
 
-# Or alternatively, 
+# Or alternatively,
 #
 # class P_LRVal(metaclass=LALR.meta):
 #     <same-stuff> ...
@@ -64,21 +66,23 @@ P_LRVal = LALR(LRVal)
 Usage is just easy:
 
 ``` python
->>> P_LRVal.interpret1('abc')
+>>> P_LRVal.interpret('abc')
 Got ids: ['abc']
 ('expr', 'abc')
 
->>> P_LRVal.interpret1('* abc = *  ** ops')
+>>> P_LRVal.interpret('* abc = *  ** ops')
 Got ids: ['abc', 'ops']
-assign ('REF', 'abc') to ('REF', ('REF', ('REF', 'ops')))
+assign ('REF', ('REF', ('REF', 'ops'))) to ('REF', 'abc')
 ```
 
-Tools under State-of-the-Art can hardly get more handy and expressive than this. In Python 2 there goes [another way](#python-2-compatibility).
+Tools under State-of-the-Art can hardly get more handy and expressive than this.
+
+In Python 2 there goes [another way](#python-2-compatibility).
 
 
 ## Design
 
-<!-- 
+<!--
 This module provides:
 
 - Elegant syntactic/semantic definition structure.
@@ -93,28 +97,29 @@ The design of this module is inspired by [Parsec] in Haskell and [instaparse] in
 
 <!-- - *Pure* Python -->
 * no **string notations** for grammar (like in [Instaparse][]) and
-* no [DSL][] <sup>[2]</sup>
-* **no** dependencies
-* **no** helper/intermediate files when using
+* no [DSL][] feeling<sup>[2]</sup>
+* no dependencies
+* no helper/intermediate files when using
 * rule semantics in *pure* Python
+* etc.
 
-<sub>[2]. Fakingly.</sub>
+<sub>[2]. may be untrue.</sub>
 
-etc. Integration of this module in Python projects is seemless.
+Though this module does not target at replacing other more extensive tools, it is extreme handy and its integration in Python projects is seamless.
 
-## Into non-determinism
+## Going into non-determinism
 
 While [LALR parser][LALR] is a classical *deterministic* parser, further parsers can be use to experiment with trickier grammars for heuristic exploration.
 
 For example, given the famous [Dangling-Else](https://en.wikipedia.org/wiki/Dangling_else) grammar which
 
-- is ambiguous and
-- needs [left-factoring][LF] to be [LL(k)][LL] where `k < 4`,
+* is ambiguous and
+* needs [left-factoring][LF] to be [LL(k)][LL].
 
 <!-- Thanks to the powerful [GLL] algorithm, there is no need for **full backtracking**, which is a serious headache when designing performant and practical [LL(1)][LL] grammars. Even the highly notable [Parsec] in Haskell [cannot handle this with ease](http://hackage.haskell.org/package/parsec-3.1.11/docs/Text-Parsec-Prim.html#v:try).
 -->
 
-we declare a powerful *non-deterministic* [GLL parser][Gll] to process it directly:
+We declare a powerful *non-deterministic* [GLL parser][Gll] to process it directly:
 ``` python
 from metaparse import GLL
 
@@ -137,44 +142,93 @@ class P_IfThenElse(metaclass=GLL.meta):
 and it yields multiple legal results properly:
 
 ``` python
->>> P_IfThenElse.interpret('if 1 then if 2 then if 3 then x else yy else zzz')
+>>> P_IfThenElse.interpret_many('if 1 then if 2 then if 3 then x else yy else zzz')
 [('ite', ('ite', ('it', 'x'), 'yy'), 'zzz'),
  ('ite', ('it', ('ite', 'x', 'yy')), 'zzz'),
  ('it', ('ite', ('ite', 'x', 'yy'), 'zzz'))]
 ```
 
-## Parse Trees
+## Retrieving Parse Trees
 
-In case only parse trees are needed, method bodies can be left emtpy. For exmaple, given the tricky grammar
+In case only parse trees are needed, method bodies can be left emtpy. Method `parse`/`parse_many` is used instead of `interpret`/`interpret_many`.
+
+For exmaple, given the tricky grammar (where `ε` denotes empty production)
 ```
-A → A B
-A → 
-B → b B
-B →
+S → A B C
+A → u | ε
+B → E | F
+C → u | ε
+E → u | ε
+F → u | ε
 ```
+and corresponding `metaparse` declaration
 
 ``` python
-class A(metaclass=Earley.meta):
-    b = r'b'
-    def A(A, B): return
-    def A(): return
-    def B(b, B): return
-    def B(): return
+from metaparse import cfg, Earley
+
+class S(metaclass=cfg):
+    u = r'u'
+    def S(A, B, C) : return
+    def A(u)       : return
+    def A()        : return
+    def B(E)       : return
+    def B(F)       : return
+    def C(u)       : return
+    def C()        : return
+    def E(u)       : return
+    def E()        : return
+    def F(u)       : return
+    def F()        : return
 ```
 
+Earley parser is used here and all ambiguous parse trees are produced:
+``` python
+>>> p_S = Earley(S)
+>>> p_S.parse_many('u')
+[('S^', [('S', [('A', []), ('B', [('F', [])]), ('C', [(u -> 'u')@[0:1]])])]),
+ ('S^', [('S', [('A', []), ('B', [('E', [])]), ('C', [(u -> 'u')@[0:1]])])]),
+ ('S^', [('S', [('A', []), ('B', [('F', [(u -> 'u')@[0:1]])]), ('C', [])])]),
+ ('S^', [('S', [('A', []), ('B', [('E', [(u -> 'u')@[0:1]])]), ('C', [])])]),
+ ('S^', [('S', [('A', [(u -> 'u')@[0:1]]), ('B', [('E', [])]), ('C', [])])]),
+ ('S^', [('S', [('A', [(u -> 'u')@[0:1]]), ('B', [('F', [])]), ('C', [])])])]
+```
+
+This may have merits for inspecting grammar characteristics.
 
 ## Limitations
 
-Though this module supplies many advantageous features, there are also limitations:
+Though this module provides advantageous features, there are also limitations:
 
-- Only legal Python identifier, rather than non-alphabetic symbols (like `<fo#o>`, `==`, `raise`, etc) can be used as symbols in grammar (seems no serious).
+* Parsing grammars with **loop**s is yet supported. For example
+  ```
+  P → Q | a
+  Q → P
+  ```
+  Such a grammar is *infinitely ambiguous*, which generates unbounded amount of parse trees after consuming only finite input, e.g. `a`:
+  ```
+  P ⇒ a
+  P ⇒ Q ⇒ P ⇒ a
+  P ⇒ Q ⇒ ... ⇒ P ⇒ a
+  ```
+  Such support seems not useful practically.
 
-- Algorithms in pure Python lowers performance, but lots can be optimized. 
+* Only **legal Python identifier**, rather than non-alphabetic symbols (like `<fo#o>`, `==`, `raise`, etc) can be used as symbols in grammar (seems no serious).
+
+* Algorithms in pure Python lowers performance, but lots can be optimized.
+
+* GLL parser is yet able to handle left recursion.
+
+
+## TODO-List
+
+* Support *left-recursion* by GLL parser.
+
+* May also support Graph-Structured-Stack for non-deterministic parsers
 
 
 ## Python 2 compatibility
 
-The following version of the grammar in 1st section works for both Python 2 and Python 3, relying on decorators `cfg2` and `rule`:
+The following version of the grammar in 1st section works for both Python 2 and Python 3, relying on provided decorators `cfg2` and `rule`:
 
 ``` python
 from metaparse import cfg2, rule
@@ -191,7 +245,7 @@ class LRVal:
         print('Got ids:', ids)
         print('assign %s to %s' % (L, R))
         ids.clear()
-        
+
     @rule
     def S(R):
         print('Got ids:', ids)
@@ -210,9 +264,9 @@ class LRVal:
         return L
 ```
 
-The problem is that `type.__prepare__` method is not supported in Python 2, so that memoization of repeatedly declared method is not possible without logging work by the `rule` decorator. 
+The problem is that `type.__prepare__` for a method collector is not supported in Python 2, so that repeatedly declared methods can not be collected without the help with some decorator like the `rule`.
 
-The resulted grammar instance is created by `cfg2` decorator which utilizes information logged by `rule`.
+The resulted grammar instance is created by `cfg2` decorator which utilizes information collected by `rule`. Here no `metaclass` is needed.
 
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"
 [DSL]: https://en.wikipedia.org/wiki/Domain-specific_language "Domain-specific Language"

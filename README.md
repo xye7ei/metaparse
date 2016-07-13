@@ -6,7 +6,7 @@ metaparse
 <sub>[1]. Python 3 preferred.</sub>
 
 
-## Quick Example
+# Quick Example
 
 Using `metaparse`, syntax and semantics are defined by class methods.
 
@@ -80,7 +80,7 @@ Tools under State-of-the-Art can hardly get more handy and expressive than this.
 In Python 2 there goes [another way](#python-2-compatibility).
 
 
-## Design
+# Design
 
 <!--
 This module provides:
@@ -108,7 +108,7 @@ The design of this module is inspired by [Parsec] in Haskell and [instaparse] in
 
 Though this module does not target at replacing other more extensive tools, it is extreme handy and its integration in Python projects is seamless.
 
-## Going into non-determinism
+# Going into non-determinism
 
 While [LALR parser][LALR] is a classical *deterministic* parser, further parsers can be use to experiment with trickier grammars for heuristic exploration.
 
@@ -149,7 +149,7 @@ and it yields multiple legal results properly:
  ('it', ('ite', ('ite', 'x', 'yy'), 'zzz'))]
 ```
 
-## Retrieving Parse Trees
+# Retrieving Parse Trees
 
 In case only parse trees are needed, method bodies can be left emtpy. Method `parse`/`parse_many` is used instead of `interpret`/`interpret_many`.
 
@@ -196,7 +196,7 @@ Earley parser is used here and all ambiguous parse trees are produced:
 
 This may have merits for inspecting grammar characteristics.
 
-## Limitations
+# Limitations
 
 Though this module provides advantageous features, there are also limitations:
 
@@ -220,14 +220,14 @@ Though this module provides advantageous features, there are also limitations:
 * GLL parser is yet able to handle left recursion.
 
 
-## TODO-List
+# TODO-List
 
 * Support *left-recursion* by GLL parser.
 
 * May also support Graph-Structured-Stack for non-deterministic parsers
 
 
-## Python 2 compatibility
+# Python 2 compatibility
 
 The following version of the grammar in 1st section works for both Python 2 and Python 3, relying on provided decorators `cfg2` and `rule`:
 

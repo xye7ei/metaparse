@@ -105,7 +105,7 @@ class S(metaclass=cfg):
 
 # p_S = Earley(S)
 # p_S = GLR(S)
-p_S = GLL(S)
+p_S = GLL(S)                    # Incompleted...
 # res = p_S.parse('u')
 pp.pprint(p_S.parse_many('u'))
 assert 0

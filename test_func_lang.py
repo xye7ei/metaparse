@@ -11,31 +11,43 @@ from metaparse import *
 
 from collections import namedtuple as data
 
-
 Let   = data('Let', 'binds body')
 Abst  = data('Abst', 'par body')
 Appl  = data('Appl', 'func arg')
 Var   = data('Var', 'symbol')
 Value = data('Value', 'value')
 
+Expr  = [Let, Abst, Appl, Var, Value]
+for E in Expr:
+    E.__repr__ = tuple.__repr__
+
+TW = r'[ \t]*'
+TWN = r'[ \t\n]*'
 
 class Lam(metaclass=cfg):
 
+    # IGNORED = r'(^[ \t]*\n)| '
+    # NEWLINE = r'\n'         # + TWN
     IGNORED = r'\s+'
 
-    EQ     = r'='
-    IN     = r'in'
-    LET    = r'let'
-    LAMBDA = r'\\'
-    ARROW  = r'->'
-    COMMA  = r','
-    SEMI   = r';'
-    L1     = r'\('
-    R1     = r'\)'
+    EQ      = r'='          # + TW
+    IN      = r'in'         # + TWN
+    LET     = r'let'        # + TWN
+    LAMBDA  = r'\\'         # + TWN
+    ARROW   = r'->'         # + TWN
+    COMMA   = r','          # + TW
+    SEMI    = r';'          # + TW
+    L1      = r'\('         # + TW
+    R1      = r'\)'         # + TW
 
-    VALUE   = r'\d+'
-    VAR     = r'[_a-z]\w*'
-    CONS    = r'[A-Z]\w*'
+    VALUE   = r'\d+'        # + TW
+    VAR     = r'[_a-z]\w*'  # + TW
+    CONS    = r'[A-Z]\w*'   # + TW
+
+    INFIX   = r'[\+\-\*\/]' # + TW
+
+    def prog(binds):
+        return binds
 
     # Stand-alone expression
     def exprx(expr):
@@ -72,6 +84,8 @@ class Lam(metaclass=cfg):
         return Appl(expr_1, expr_2)
     def appl(appl, expr):
         return Appl(appl, expr)
+    def appl(expr_1, INFIX, expr_2):
+        return Appl(INFIX, expr_1, expr_2)
 
     # Lambda-Abstraction
     def abst(LAMBDA, parlist, ARROW, exprx):
@@ -86,7 +100,6 @@ class Lam(metaclass=cfg):
 
     # Let-expression with environmental bindings
     def let(LET, binds, IN, exprx):
-        # return ['LET', binds, exprx]
         return Let(binds, exprx)
     def bind(pat, EQ, exprx):
         return {pat: exprx}
@@ -101,8 +114,6 @@ class Lam(metaclass=cfg):
     def _unify():
         print('Unify!')
 
-
-psr = Earley(Lam)
 
 # Test whether the grammar is LALR to exclude potential ambiguity
 # and prepare for better performance
@@ -120,25 +131,32 @@ let a = 3 ;
 """
 
 inp = """
-let a = 3 ;
-    P q = u v
- in
-   map (\c, d -> f c d) xs ys
+
+k = let
+     a = 3 ;
+     P p q = u v
+ in 
+   map (\c, d -> f c d) xs ys ;
+
+l = 3 ;
+m = 4
 """
 
-# inp = """
-# let a = 1
-# in (let b = 2 in f a b)
-# """
 
 # print(Lam)
 # psr_gll.interpret(inp) # LEFT-RECURSION!!!!
 # psr_glr.interpret(inp)
 # psr_lalr.interpret(inp)
-# timeit psr_ear.interpret(inp)
-# timeit psr_gll.interpret(inp)
-# timeit psr_glr.interpret(inp)
-# timeit psr_lalr.interpret(inp)
 
-pp.pprint(list(psr.grammar.tokenize(inp, False)))
-pp.pprint(psr.interpret(inp))
+psr = psr_lalr
+psr = psr_glr
+psr = psr_ear
+
+tough_inp = '   ;\n'.join([inp for _ in range(1000)])
+
+# pp.pprint(list(psr.grammar.tokenize(inp, False)))
+# pp.pprint(psr.interpret_many(inp))
+# print(len(psr.ACTION))
+# pp.pprint(psr.ACTION)
+
+pp.pprint(psr_lalr.interpret(tough_inp))

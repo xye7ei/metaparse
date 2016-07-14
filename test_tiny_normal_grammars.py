@@ -84,7 +84,7 @@ l_LRVal = LALR(LRVal)
 
 # pp.pprint(l_LRVal.interpret1('abc'))
 # pp.pprint(l_LRVal.interpret1('abc = * * ops'))
-pp.pprint(l_LRVal.parse('* abc = *  ** ops'))
+# pp.pprint(l_LRVal.parse('* abc = *  ** ops'))
 
 assert 0
 

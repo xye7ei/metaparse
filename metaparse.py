@@ -45,28 +45,31 @@ ERROR_PATTERN_DEFAULT = r'.'
 
 class Symbol(str):
 
-    """Symbol object is used to direct behaviors during constructing
-    parsers or parsing. Each Symbol instance should be constructed
-    only once and the comparison between them is identity comparison.
-
-    This emulates Enum data type.
-
-    """
-
-    # def __eq__(self, other):
-    #     return self is other
+    """Symbol is a subclass of :str: with unquoted representation."""
 
     def __repr__(self):
         return self
 
 
-DUMMY   = Symbol('#')
+class Signal(object):
+
+    """Signal is used to direct parsing actions.
+
+    """
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return self.name
+
+
+DUMMY   = Symbol('\0')
 EPSILON = Symbol('ε')
 
-PREDICT = Symbol('PREDICT')
-SHIFT   = Symbol('SHIFT')
-REDUCE  = Symbol('REDUCE')
-ACCEPT  = Symbol('ACCEPT')
+PREDICT = Signal('PREDICT')
+SHIFT   = Signal('SHIFT')
+REDUCE  = Signal('REDUCE')
+ACCEPT  = Signal('ACCEPT')
 
 
 class Token(object):
@@ -110,18 +113,12 @@ class Token(object):
 
 class Rule(object):
 
-    """Rule object representing a rule in a Context Free Grammar. A Rule
-    inside some specified scope should be constructed only once. The
-    equality should not be overwritten, thus as identity to save
-    performance when comparing rules while comparing some Item
-    objects.
+    """Rule object has the form (LHS -> RHS).  It is mainly constructed by
+    a function, taking its name as LHS and parameter list as RHS. The
+    function itself is treated as the semantical behavior of this rule.
 
-    The rule is mainly for traditional canonical BNF
-    representation. For grammar systems like EBNF based upon Parsing
-    Expression Grammar, which supports
-    Star/Optional/Alternative/... modifiers, it is better to define a
-    separate object for the rule-like expressions, although it is a
-    super set of canonical BNF rule.
+    The equality is needed mainly for detecting rule duplication
+    during declaring grammar objects.
 
     """
 
@@ -150,7 +147,10 @@ class Rule(object):
             return False
 
     def __repr__(self):
-        """Use '->' or '::='? """
+        """There are alternative representations for "produces" like '->' or
+        '::='. Here '=' is used for simplicity.
+
+        """
         return '({} = {})'.format(self.lhs, ' '.join(self.rhs))
 
     def __iter__(self):
@@ -173,7 +173,10 @@ class Rule(object):
 
     @property
     def src_info(self):
-        """Simulates Traceback information."""
+        """Retrieves source information of this rule's definition for helpful
+        Traceback information.
+
+        """
         co = self.seman.__code__
         info = '  File "{}", line {}, in {}\n'.format(
             co.co_filename, co.co_firstlineno, self.seman.__module__)
@@ -182,8 +185,9 @@ class Rule(object):
 
 class Item(object):
 
-    """Item contains a pointer to rule list, a index of rule within that
-    list and a position indicating current read state in this Item.
+    """Item contains a pointer to a rule list, a index of rule within that
+    list and a position indicating current active symbol (namely
+    actor) in this Item.
 
     """
 
@@ -254,7 +258,9 @@ class Item(object):
 class Grammar(object):
 
     def __init__(self, lexes, rules, attrs):
-        """
+        """A grammar object containing lexical rules, syntactic rules and
+        associating semantics.
+
         Parameters:
 
         :lexes:  : odict{str<terminal-name> : str<terminal-pattern>}
@@ -265,15 +271,15 @@ class Grammar(object):
 
         Notes:
 
-        * Checks whether there is a singleton TOP-rule
-          and add such one if not.
+        * Checks whether there is a singleton TOP-rule and add such
+          one if not.
 
         * Needs to check validity and completeness!!
             * Undeclared tokens;
             * Undeclared nonterminals;
             * Unused tokens;
             * Unreachable nonterminals/rules;
-            * Cyclic rules;
+            * FIXME: Cyclic rules; ???
 
         """
 
@@ -555,7 +561,7 @@ class assoclist(list):
     declarated stuff can be then extracted in the __new__ method in
     metaclass definition.
 
-    Assoclist :: [(k, v)]
+    Assoclist :: [(<key>, <value>)]
 
     """
 
@@ -618,7 +624,6 @@ class cfg(type):
                 rules.append(r)
             # Handle explicit rule declaration through decorated methods.
             elif isinstance(v, Rule):
-                # FIXME:
                 if v in rules:
                     raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(v, v.src_info))
                 rules.append(v)
@@ -661,6 +666,13 @@ ParseLeaf = Token
 
 
 class ParseTree(object):
+    """ParseTree is the basic object representing a valid parsing.
+
+    Note the node value is a :Rule: object rather than a grammar
+    symbol, which allows the tree to be traversed for translation with
+    the rule's semantics.
+
+    """
 
     def __init__(self, rule, subs):
         # Contracts
@@ -671,7 +683,7 @@ class ParseTree(object):
         self.subs = subs
 
     def translate(tree, trans_tree=None, trans_leaf=None):
-        """Postorder tree traversal with double stacks scheme.
+        """Postorder tree traversal with double-stack scheme.
 
         Example:
         - prediction stack
@@ -720,20 +732,19 @@ class ParseTree(object):
         i-  []$
         a- $[T]
 
-        """        # Direct translation
+        """
+        # Direct translation
         if not trans_tree:
             trans_tree = lambda t, args: t.rule.seman(*args)
         if not trans_leaf:
             trans_leaf = lambda tok: tok.value
         # Aliasing push/pop, simulating stack behavior
         push, pop = list.append, list.pop
-        # Signal for prediction/reduce
-        P, R = 0, 1
-        sstk = [(P, tree)]
+        sstk = [(PREDICT, tree)]
         astk = []
         while sstk:
-            i, t = pop(sstk)
-            if i == R:
+            act, t = pop(sstk)
+            if act == REDUCE:
                 args = []
                 for _ in t.subs:
                     push(args, pop(astk))
@@ -743,11 +754,11 @@ class ParseTree(object):
                 push(astk, trans_leaf(t))
             elif isinstance(t, ParseTree):
                 # mark reduction
-                push(sstk, (R, t))
+                push(sstk, (REDUCE, t))
                 for sub in reversed(t.subs):
-                    push(sstk, (P, sub))
+                    push(sstk, (PREDICT, sub))
             else:
-                assert False, (i, t)
+                assert False, (act, t)
         assert len(astk) == 1
         return astk.pop()
 
@@ -793,9 +804,9 @@ def meta(cls_parser):
 class ParserBase(object):
 
     """Abstract class for both deterministic/non-deterministic parsers.
-
-    Note method *parse* produces a list of ParseTree's and *interpret*
-    a list of semantic results.
+    They both have methods :parse_many: and :interpret_many:, while
+    non-deterministic parsers retrieve singleton parse list with these
+    methods.
 
     """
 
@@ -1423,36 +1434,30 @@ class LALR(ParserDeterm):
         Ks = [[G.item(0, 0)]]   # Kernels
         goto = []
 
-        # Calculate Item Sets, GOTO and propagation graph in one pass.
+        # Calculate LR(0) item sets and goto
         i = 0
         while i < len(Ks):
 
             K = Ks[i]
 
-            # Use OrderedDict to preserve order of finding
-            # goto's, which should be the same order with
-            # the example in textbook.
+            # Use OrderedDict to preserve order of found goto's.
             igoto = OrderedDict()
 
             # SetOfItems algorithm
             for itm in G.closure(K):
                 # If item (A -> α.Xβ) has a goto.
                 if not itm.ended():
-                    X = itm.actor
-                    jtm = itm.shifted
+                    X, jtm = itm.actor, itm.shifted
                     if X not in igoto:
                         igoto[X] = []
                     if jtm not in igoto[X]:
                         igoto[X].append(jtm)
 
-            # Register local goto into global goto.
+            # Register local :igoto: into global goto.
             goto.append({})
             for X, J in igoto.items():
                 # The Item-Sets should be treated as UNORDERED! So
-                # sort J to identify the Lists with same items,
-                # otherwise these Lists are differentiated due to
-                # ordering, which though strengthens the power of LALR
-                # grammar, but loses LALR`s characteristics.
+                # sort J to identify the Lists with same items.
                 J = sorted(J, key=lambda i: (i.r, i.pos))
                 if J not in Ks:
                     Ks.append(J)
@@ -1461,10 +1466,10 @@ class LALR(ParserDeterm):
 
             i += 1
 
-        # The table `spont` represents the spontaneous lookaheads at
+        # The table :spont: represents the spontaneous lookaheads at
         # first. But it can be used for in-place updating of
         # propagated lookaheads. After the whole propagation process,
-        # `spont` is the final lookahead table.
+        # :spont: is the final lookahead table.
         spont = [OrderedDict((itm, set()) for itm in K)
                  for K in Ks]
 
@@ -1492,54 +1497,55 @@ class LALR(ParserDeterm):
                         if a != DUMMY:
                             spont[j][ctm.shifted].add(a)
                         else:
-                            # Propagation from KERNEL to its target
-                            # derived by the KERNEL's closure. See
-                            # algo 4.62 in Dragon book.
+                            # Propagation from KERNEL item :ktm: to
+                            # its belonging non-kernel item :ctm:,
+                            # which is shifted into :j:'th item set
+                            # (by its actor). See ALGO 4.62 in Dragon
+                            # book.
                             propa[i].append((ktm, j, ctm.shifted))
 
+        table = spont
+
+        # MORE-PASS propagation
         b = 1
         while True:
             brk = True
             for i, _ in enumerate(Ks):
                 for itm, j, jtm in propa[i]:
-                    lks_src = spont[i][itm]
-                    lks_tar = spont[j][jtm]
+                    lks_src = table[i][itm]
+                    lks_tar = table[j][jtm]
                     for a in lks_src:
                         if a not in lks_tar:
                             lks_tar.add(a)
                             brk = False
             if brk:
-                G.passes = b
                 break
             else:
                 b += 1
 
+        self._propa_passes = b
+
         self.Ks = Ks
         self.GOTO = goto
         self.propa = propa
-        self.table = table = spont
+        self.table = table
 
-        # spont has included all the non-kernel items which are not
-        # necessary if spont registers only the target, not the
-        # source.  A table representation covering only kernel items
-        # to preserve for simplicity.
-        self.ktable = []
-        for i, K in enumerate(Ks):
-            klk = {}
-            for k in K:
-                klk[k] = spont[i][k]
-            self.ktable.append(klk)
+        # Now all goto and lookahead information is available.
 
         # Construct ACTION table
         ACTION = [{} for _ in table]
 
-        # SHIFT for non-ended to consume terminal for transition.
+        # SHIFT for non-ended items
+        # Since no SHIFT/SHIFT conflict exists, register
+        # all SHIFT information firstly.
         for i, xto in enumerate(goto):
             for a, j in xto.items():
                 if a in G.terminals:
                     ACTION[i][a] = (SHIFT, j)
 
-        # REDUCE for ended to reduce.
+        # REDUCE for ended items
+        # SHIFT/REDUCE and REDUCE/REDUCE conflicts are
+        # to be found.
         conflicts = []
         for i, itm_lks in enumerate(table):
             for itm, lks in itm_lks.items():
@@ -1547,23 +1553,45 @@ class LALR(ParserDeterm):
                     for ctm, lk1 in G.closure1_with_lookahead(itm, lk):
                         if ctm.ended():
                             if lk1 in ACTION[i] and ACTION[i][lk1] != (REDUCE, ctm):
-                                conflicts.append((i, lk1, ctm))
+                                # Here whether (lk == lk1) won't matter
+                                # 
+                                # TODO:
+                                # - Operator precedence table to
+                                # resolve some conflicts:
+                                #   
+                                # if lk1 in OP_PRED:
+                                #     if lk1 in ACTION[i]:
+                                #         act, arg = ACTION[i][lk1]
+                                #         if act == SHIFT:
+                                #             goto = arg
+                                #             if ctm.size > 1 and ctm.rule.rhs[-2] in OP_PRED_TABLE:
+                                #                 o_red = ctm.rule.rhs[-2]
+                                #                 o_shf = lk1
+                                #                 if OP_PRED[o_red] < OP_PRED[o_shf]:
+                                #                     # discard REDUCE with lk
+                                #                     pass
+                                conflicts.append((i, lk1, ACTION[i][lk1], (REDUCE, ctm)))
                             else:
                                 ACTION[i][lk1] = (REDUCE, ctm)
-                # # Accept-Item
+                # Accept-Item
                 if itm.index_pair == (0, 1):
                     ACTION[i][END] = (ACCEPT, None)
+
+        # Report LALR-conflicts, if any
         if conflicts:
-            msg = ''
-            for i, lk, itm in conflicts:
+            msg = "\n########## Error ##########"
+            for i, lk, act0, act1 in conflicts:
                 msg += '\n'.join([
-                    '\n! LALR-Conflict raised:',
+                    '',
+                    '! LALR-Conflict raised:',
                     '  - in ACTION[{}]: '.format(i),
                     '{}'.format(pp.pformat(ACTION[i])),
-                    "  * conflicting action on token {}: ".format(repr(lk)),
-                    "{{{}: (REDUCE, {})}}".format(repr(lk), itm)
+                    "  * conflict on lookahead {}: ".format(repr(lk)),
+                    "{}".format({lk: [act0, act1]}),
+                    # "{{{}: {}}}".format(repr(lk), act1),
+                    '',
                 ])
-            msg = '\n########## Error ##########\n {} \n#########################\n'.format(msg)
+            msg += "############################"
             raise ParserError(msg)
 
         self.ACTION = ACTION
@@ -1581,34 +1609,38 @@ class LALR(ParserDeterm):
 
         # Aliasing
         trees = []
+        Ks = self.Ks
         sstack = self.sstack = [0]
-        G = self.grammar
         GOTO = self.GOTO
         ACTION = self.ACTION
 
+        # Lazy extraction of tokens
         toker = self.grammar.tokenize(inp, with_end=True) # Use END to force finishing by ACCEPT
         tok = next(toker)
 
         try:
             while 1:
 
+                # Peek state
                 i = sstack[-1]
 
                 if tok.symbol not in ACTION[i]:
                     msg = '\n'.join([
                         '',
                         '#########################',
-                        'LALR - Ignoring syntax error by Token {}'.format(tok),
-                        ' Current left-derivation stack:\n{}'.format(
-                            pp.pformat([self.Ks[i] for i in sstack])),
+                        'LALR - Ignoring syntax error reading Token {}'.format(tok),
+                        '- Current kernel derivation stack:\n{}'.format(
+                            pp.pformat([Ks[i] for i in sstack])),
+                        '- Expected tokens and actions: \n{}'.format(
+                            pp.pformat(ACTION[i])),
+                        '- But got: \n{}'.format(tok),
                         '#########################',
                         '',
                     ])
                     warnings.warn(msg)
                     tok = next(toker)
 
-                else:
-
+                else: 
                     act, arg = ACTION[i][tok.symbol]
 
                     # SHIFT
@@ -1618,13 +1650,13 @@ class LALR(ParserDeterm):
                         else:
                             trees.append(tok)
                         sstack.append(GOTO[i][tok.symbol])
-                        # Go on iteration/scanning
+                        # Go on scanning
                         tok = next(toker)
 
                     # REDUCE
                     elif act == REDUCE:
+                        assert isinstance(arg, Item)
                         rtm = arg
-                        ntar = rtm.target
                         subts = []
                         for _ in range(rtm.size):
                             subt = trees.pop()
@@ -1635,8 +1667,8 @@ class LALR(ParserDeterm):
                         else:
                             tree = ParseTree(rtm.rule, subts)
                         trees.append(tree)
-                        # New got symbol is used for shifting.
-                        sstack.append(GOTO[sstack[-1]][ntar])
+                        # New symbol is used for shifting.
+                        sstack.append(GOTO[sstack[-1]][rtm.target])
 
                     # ACCEPT
                     elif act == ACCEPT:
@@ -1647,6 +1679,9 @@ class LALR(ParserDeterm):
 
         except StopIteration:
             raise ParserError('No enough tokens for completing the parse. ')
+            # pass
+
+        return
 
 
 @meta
@@ -1845,6 +1880,7 @@ class GLL(ParserBase):
         #
         for k, tok in enumerate(G.tokenize(inp, with_end=True)):
             at, look, lexeme = tok
+            # AGMENTATION AGENDA should be used!
             agenda1 = []
             while agenda:
                 (astk, pstk) = agenda.pop(0)

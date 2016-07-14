@@ -125,7 +125,8 @@ The design of this module is inspired by [Parsec] in Haskell and [instaparse] in
 * no helper/intermediate files generated
 * rule semantics in *pure* Python
 * etc.
-  <sub>[2]. may be untrue.</sub>
+
+<sub>[2]. may be untrue.</sub>
 
 Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extreme handy and its integration in Python projects is seamless.
 

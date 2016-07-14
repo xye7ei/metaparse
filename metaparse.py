@@ -386,7 +386,7 @@ class Grammar(object):
         NULLABLE = {X for X, rhs in G.rules if not rhs}     # :: Set[<terminal>]
         def nullable(X, path=()):
             if X in ns and X not in path:
-                for _, rhs in G[X]:
+                for lhs, rhs in G[X]:
                     if rhs:
                         path += (X,)
                         if all(nullable(Y, path) for Y in rhs):
@@ -416,6 +416,11 @@ class Grammar(object):
                     FIRST[X].update(F)
                 return F
 
+        # Calculate FIRST in iterative way?
+        # 
+        # - Consider the construction of a prediction-tree in the
+        #   context of building a GLL parser
+
         for n in ns:
             first1(n)
 
@@ -423,24 +428,22 @@ class Grammar(object):
         G.FIRST = FIRST
         G.first1 = first1
 
-        def first_star(seq, tail=DUMMY):
-            """Find FIRST set of a sequence of symbols.
+    def first_star(G, seq, tail=DUMMY):
+        """Find FIRST set of a sequence of symbols.
 
-            :seq:   A list of strings
+        :seq:   A list of strings
 
-            """
-            assert not isinstance(seq, str)
-            fs = set()
-            for X in seq:
-                fs.update(G.first1(X))
-                if EPSILON not in fs:
-                    return fs
-            fs.discard(EPSILON)
-            # Note :tail: can also be EPSILON
-            fs.add(tail)
-            return fs
-
-        G.first_star = first_star
+        """
+        assert not isinstance(seq, str)
+        fs = set()
+        for X in seq:
+            fs.update(G.first1(X))
+            if EPSILON not in fs:
+                return fs
+        fs.discard(EPSILON)
+        # Note :tail: can also be EPSILON
+        fs.add(tail)
+        return fs
 
     def tokenize(G, inp, with_end):
         """Perform lexical analysis

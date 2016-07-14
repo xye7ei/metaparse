@@ -152,7 +152,7 @@ psr = psr_lalr
 psr = psr_glr
 psr = psr_ear
 
-tough_inp = '   ;\n'.join([inp for _ in range(1000)])
+tough_inp = '   ;\n'.join([inp for _ in range(100)])
 
 # pp.pprint(list(psr.grammar.tokenize(inp, False)))
 # pp.pprint(psr.interpret_many(inp))

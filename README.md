@@ -1,16 +1,16 @@
 metaparse
 =====
 
-[Parsing][] and [Interpreting][interpreting] get done with **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
+Parsing and Interpreting can get instantly done with **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
 
 <sub>[1]. Python 3 preferred.</sub>
 
 
 # Quick Example
 
-Based on this module, syntax and semantics can be defined with class **methods**.
+Based on this module, syntax and semantics can be defined with **class methods**.
 
-Given a *C*-style statement grammar in conventional [CFG][CFG] form:
+For example, given a *C*-style statement grammar in conventional [CFG][CFG] form:
 
 ```
 S  →  L = R
@@ -20,7 +20,7 @@ L  →  * R
 R  →  L
 ```
 
-We can write a handy [LALR][]-parser/interpreter in Python 3 for this grammar in [SDT][]-style:
+we can write a handy [LALR][]-parser/interpreter in Python 3 for this grammar in [SDT][]-style:
 
 ``` python
 from metaparse import cfg, LALR
@@ -33,7 +33,7 @@ class LRVal(metaclass=cfg):
     # Special pattern ignored by the underlying tokenizer
     IGNORED = r'\s+'
 
-    # Lexical rules with re-patterns
+    # Lexical rules with re-patterns (raw strings preferred)
     EQ   = r'='
     STAR = r'\*'
     ID   = r'[_a-zA-Z]\w*'
@@ -61,7 +61,7 @@ class LRVal(metaclass=cfg):
 P_LRVal = LALR(LRVal)
 ```
 
-Using it is just easy:
+and simply use it for some inputs:
 
 ``` python
 >>> P_LRVal.interpret('abc')
@@ -75,7 +75,7 @@ assign ('REF', ('REF', ('REF', 'ops'))) to ('REF', 'abc')
 
 Tools under State-of-the-Art hardly gets more handy than this (In Python 2, there goes [a more verbose way](#python-2-compatibility)).
 
-## Retrieving the Parse Tree
+### Retrieving the Parse Tree
 
 If merely the parse tree is needed rather than the semantic result, use method `parse` instead of `interpret`:
 
@@ -97,13 +97,13 @@ If merely the parse tree is needed rather than the semantic result, use method `
               (R, [(L, [(ID: 'ops')@[14:17]])])])])])])])])])
 ```
 
-The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as
+The result is a `ParseTree` object with tuple representation. Inside that, a parse leaf is just a `Token` object represented as
 ```(<token-symbol>: '<lexeme>')@[<position-in-input>]```.
 
-After this, calling ```tr.translate()``` delivers the same result as using `interpret` for the input. The difference is, method `interpret` performs on-the-fly interpretation without producing parse trees explicitly.
+With this tree, calling ```tr.translate()``` delivers the same result as using `interpret` for the input. Epecially by LALR parser, the method `interpret` performs on-the-fly interpretation without producing parse trees explicitly (thus saves memory space).
 
 
-# Design and Usage
+# Design
 
 <!--
 This module provides:
@@ -117,20 +117,24 @@ This module provides:
 <!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
 -->
 
-The design of this module is inspired by [Parsec] in Haskell and [instaparse] in Clojure, targeting at "native parsing". It is remarkable for
+The design of this module is inspired by [instaparse] in Clojure targeting at "native parsing". It is remarkable for
 
-* no **literal string notations** for grammar (like in [Instaparse][])
+* native structure to represent grammar rules
+    - no **literal string notations** like `"E = E + T"`, `"T = F"` etc.
+* rule semantics in *pure* Python
 * no [DSL][] feeling<sup>[2]</sup>
 * no dependencies
 * no helper/intermediate files generated
-* rule semantics in *pure* Python
 * etc.
 
+thanks to *metaprogramming* techniques.
 <sub>[2]. may be untrue.</sub>
 
-Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extreme handy and its integration in Python projects is seamless.
+Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extremely handy and its integration in Python projects is seamless.
 
-Formally, the code structure for grammar declaration with `metaparse` can be described as
+### The tiny documentation
+
+Demonstrated by the above example, the code structure for grammar declaration with `metaparse` can be more formally described as
 
 ``` python
 from metaparse import cfg, <parser>
@@ -150,19 +154,25 @@ class <grammar-object> ( metaclass=cfg ) :
 
     ...
 
-
 <parser> = <parser-name> ( <grammar-object> )
 ```
 
-Literally, lexical rule is represented by **class attribute** assignment, whilst syntactical rule by method **signature** and semantic behavior by method **body**. In method body, the call arguments represents the value interpreted by successful parsing of subtrees.
+In words, lexical rule is represented by **class attribute** assignment, syntactical rule by method **signature** and semantic behavior by method **body**. In method body, the call arguments represents the values interpreted by successful parsing of subtrees.
 
+The working mechanism of such a declaration trick is quite simple. The metaclass `cfg`
 
+0. prepares an [assoc-list](https://en.wikipedia.org/wiki/Association_list) with [`__prepare__`](https://docs.python.org/3/reference/datamodel.html#preparing-the-class-namespace),
+0. registers attributes/methods into this assoc-list,
+0. in its [`__new__`](https://docs.python.org/3/reference/datamodel.html#object.__new__) translates attributes into `re` objects and methods into `Rule` objects
+0. and  returns a completed `Grammar` object.
+
+Then a `XXXParser` object can be initialized given this `Grammar` and prepares necessary table/algorithms for parsing.
 
 # Further into Non-determinism
 
-Sections above only show the *front-end* of using this module. In the *back-end*, various parsing algorithms have been/can be implemented.
+Instructions above only show the *front-end* of using this module. At the *back-end* side, various parsing algorithms have been/can be implemented.
 
-`metaparse` provides `Earley` parser, which can parse any [CFG][] (currently except those with **loop**s). For exmaple, given the tricky ambiguous grammar
+Tripping further, `metaparse` provides the `Earley` parser, which can parse any [CFG][] (currently except those with **loop**s due to tree generation) as well as the `GLR` parser, which can parse LR grammars. For exmaple, given the tricky ambiguous grammar
 ```
 S → A B C
 A → u | ε
@@ -171,7 +181,7 @@ C → u | ε
 E → u | ε
 F → u | ε
 ```
-where `ε` denotes empty production. The corresponding `metaparse` declaration (here only syntax is concerned and semantic bodies are ignored)
+where `ε` denotes empty production. The corresponding `metaparse` declaration (we can ignore semantic bodies here since we do not need translation)
 
 ``` python
 from metaparse import cfg, Earley, GLR
@@ -212,9 +222,9 @@ Using Earley/GLR parser, we get all ambiguous parse trees properly:
  (S, [(A, []), (B, [(E, [])]), (C, [(u: 'u')@[0:1]])])]
 ```
 
-These may be helpful for inspecting the grammar's characteristics.
+These may be helpful for inspecting some grammar's characteristics. Despite this power, `LALR` would be recommended currently for practical use since it permits *no ambiguity* (which may harm the language design but cannot be directly discovered by constructing non-deterministic parsers).
 
-Note for *non-deterministic* parsers like `Earley`, method `parse_many` should be used instead of `parse`.
+Note for *non-deterministic* parsers like `Earley` and `GLR`, method `parse_many` should be used instead of `parse` since more than one parse results may be produced.
 
 
 <!--

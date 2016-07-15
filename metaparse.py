@@ -34,7 +34,7 @@ class ParserError(Exception):
 
 # Special lexical element and lexemes
 END = 'END'
-END_PATTERN_DEFAULT = r'\Z'
+END_PATTERN_DEFAULT = r'$'
 
 IGNORED = 'IGNORED'
 IGNORED_PATTERN_DEFAULT = r'[ \t\n]'
@@ -42,6 +42,7 @@ IGNORED_PATTERN_DEFAULT = r'[ \t\n]'
 ERROR = 'ERROR'
 ERROR_PATTERN_DEFAULT = r'.'
 
+PRECEDENCE_DEFAULT = 1
 
 class Symbol(str):
 
@@ -257,17 +258,23 @@ class Item(object):
 
 class Grammar(object):
 
-    def __init__(self, lexes, rules, attrs):
+    def __init__(self, lexes, rules, attrs, prece={}):
         """A grammar object containing lexical rules, syntactic rules and
         associating semantics.
 
         Parameters:
 
         :lexes:  : odict{str<terminal-name> : str<terminal-pattern>}
-            A ordered list of pairs representing lexical rules.
+            A ordered dict representing lexical rules.
 
         :rules:  : [Rule]
             A list of grammar rules.
+
+        :attrs:
+            A list of extra attributes/methods
+
+        :prece:
+            A dict of operator's precedence numbers
 
         Notes:
 
@@ -283,9 +290,14 @@ class Grammar(object):
 
         """
 
+        # Operator precedence table may be useful.
+        self.OP_PRE = dict(prece)
+
         # odict{lex-name: lex-re}
         self.terminals = OrderedDict()
         for tmn, pat in lexes.items():
+            # Name trailing with integer subscript indicating
+            # the precedence.
             self.terminals[tmn] = re.compile(pat, re.MULTILINE)
 
         # [<unrepeated-nonterminals>]
@@ -294,10 +306,12 @@ class Grammar(object):
             if rl.lhs not in self.nonterminals:
                 self.nonterminals.append(rl.lhs)
 
+        # Sort rules with consecutive grouping of LHS.
+        rules.sort(key=lambda r: self.nonterminals.index(r.lhs))
+
         # This block checks completion of given grammar.
         unused_t = set(self.terminals).difference([IGNORED, END, ERROR])
-        unused_nt = set(self.nonterminals).difference([rules[0].lhs])
-
+        unused_nt = set(self.nonterminals).difference([rules[0].lhs]) 
         # Raise grammar error in case any symbol is undeclared
         msg = ''
         for r, rl in enumerate(rules):
@@ -309,8 +323,7 @@ class Grammar(object):
                     msg += "@{}`th symbol '{}' in {}`th rule {}.".format(j, X, r, rl)
         if msg:
             msg += '\n...Failed to construct the grammar.'
-            raise GrammarError(msg)
-
+            raise GrammarError(msg) 
         # Raise warnings in case any symbol is unused.
         for t in unused_t:
             # warnings.warn('Warning: referred terminal symbol {}'.format(t))
@@ -318,7 +331,6 @@ class Grammar(object):
         for nt in unused_nt:
             # warnings.warn('Warning: referred nonterminal symbol {}'.format(nt))
             warnings.warn('Unreferred nonterminal symbol {}'.format(repr(nt)))
-
 
         # Generate top rule as Augmented Grammar only if
         # the top rule is not explicitly given.
@@ -607,6 +619,7 @@ class cfg(type):
 
         """
         lexes = OrderedDict()
+        prece = {}
         rules = []
         attrs = []
 
@@ -614,17 +627,26 @@ class cfg(type):
             # Built-ins are of no use
             if k.startswith('__') and k.endswith('__'):
                 continue
-            # Handle lexical declaration.
-            elif not k.startswith('_') and isinstance(v, str):
-                if k in lexes:
-                    raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
-                lexes[k] = v
-            # Handle implicit rule declaration through methods.
-            elif not k.startswith('_') and callable(v):
-                r = Rule(v)
-                if r in rules:
-                    raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
-                rules.append(r)
+            elif not k.startswith('_'):
+                # Lexical declaration without precedence
+                if isinstance(v, str):
+                    if k in lexes:
+                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
+                    lexes[k] = v
+                    # prece[k] = PRECEDENCE_DEFAULT
+                # With precedence
+                elif isinstance(v, tuple):
+                    assert isinstance(v[0], str) and isinstance(v[1], int)
+                    if k in lexes:
+                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
+                    lexes[k] = v[0]
+                    prece[k] = v[1]
+                # Handle implicit rule declaration through methods.
+                elif callable(v):
+                    r = Rule(v)
+                    if r in rules:
+                        raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
+                    rules.append(r)
             # Handle explicit rule declaration through decorated methods.
             elif isinstance(v, Rule):
                 if v in rules:
@@ -654,7 +676,7 @@ class cfg(type):
         if ERROR not in lexes:
             lexes[ERROR] = ERROR_PATTERN_DEFAULT
 
-        return Grammar(lexes, rules, attrs)
+        return Grammar(lexes, rules, attrs, prece)
 
 
 """
@@ -1473,8 +1495,7 @@ class LALR(ParserDeterm):
         # first. But it can be used for in-place updating of
         # propagated lookaheads. After the whole propagation process,
         # :spont: is the final lookahead table.
-        spont = [OrderedDict((itm, set()) for itm in K)
-                 for K in Ks]
+        spont = [OrderedDict((itm, set()) for itm in K) for K in Ks]
 
         # Initialize spontaneous END token for the top item set.
         init_item = Ks[0][0]
@@ -1554,27 +1575,46 @@ class LALR(ParserDeterm):
             for itm, lks in itm_lks.items():
                 for lk in lks:
                     for ctm, lk1 in G.closure1_with_lookahead(itm, lk):
-                        if ctm.ended():
-                            if lk1 in ACTION[i] and ACTION[i][lk1] != (REDUCE, ctm):
-                                # Here whether (lk == lk1) won't matter
-                                # 
-                                # TODO:
-                                # - Operator precedence table to
-                                # resolve some conflicts:
-                                #   
-                                # if lk1 in OP_PRED:
-                                #     if lk1 in ACTION[i]:
-                                #         act, arg = ACTION[i][lk1]
-                                #         if act == SHIFT:
-                                #             goto = arg
-                                #             if ctm.size > 1 and ctm.rule.rhs[-2] in OP_PRED_TABLE:
-                                #                 o_red = ctm.rule.rhs[-2]
-                                #                 o_shf = lk1
-                                #                 if OP_PRED[o_red] < OP_PRED[o_shf]:
-                                #                     # discard REDUCE with lk
-                                #                     pass
-                                conflicts.append((i, lk1, ACTION[i][lk1], (REDUCE, ctm)))
-                            else:
+                        # Try make an REDUCE action for ended item
+                        # with lookahead lk1
+                        if ctm.ended() and lk == lk1:
+                            # If there is already an action on :lk1:
+                            if lk1 in ACTION[i]:
+                                act, arg = ACTION[i][lk1] 
+                                # if the action is REDUCE,
+                                if act is REDUCE:
+                                    # and reduces another item :arg:
+                                    # than reducable :ctm:
+                                    if arg != ctm:
+                                        # REDUCE/REDUCE conflict raised
+                                        conflicts.append((i, lk, (act, arg), (REDUCE, ctm)))
+                                        continue
+                                # If the action is SHIFT
+                                else:
+                                    # :ctm: is the item prepared for
+                                    # shifting on :lk:
+                                    # 
+                                    # if the left operator
+                                    # ctm.rule.rhs[-2] has
+                                    # non-strictly higher precedence,
+                                    # then revert the SHIFT into
+                                    # REDUCE, else preserve the SHIFT
+                                    if lk1 in G.OP_PRE:
+                                        if ctm.size > 1 and ctm.rule.rhs[-2] in G.OP_PRE:
+                                            op_lft = ctm.rule.rhs[-2]
+                                            op_rgt = lk1
+                                            # It may be that :op_lft: == :op_rgt:
+                                            if G.OP_PRE[op_lft] >= G.OP_PRE[op_rgt]:
+                                                # Left wins.
+                                                ACTION[i][lk1] = (REDUCE, ctm)
+                                                continue
+                                            else:
+                                                # Right wins.
+                                                continue
+                                    # SHIFT/REDUCE conflict raised
+                                    conflicts.append((i, lk, (act, arg), (REDUCE, ctm)))
+                            # If there is still no action on :lk1:
+                            else: 
                                 ACTION[i][lk1] = (REDUCE, ctm)
                 # Accept-Item
                 if itm.index_pair == (0, 1):
@@ -1587,8 +1627,8 @@ class LALR(ParserDeterm):
                 msg += '\n'.join([
                     '',
                     '! LALR-Conflict raised:',
-                    '  - in ACTION[{}]: '.format(i),
-                    '{}'.format(pp.pformat(ACTION[i])),
+                    '  - in state [{}]: '.format(i),
+                    '{}'.format(pp.pformat(Ks[i])),
                     "  * conflict on lookahead {}: ".format(repr(lk)),
                     "{}".format({lk: [act0, act1]}),
                     # "{{{}: {}}}".format(repr(lk), act1),
@@ -1985,6 +2025,7 @@ class _cfg2(object):
             else:
                 _cfg2.flush()
                 raise GrammarError('Repeated declaration of Rule {}.'.format(rule))
+
         _cfg2.flush()
 
         # Default matching order of special patterns:

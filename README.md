@@ -75,7 +75,8 @@ assign ('REF', ('REF', ('REF', 'ops'))) to ('REF', 'abc')
 
 Tools under State-of-the-Art hardly gets more handy than this (In Python 2, there goes [a more verbose way](#python-2-compatibility)).
 
-### Retrieving the Parse Tree
+
+## Retrieving the Parse Tree
 
 If merely the parse tree is needed rather than the semantic result, use method `parse` instead of `interpret`:
 
@@ -119,7 +120,7 @@ This module provides:
 
 The design of this module is inspired by [instaparse] in Clojure targeting at "native parsing". It is remarkable for
 
-* native structure to represent grammar rules
+* native structure representing grammar rules
     - no **literal string notations** like `"E = E + T"`, `"T = F"` etc.
 * rule semantics in *pure* Python
 * no [DSL][] feeling<sup>[2]</sup>
@@ -127,12 +128,13 @@ The design of this module is inspired by [instaparse] in Clojure targeting at "n
 * no helper/intermediate files generated
 * etc.
 
-thanks to *metaprogramming* techniques.
+thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
+
 <sub>[2]. may be untrue.</sub>
 
 Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extremely handy and its integration in Python projects is seamless.
 
-### The tiny documentation
+### Tiny Documentation
 
 Demonstrated by the above example, the code structure for grammar declaration with `metaparse` can be more formally described as
 

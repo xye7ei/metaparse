@@ -1015,15 +1015,17 @@ class ParserBase(object):
     def interpret_many(self, inp):
         return self.parse_many(inp, interp=True)
 
-    def parse1(self, inp, interp=False):
-        res = self.parse_many(inp, interp)
-        if res:
-            return res[0]
-        else:
-            raise ParserError("No parse.")
+    def parse(self, inp, interp=False):
+        # res = self.parse_many(inp, interp)
+        # if res:
+        #     return res[0]
+        # else:
+        #     raise ParserError("No parse.")
+        raise NotImplementedError('For non-deterministic parsers use :parse_many: instead.')
 
-    def interpret1(self, inp):
-        return self.parse1(inp, interp=True)
+    def interpret(self, inp):
+        # return self.parse(inp, interp=True)
+        raise NotImplementedError('For non-deterministic parsers use :interpret_many: instead.')
 
 
 class ParserDeterm(ParserBase):
@@ -1783,19 +1785,19 @@ class LALR(ParserDeterm):
 
         # Report LALR-conflicts, if any
         if conflicts:
-            msg = "\n########## Error ##########"
+            msg = "\n============================"
             for i, lk, act0, act1 in conflicts:
                 msg += '\n'.join([
                     '',
                     '! LALR-Conflict raised:',
-                    '  - in state [{}]: '.format(i),
+                    '  * in state [{}]: '.format(i),
                     '{}'.format(pp.pformat(Ks[i])),
-                    "  * conflict on lookahead {}: ".format(repr(lk)),
+                    "  * on lookahead {}: ".format(repr(lk)),
                     "{}".format({lk: [act0, act1]}),
                     # "{{{}: {}}}".format(repr(lk), act1),
                     '',
                 ])
-            msg += "############################"
+            msg += "============================"
             raise ParserError(msg)
 
         self.ACTION = ACTION

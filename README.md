@@ -183,7 +183,7 @@ class <grammar-object> ( metaclass=cfg ) :
     IGNORED = <ignored-pattern>           # When not given, default pattern is r"\s".
 
     <terminal> = <lexeme-pattern>
-    ...                                  # The order of lexical rules matters.
+    ...                                   # The order of lexical rules matters.
 
     def <rule-LHS> ( <rule-RHS> ) :
         <semantic-behavior>
@@ -217,7 +217,7 @@ Contents above only show the *front-end* of applying this module. On the *back-e
 
 One step further, `metaparse` provides implementation of *non-deterministic* parsers like [`Earley`][Earley] and [`GLR`][GLR]. Currently, grammars with **loop**s are yet supported due to the eager mechanism of tree generation.
 
-For exmaple, given the tricky ambiguous grammar
+For exmaple, given the tricky *ambiguous* grammar
 ```
 S → A B C
 A → u | ε
@@ -246,7 +246,7 @@ class S(metaclass=cfg):
     def F()        : pass
 ```
 
-and using Earley/GLR parser, we get all ambiguous parse trees properly:
+and using Earley/GLR parser, we get all *ambiguous* parse trees properly:
 ``` python
 >>> p_S = Earley(S)
 >>> p_S.parse_many('u')
@@ -273,6 +273,73 @@ Despite this power of non-determinism, `LALR` would be recommended currently for
 
 Note for non-deterministic parsers like `Earley` and `GLR`, method `parse_many` should be used instead of `parse` since more than one parse results may be produced.
 
+### Play with Ambiguity
+
+Here is another example, showing the ambiguity of the famous [Dangling-Else][] grammar
+``` python
+class G_IfThenElse(metaclass=cfg):
+
+    IF = r'if'
+    THEN = r'then'
+    ELSE = r'else'
+    EXPR = r'\d+'
+    SINGLE = r'\w+'
+
+    def stmt(IF, EXPR, THEN, stmt):
+        return ('i-t', stmt)
+    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
+        return ('i-t-e', stmt_1, stmt_2)
+    def stmt(SINGLE):
+        return SINGLE
+```
+
+with exemplar semantic results:
+
+```
+>>> p_ite = GLR(G_IfThenElse)
+>>> p_ite.interpret_many('if 1 then if 2 then if 3 then a else b else c')
+[('i-t', ('i-t-e', ('i-t-e', 'a', 'b'), 'c')),
+ ('i-t-e', ('i-t', ('i-t-e', 'a', 'b')), 'c'),
+ ('i-t-e', ('i-t-e', ('i-t', 'a'), 'b'), 'c')]
+```
+
+This may fail when try to build an LALR:
+
+``` python
+>>> p_ite = LALR(G_IfThenElse)
+Traceback (most recent call last):
+  File ...
+  ...
+  File "c:\Users\Shellay\Documents\GitHub\metaparse\metaparse.py", line 1801, in _build_automaton
+    raise ParserError(msg)metaparse.ParserError:
+============================
+! LALR-Conflict raised:
+  * in state [6]:
+[(stmt = IF EXPR THEN stmt.), (stmt = IF EXPR THEN stmt.ELSE stmt)]
+  * on lookahead 'ELSE':
+{'ELSE': [(SHIFT, 7), (REDUCE, (stmt = IF EXPR THEN stmt.))]}
+============================
+```
+
+However, by specifying `ELSE` a higher associative precedence than `THEN` (just like the calculator example treating operators)
+
+``` python
+class G_IfThenElse(metaclass=cfg):
+    ...
+    THEN = r'then', 1
+    ELSE = r'else', 2
+    ...
+```
+
+we then get rid of ambiguity. The successful LALR delivers
+```
+>>> p_lalr_ite = LALR(G_IfThenElse)
+>>> p_lalr_ite.interpret('if 1 then if 2 then if 3 then a else b else c')
+('i-t', ('i-t-e', ('i-t-e', 'a', 'b'), 'c'))
+```
+
+In practice, rather than the examples here, precedence specification can be highly complex and involving.
+
 
 # Limitations
 
@@ -283,7 +350,7 @@ Though this module provides advantageous features, there are also limitations:
   P → Q | a
   Q → P
   ```
-  is *infinitely ambiguous*, which has infinite number of derivations while processing only finite input, e.g. `a`:
+  is *infinitely ambiguous*, which has infinite number of derivations while processing only finite input, e.g. `"a"`:
   ```
   P ⇒ a
   P ⇒ Q ⇒ P ⇒ a
@@ -369,3 +436,4 @@ Although this alternative form with merely decorators seems less verbose, it is 
 [ANTLR]: http://www.antlr.org/ "ANother Tool for Language Recognition"
 [clojure]: https://clojure.org/ "Clojure"
 [PLY]: http://www.dabeaz.com/ply/ "PLY"
+[Dangling-Else]: https://en.wikipedia.org/wiki/Dangling_else "Dangling-Else"

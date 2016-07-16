@@ -38,96 +38,33 @@ class LRVal(metaclass=cfg):
     def R(L):
         return L
 
-from metaparse import cfg2, rule
-
-# @cfg2
-# class LRVal:
-
-#     EQ   = r'='
-#     STAR = r'\*'
-#     ID   = r'[_a-zA-Z]\w*'
-
-#     @rule
-#     def S(L, EQ, R):
-#         print('Got ids:', ids)
-#         print('assign %s to %s' % (L, R))
-#         ids.clear()
-        
-#     @rule
-#     def S(R):
-#         print('Got ids:', ids)
-#         return ('expr', R)
-
-#     @rule
-#     def L(STAR, R):
-#         return ('REF', R)
-#     @rule
-#     def L(ID):
-#         ids.append(ID)
-#         return ID
-
-#     @rule
-#     def R(L):
-#         return L
 
 
-# pp.pprint(Glrval.closure_with_lookahead(G.make_item(0, 0), '%'))
-# e_LRVal = Earley(LRVal)
-# g_LRVal = GLR(LRVal)
-l_LRVal = LALR(LRVal)
+class G_IfThenElse(metaclass=cfg):
 
-# pp.pprint(e_LRVal.interpret('abc = * * ops'))
-# pp.pprint(e_LRVal.interpret('* abc = * * * ops'))
+    IF = r'if'
+    THEN = r'then'
+    ELSE = r'else'
+    EXPR = r'\d+'
+    SINGLE = r'\w+'
 
-# pp.pprint(g_LRVal.interpret('abc = * * ops'))
-# pp.pprint(g_LRVal.interpret('* abc = * * * ops'))
-
-# pp.pprint(l_LRVal.interpret1('abc'))
-# pp.pprint(l_LRVal.interpret1('abc = * * ops'))
-# pp.pprint(l_LRVal.parse('* abc = *  ** ops'))
-
-assert 0
-
-class GArith(metaclass=cfg):
-    IGNORED = r'\s+'
-    plus   = r'\+'
-    times  = r'\*'
-    number = r'\d+'
-    left   = r'\('
-    right  = r'\)'
-    # bla    = r'bla'
-    def Expr(Expr, plus, Term):
-        return Expr + Term
-    def Expr(Term):
-        return Term
-    def Term(Term, times, Factor):
-        return Term * Factor
-    def Term(Factor):
-        return Factor
-    def Factor(Atom):
-        return Atom
-    def Factor(left, Expr, right):
-        return Expr
-    def Atom(number):
-        return int(number)
-
-
-class SExp(metaclass=cfg):
-    SINGLE = r'[^ \(\)\[\]\{\}]+'
-    L1 = r'\('
-    R1 = r'\)'
-    def sexp(SINGLE):
+    def stmt(IF, EXPR, THEN, stmt):
+        return ('i-t', stmt)
+    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
+        return ('i-t-e', stmt_1, stmt_2)
+    def stmt(SINGLE):
         return SINGLE
-    def sexp(L1, slist, R1):
-        return slist
-    def slist(sexp, slist):
-        return [sexp, *slist]
-    def slist():
-        return []
 
+# p_ite = Earley(G_IfThenElse)
+# p_ite = GLR(G_IfThenElse)
+p_lalr_ite = LALR(G_IfThenElse)
+inp = 'if 1 then if 2 then if 3 then a else b else c'
+# # p_ear_ite.parse('if 1 then if 2 then if 3 then 4 else 5 else 6')
+# pp.pprint([*p_ite.tokenize(inp, True)])
 
-# pp.pprint(SExp)
+# res_many = p_ite.parse_many(inp)
+# res_many = p_ite.interpret_many(inp) 
+# pp.pprint(res_many)
 
-e_arith = Earley(GArith)
-# print(e_arith.parse_many('3 + 2 * 5'))
-
+res = p_lalr_ite.interpret(inp)
+pp.pprint(res)

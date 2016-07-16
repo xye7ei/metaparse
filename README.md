@@ -1,38 +1,44 @@
 metaparse
 =====
 
-You may need **instant parsing**<sup>[1]</sup> (and interpreting) with **full power**.
+This is a tool for **instant parsing** with **full power** in native Python environment<sup>[1]</sup>.
 
-But, a **Python class<sup>[1]</sup> declaration** just suffices, including
+Moreover, You might be amazed that merely defining a Python `class`<sup>[2]</sup> just suffices to get parse work done, including
 
-* lexical definition
-* rule definition
-* semantic definition
+* lexical
+* snytatical
+* semantic
 
-all-in-one for a grammar.
+definitions altogether.
 
 
-<sub>[1]. This module is motivated by [instaparse][] in [Clojure][], but goes another way.</sub>
+<sub>[1]. This module is motivated by [instaparse][] in [Clojure][], but travels another way more like [PLY][].</sub>
 <sub>[2]. Python 3 preferred.</sub>
 
 # Quick Example
 
-In `metaparse`, grammar syntax and semantics can be simply defined with **class methods**.
+In `metaparse`, grammar syntax and semantics can be simply defined with **class methods**. To illustrate this, we create a tiny calculator which can do basic arithmetics and registers variable bindings in a table.
 
-To illustrate this, we create a tiny calculator which registers variables binding to expression results.
-
-Firstly, we design the grammar on a paper:
+Firstly, we design the grammar on a paper, as in textbooks,
 
 ```
 assign → ID = expr
-
 expr → NUM
-expr → expr + expr
-expr → expr * expr
-expr → expr ** expr
+expr → expr₁ + expr₂
+expr → expr₁ * expr₂
+expr → expr₁ ** expr₂
 ```
 
-then we transform this into Python form. For semantics, [SDT][]-style is used (similar to [Yacc][]).
+then think about some similarity with `def` signatures in Python:
+``` python
+def assign(ID, EQ, expr): ...
+def expr(NUM): ...
+def expr(expr_1, ADD, expr_2): ...
+def expr(expr_1, MUL, expr_2): ...
+def expr(expr_1, POW, expr_2): ...
+```
+
+and finally write down the semantics, where [SDT][]-style is applied (cf. [Yacc][]).
 
 ``` python
 from metaparse import cfg, LALR
@@ -69,29 +75,35 @@ class G_Calc(metaclass=cfg):
 
     def expr(expr, POW, expr_1):
         return expr ** expr_1
-
 ```
 
-Then we build parser with this grammar object.
+Then we get a `Grammar` object and build parser with it:
 
 ```
-Calc = LALR(G_Calc)
+>>> type(G_Calc)
+<class 'metaparse.Grammar'>
+>>> Calc = LALR(G_Calc)
 ```
+
 
 Now we are done and it's quite easy to try it out.
 
 ``` python
 >>> Calc.interpret("x = 1 + 2 * 3 ** 4 + 5")
+>>> table
+{'x': 168}
+
 >>> Calc.interpret("y = 3 ** 4 * 5")
 >>> Calc.interpret("z = 99")
-
 >>> table
 {'x': 168, 'z': 99, 'y': 405}
 ```
 
-IMO, tools in state of the art could hardly get more handy than this.
+IMO, tools in state-of-the-art could hardly get more handy than this.
 
-For Python 2 compatibility, there goes [another way](#python-2-compatibility)).
+Note `metaclass=cfg` only works in Python 3. There is an [alternative](#python-2-compatibility)form which also works in Python 2 but seems trickier and is arguably less recommended<sup>[3]</sup> .
+
+<sub>[3]. although more interesting.</sub>
 
 ## Retrieving the Parse Tree
 
@@ -120,7 +132,7 @@ If merely the parse tree is needed rather than the semantic result, use method `
 
 The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as ```(<token-name>: '<lexeme>')@[<position-in-input>]```.
 
-With this tree, calling ```tr.translate()``` returns the same result as using `interpret` for the input. With LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse trees explicitly (thus saves memory space).
+Having this tree, calling ```tr.translate()``` returns the same result as `interpret`. With LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse trees explicitly.
 
 
 # Design
@@ -137,22 +149,26 @@ This module provides:
 <!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
 -->
 
-The design of this module is inspired by [instaparse] in Clojure targeting at "native parsing". It is remarkable for
+The design of this module targets "native parsing" (like [instaparse][] and [Parsec][]). Users might find `metaparse` remarkable, since
 
-* native structure representing grammar rules
-    - no **literal string notations** like `"E = E + T"`, `"T = F"` etc.
-* rule semantics in *pure* Python
-* no [DSL][] feeling<sup>[2]</sup>
-* no dependencies
-* no helper/intermediate files generated
-* optional precedence specification (for LALR)
-* etc.
+* native structure representing grammar rules,
+    - no **literal string notations** like `"E = E + T"`, `"T = F"` ...
+* rule semantics in *pure* Python,
+* easy to play with (like in REPL),
+* no [DSL][] feeling<sup>[4]</sup>,
+* no dependencies,
+* no helper/intermediate files generated,
+* optional precedence specification (for LALR),
+* and etc.
 
-thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
 
-<sub>[2]. may be untrue.</sub>
+<!-- All thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
+ -->
 
-Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extremely handy and its integration in Python projects is seamless.
+<sub>[4]. may be untrue.</sub>
+
+Though this slim module does not intend to replace more extensive tools like [GNU Bison][] and [ANTLR][], it is extremely handy and its integration in Python projects can be seamless.
+
 
 # A Tiny Documentation
 
@@ -164,7 +180,7 @@ from metaparse import cfg, <parser>
 
 class <grammar-object> ( metaclass=cfg ) :
 
-    IGNORED = <ignore-pattern>           # When not given, default pattern is r"\s".
+    IGNORED = <ignored-pattern>           # When not given, default pattern is r"\s".
 
     <terminal> = <lexeme-pattern>
     ...                                  # The order of lexical rules matters.
@@ -176,11 +192,14 @@ class <grammar-object> ( metaclass=cfg ) :
 
     ...
 
-<parser> = <parser-name> ( <grammar-object> )
+my_parser = <parser> ( <grammar-object> )
 ```
 
 Literally, lexical rule is represented by **class attribute** assignment, syntactical rule by method **signature** and semantic behavior by method **body**. In method body, the call arguments represents the values interpreted by successful parsing of subtrees.
 
+It is advised not to declare grammar-dependent attributes in such a class as helpers due to the speccial meanings.
+
+<!--
 The working mechanism of such a declaration trick is quite simple. The metaclass `cfg`
 
 0. prepares an [assoc-list](https://en.wikipedia.org/wiki/Association_list) with [`__prepare__`](https://docs.python.org/3/reference/datamodel.html#preparing-the-class-namespace),
@@ -190,11 +209,15 @@ The working mechanism of such a declaration trick is quite simple. The metaclass
 
 Then a `XXXParser` object can be initialized given this `Grammar` and prepares necessary table/algorithms for parsing.
 
+-->
+
 # Further into Non-determinism
 
-Instructions above only show the *front-end* of using this module. At the *back-end* side, various parsing algorithms have been/can be implemented.
+Contents above only show the *front-end* of applying this module. On the *back-end* side, various parsing algorithms have been/can be implemented.
 
-Tripping further, `metaparse` provides the `Earley` parser, which can parse any [CFG][] (currently except those with **loop**s due to tree generation) as well as the `GLR` parser, which can parse LR grammars. For exmaple, given the tricky ambiguous grammar
+One step further, `metaparse` provides implementation of *non-deterministic* parsers like [`Earley`][Earley] and [`GLR`][GLR]. Currently, grammars with **loop**s are yet supported due to the eager mechanism of tree generation.
+
+For exmaple, given the tricky ambiguous grammar
 ```
 S → A B C
 A → u | ε
@@ -203,7 +226,7 @@ C → u | ε
 E → u | ε
 F → u | ε
 ```
-where `ε` denotes empty production. The corresponding `metaparse` declaration (we can ignore semantic bodies here since we do not need translation)
+where `ε` denotes empty production. The corresponding `metaparse` declaration follows (we can ignore semantic bodies since we do not need translation)
 
 ``` python
 from metaparse import cfg, Earley, GLR
@@ -223,7 +246,7 @@ class S(metaclass=cfg):
     def F()        : pass
 ```
 
-Using Earley/GLR parser, we get all ambiguous parse trees properly:
+and using Earley/GLR parser, we get all ambiguous parse trees properly:
 ``` python
 >>> p_S = Earley(S)
 >>> p_S.parse_many('u')
@@ -244,78 +267,12 @@ Using Earley/GLR parser, we get all ambiguous parse trees properly:
  (S, [(A, []), (B, [(E, [])]), (C, [(u: 'u')@[0:1]])])]
 ```
 
-These may be helpful for inspecting some grammar's characteristics.
+These results may be helpful for inspecting the grammar's characteristics.
 
-Despite this power, `LALR` would be recommended currently for practical use since it permits *no ambiguity* (which may harm the language design but cannot be directly discovered by constructing non-deterministic parsers).
+Despite this power of non-determinism, `LALR` would be recommended currently for practical use since it won't permit *ambiguity* (which may harm the language design but cannot be directly discovered by constructing non-deterministic parsers).
 
-Note for *non-deterministic* parsers like `Earley` and `GLR`, method `parse_many` should be used instead of `parse` since more than one parse results may be produced.
+Note for non-deterministic parsers like `Earley` and `GLR`, method `parse_many` should be used instead of `parse` since more than one parse results may be produced.
 
-
-<!--
-## Non-determinism and ambiguity
-
-While [LALR parser][LALR] is a classical *deterministic* parser, further parsers can be use to experiment with trickier grammars for heuristic exploration.
-
-For example, given the famous [Dangling-Else](https://en.wikipedia.org/wiki/Dangling_else) grammar which
-
-* is ambiguous and
-* needs [left-factoring][LF] to be [LL(k)][LL].
-
-We declare a powerful *non-deterministic* [GLL parser][Gll] to process it directly:
-``` python
-from metaparse import cfg, GLL
-
-class G_IfThenElse(metaclass=cfg):
-
-    IGNORED = r'\s'
-    IF      = r'if'
-    THEN    = r'then'
-    ELSE    = r'else'
-    EXPR    = r'\d+'
-    SINGLE  = r'[_a-zA-Z]\w*'
-
-    def stmt(SINGLE):
-        return SINGLE
-    def stmt(IF, EXPR, THEN, stmt):
-        return ('it', stmt)
-    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
-        # The trailing substring '_1' and '_2' denotes instances of
-        # the nonterminal 'stmt' in parameter list
-        return ('ite', stmt_1, stmt_2)
-
-P_IfThenElse = GLL(G_IfThenElse)
-```
-and it yields multiple legal results properly:
-
-``` python
->>> P_IfThenElse.interpret_many('if 1 then if 2 then if 3 then x else yy else zzz')
-[('ite', ('ite', ('it', 'x'), 'yy'), 'zzz'),
- ('ite', ('it', ('ite', 'x', 'yy')), 'zzz'),
- ('it', ('ite', ('ite', 'x', 'yy'), 'zzz'))]
-```
-
-On the otherside, using LALR parser would report LR-conflicts due to ambiguity:
-``` python
->>> from metaparse import LALR
->>> LALR(G_IfThenElse)
-Traceback (most recent call last):
-  File "c:/Users/Shellay/Documents/GitHub/metaparse/tests/test_if_else.py", line 117, in <module>
-    LALR(Gif)
-  File "c:\Users\Shellay\Documents\GitHub\metaparse\metaparse.py", line 1414, in __init__
-    self._build_automaton()
-  File "c:\Users\Shellay\Documents\GitHub\metaparse\metaparse.py", line 1564, in _build_automaton
-    raise ParserError(msg)
-metaparse.ParserError:
-########## Error ##########
-
-! LALR-Conflict raised:
-  - in ACTION[7]:
-{'ELSE': (SHIFT, 8), 'END': (REDUCE, (ifstmt = IF EXPR THEN stmt.))}
-  * conflicting action on token 'ELSE':
-{'ELSE': (REDUCE, (ifstmt = IF EXPR THEN stmt.))}
-#########################
-```
--->
 
 # Limitations
 
@@ -333,7 +290,7 @@ Though this module provides advantageous features, there are also limitations:
   ...
   P ⇒ Q ⇒ ... ⇒ P ⇒ a
   ```
-  where each derivation corresponds to a parse tree.
+  where each derivation corresponds to a parse tree. Eager generation of these trees lead to non-termination during parsing.
 
 * Only **legal Python identifier**, rather than non-alphabetic symbols (like `<fo#o>`, `==`, `raise`, etc) can be used as symbols in grammar (seems no serious).
 
@@ -342,16 +299,16 @@ Though this module provides advantageous features, there are also limitations:
 * GLL parser is yet able to handle *left-recursion*.
 
 
-# TODO-List
+# TODOs
+
+* Support Graph-Structured-Stack (GSS) for non-deterministic parsers.
 
 * Support *left-recursion* by GLL parser.
-
-* May also support Graph-Structured-Stack for non-deterministic parsers
 
 
 # Python 2 compatibility
 
-The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, relying on provided decorators `cfg2` and `rule`:
+The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, relying on the single decorators `cfg.v2`:
 
 ``` python
 from metaparse import cfg, LALR
@@ -389,11 +346,10 @@ def Calc_v2():
 
 The problem is that `type.__prepare__` creating a method collector is not supported in Python 2. Altough `__metaclass__` is also available, it suffers from the restriction that we can *not* collect lexcial rule (Python assignment statements) in original declaration order.
 
-Generally, unlike `class` structure, `def` structure allows deeper access to its source code through `inspect`. After some tricks with module `ast` traversing the parsed `def` function's body, the assignments can then get collected in order and methods get registered with supposedly correct specification of global/local contexts. Finally all stuff for constructing a `Grammar` object gets prepared.
+Generally, unlike `class` structure, `def` structure allows deeper access into the source code through `inspect`. After some tricks with module `ast` traversing the parsed function's body, the assignments can then get collected in order and methods get registered with supposedly correct specification of global/local contexts. Finally all stuff for constructing a `Grammar` object gets prepared.
 
 Although this alternative form with merely decorators seems less verbose, it is much less explicit for understanding. Some working mechanisms may not be clear enough (especially the contexts for inner `def`s).
 
-[clojure]: https://clojure.org/ "Clojure"
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"
 [Interpreting]: https://en.wikipedia.org/wiki/Interpreter_(computing) "Interpreter"
 [DSL]: https://en.wikipedia.org/wiki/Domain-specific_language "Domain-specific Language"
@@ -411,4 +367,5 @@ Although this alternative form with merely decorators seems less verbose, it is 
 [SDT]: https://en.wikipedia.org/wiki/Syntax-directed_translation "Syntax-directed Translation"
 [LF]: http://www.csd.uwo.ca/~moreno//CS447/Lectures/Syntax.html/node9.html "Left-factoring"
 [ANTLR]: http://www.antlr.org/ "ANother Tool for Language Recognition"
-
+[clojure]: https://clojure.org/ "Clojure"
+[PLY]: http://www.dabeaz.com/ply/ "PLY"

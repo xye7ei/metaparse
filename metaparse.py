@@ -1,4 +1,73 @@
 # -*- coding: utf-8 -*-
+"""``metaparse``
+
+When powerful instant parsing is needed, a **Python class[1] declaration**
+just suffices. This pseudo-class includes
+
+-  lexical definition
+-  rule definition
+-  semantic definition
+
+all-in-one for a grammar.
+
+
+Example
+
+-------
+
+To illustrate this, we create a tiny calculator which registers variables
+binding to expression results.
+
+.. code:: python
+
+    from metaparse import cfg, LALR
+
+    # Global stuff
+    table = {}
+
+    class G_Calc(metaclass=cfg):
+
+        # ===== Lexical patterns / Terminals =====
+
+        IGNORED = r'\s+'            # Special token.
+
+        EQ  = r'='
+        NUM = r'[0-9]+'
+        ID  = r'[_a-zA-Z]\w*'
+        POW = r'\*\*', 3            # Can specify token precedence (mainly for LALR).
+        MUL = r'\*'  , 2
+        ADD = r'\+'  , 1
+
+        # ===== Syntactic/Semantic rules in SDT-style =====
+
+        def assign(ID, EQ, expr):        # May rely on global side-effects...
+            table[ID] = expr
+
+        def expr(NUM):                   # or return local results for purity.
+            return int(NUM)
+
+        def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂).
+            return expr_1 + expr_2
+
+        def expr(expr, MUL, expr_1):     # Can ignore one of the subscripts.
+            return expr * expr_1
+
+        def expr(expr, POW, expr_1):
+            return expr ** expr_1
+
+    Calc = LALR(G_Calc)
+
+
+
+.. code:: python
+
+    >>> Calc.interpret("x = 1 + 2 * 3 ** 4 + 5")
+    >>> Calc.interpret("y = 3 ** 4 * 5")
+    >>> Calc.interpret("z = 99")
+
+    >>> table
+    {'x': 168, 'z': 99, 'y': 405}
+"""
 
 import re
 import warnings
@@ -312,7 +381,7 @@ class Grammar(object):
 
         # This block checks completion of given grammar.
         unused_t = set(self.terminals).difference([IGNORED, END, ERROR])
-        unused_nt = set(self.nonterminals).difference([rules[0].lhs]) 
+        unused_nt = set(self.nonterminals).difference([rules[0].lhs])
         # Raise grammar error in case any symbol is undeclared
         msg = ''
         for r, rl in enumerate(rules):
@@ -320,11 +389,14 @@ class Grammar(object):
                 unused_t.discard(X)
                 unused_nt.discard(X)
                 if X not in self.terminals and X not in self.nonterminals:
-                    msg += '\nUndeclared symbol:'
-                    msg += "@{}`th symbol '{}' in {}`th rule {}.".format(j, X, r, rl)
+                    msg += '\n'.join([
+                        'Undeclared symbol:',
+                        "@{}`th symbol '{}' in {}`th rule {}. Source info:".format(j, X, r, rl),
+                        rl.src_info,
+                    ])
         if msg:
             msg += '\n...Failed to construct the grammar.'
-            raise GrammarError(msg) 
+            raise GrammarError(msg)
         # Raise warnings in case any symbol is unused.
         for t in unused_t:
             # warnings.warn('Warning: referred terminal symbol {}'.format(t))
@@ -430,7 +502,7 @@ class Grammar(object):
                 return F
 
         # Calculate FIRST in iterative way?
-        # 
+        #
         # - Consider the construction of a prediction-tree in the
         #   context of building a GLL parser
 
@@ -648,7 +720,7 @@ class cfg(type):
                     prece[k] = v[1]
                 # Handle normal private attributes/methods.
                 else:
-                    attrs.append((k, v)) 
+                    attrs.append((k, v))
 
         # Default matching order of special patterns:
 
@@ -720,20 +792,21 @@ class cfg(type):
         # s = compile("def foo(): return 123", '<ast>', 'exec')
 
         lst = []
-        # assi_objs = []
 
         for obj in t.body[0].body:
 
             if isinstance(obj, ast.Assign):
-                # assi_objs.append(obj)
                 k = obj.targets[0].id
                 ov = obj.value
                 # :ast.literal_eval: evaluates an node instantly!
-                v = ast.literal_eval(ov)
-                lst.append((k, v))
-                # Some context values may be used for defining
-                # following functions.
-                lcl_ctx[k] = v
+                try:
+                    v = ast.literal_eval(ov)
+                    lst.append((k, v))
+                    # Some context values may be used for defining
+                    # following functions.
+                    lcl_ctx[k] = v
+                except ValueError:
+                    pass
 
             elif isinstance(obj, ast.FunctionDef):
                 name = obj.name
@@ -745,7 +818,8 @@ class cfg(type):
                 # Compile a module-ast with '<ast>' mode targeting
                 # :exec:.
                 code = compile(md, '<ast>', 'exec')
-                # Register function into local context.
+                # Register function into local context, within the
+                # circumference of global context.
                 exec(code, glb_ctx, lcl_ctx)
                 func = lcl_ctx.pop(name)
                 lst.append((name, func))
@@ -997,7 +1071,7 @@ class Earley(ParserBase):
       A -> A B
       A ->
       B -> b
-      B -> 
+      B ->
 
     where A => ... => A consuming no input tokens, the on-the-fly
     computation of parse trees will not terminate. However,
@@ -1125,7 +1199,7 @@ class Earley(ParserBase):
                                 ktm = G.item(r, 0)
                                 if ktm not in chart[k][k]:
                                     chart[k][k].add(ktm)
-                                    agenda.append((k, ktm)) 
+                                    agenda.append((k, ktm))
                                 # Prediction over NULLABLE1 symbol
                                 if not rule.rhs:
                                     jtm1 = jtm.shifted
@@ -1184,20 +1258,20 @@ class Earley(ParserBase):
 
         # Tokenizer with END token to force the tailing completion
         # pass.
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)): 
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
             # Components for the behavior of One-Pass transitive closure
-            # 
+            #
             # - The accumulated set of items/stacks as final closure.
             #   It plays the role of the chart column k
             s_acc = ss[-1]
             # - The set of active items to be processed, i.e. AGENDA
             s_act = dict(s_acc)
             # - The initial set for after reading current token
-            s_acc1 = {} 
+            s_acc1 = {}
             while 1:
                 # - The items induced while processing items in the
                 #   AGENDA, named AUGMENTATION AGENDA.
-                s_aug = {} 
+                s_aug = {}
                 for (j, jtm), j_stks in s_act.items():
 
                     # PREDICTION
@@ -1218,7 +1292,7 @@ class Earley(ParserBase):
                         # NULLABLEs.
                         #
                         # INVARIANT during processing:
-                        # 
+                        #
                         # - No completion can induce any new
                         #   prediction at this position k (Thus no
                         #   prediction can induce any new completion).
@@ -1231,7 +1305,7 @@ class Earley(ParserBase):
                         # computation of item set implictly covers
                         # the computation of INDIRECT NULLABILITY
                         # already.
-                        # 
+                        #
                         # More details see the referenced book.
                         # FIXME: Seems rigorous?
                         # if not tok.is_END():
@@ -1475,7 +1549,7 @@ class GLR(ParserBase):
                     if i == len(tokens):
                         # Not delivering augmented top tree
                         results.append(subs[0])
-                else: 
+                else:
                     trs1.append(ParseTree(ritm.rule, subs))
                     frk.append(GOTO[frk[-1]][ritm.target])
                     forest.append([frk, trs1, i]) # index i stays
@@ -1668,7 +1742,7 @@ class LALR(ParserDeterm):
                                 # If there is already an action on
                                 # :lk1:, test wether conflicts may
                                 # raise for it.
-                                act, arg = ACTION[i][lk1] 
+                                act, arg = ACTION[i][lk1]
                                 # if the action is REDUCE
                                 if act is REDUCE:
                                     # which reduces a different item :arg:
@@ -1680,7 +1754,7 @@ class LALR(ParserDeterm):
                                 else:
                                     # :ctm: is the item prepared for
                                     # shifting on :lk:
-                                    # 
+                                    #
                                     # if the left operator
                                     # ctm.rule.rhs[-2] has
                                     # non-strictly higher precedence,
@@ -1701,7 +1775,7 @@ class LALR(ParserDeterm):
                                     # SHIFT/REDUCE conflict raised
                                     conflicts.append((i, lk1, (act, arg), (REDUCE, ctm)))
                             # If there is still no action on :lk1:
-                            else: 
+                            else:
                                 ACTION[i][lk1] = (REDUCE, ctm)
                 # Accept-Item
                 if itm.index_pair == (0, 1):
@@ -1775,7 +1849,7 @@ class LALR(ParserDeterm):
                     else:
                         tok = next(toker)
 
-                else: 
+                else:
                     act, arg = ACTION[i][tok.symbol]
 
                     # SHIFT
@@ -1972,38 +2046,38 @@ class GLL(ParserBase):
                 table[lhs][EPSILON].append(rule)
 
     def parse_many(self, inp, interp=False):
-        """ 
-        """ 
+        """
+        """
         # Tracing parallel stacks, where signal (α>A) means reducing
         # production A with sufficient amount of arguments on the
-        # argument stack. 
+        # argument stack.
         # | aβd#               :: {inp-stk}
-        # | (#      ,      S#) :: ({arg-stk}, {pred-stk}) 
-        # ==(S -> aBc), (S -> aD)==>> 
+        # | (#      ,      S#) :: ({arg-stk}, {pred-stk})
+        # ==(S -> aBc), (S -> aD)==>>
         # | aβd#
         # | (#      ,    aBd(aBd>S)#)
-        #   (#      ,    aDe(aD>S)#) 
-        # ==a==>> 
+        #   (#      ,    aDe(aD>S)#)
+        # ==a==>>
         # | βd#
         # | (#a     ,     Bd(aBd>S)#)
-        #   (#a     ,     De(aD>S)#) 
+        #   (#a     ,     De(aD>S)#)
         # ==prediction (B -> b h)
-        #   prediction (D -> b m), push predicted elements into states ==>> 
+        #   prediction (D -> b m), push predicted elements into states ==>>
         # | βd#
         # | (#a     ,bh(bh>B)d(aBd>S)#)
-        #   (#a     ,bm(bm>D)De(aD>S)#) 
-        # ==b==> 
+        #   (#a     ,bm(bm>D)De(aD>S)#)
+        # ==b==>
         # | βd#
         # | (#ab    ,h(bh>B)d(aBd>S)#)
-        #   (#ab    ,m(bm>D)De(aD>S)#) 
-        # ==h==> 
+        #   (#ab    ,m(bm>D)De(aD>S)#)
+        # ==h==>
         # | βd#
         # | (#abh   ,(bh>B)d(aBd>S)#)
-        #   (#ab    ,{FAIL} m(bm>D)De(aD>S)#) 
-        # ==(reduce B -> β), push result into args ==>> 
+        #   (#ab    ,{FAIL} m(bm>D)De(aD>S)#)
+        # ==(reduce B -> β), push result into args ==>>
         # | βd#
-        # | (#aB    ,d(aBd>S)#) 
-        # and further. 
+        # | (#aB    ,d(aBd>S)#)
+        # and further.
         # """
 
         push, pop = list.append, list.pop

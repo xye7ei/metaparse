@@ -3,6 +3,7 @@
 import re
 import warnings
 import inspect
+import ast
 import pprint as pp
 
 from collections import OrderedDict
@@ -258,7 +259,7 @@ class Item(object):
 
 class Grammar(object):
 
-    def __init__(self, lexes, rules, attrs, prece={}):
+    def __init__(self, lexes, rules, attrs, prece=None):
         """A grammar object containing lexical rules, syntactic rules and
         associating semantics.
 
@@ -291,7 +292,7 @@ class Grammar(object):
         """
 
         # Operator precedence table may be useful.
-        self.OP_PRE = dict(prece)
+        self.OP_PRE = dict(prece) if prece else {}
 
         # odict{lex-name: lex-re}
         self.terminals = OrderedDict()
@@ -458,20 +459,26 @@ class Grammar(object):
         return fs
 
     def tokenize(G, inp, with_end):
-        """Perform lexical analysis
-        with given string. Yield feasible matches with defined lexical patterns.
-        Ambiguity is resolved by the order of patterns within definition.
+        """Perform lexical analysis with given input string and yield matched
+        tokens with defined lexical patterns.
+
+        * Ambiguity is resolved by the definition order.
 
         It must be reported if `pos` is not strictly increasing when
         any of the valid lexical pattern matches zero-length string!!
-        This may lead to non-termination.
+        This might lead to non-termination.
+
+        Here only matches with positive length is retrieved, though
+        expresiveness may be harmed by this restriction.
+
         """
 
         pos = 0
         while pos < len(inp):
             for lex, rgx in G.terminals.items():
                 m = rgx.match(inp, pos=pos)
-                if m and len(m.group()) > 0: # Guard matching for zero-length.
+                # The first match with non-zero length is yielded.
+                if m and len(m.group()) > 0:
                     break
             if m and lex == IGNORED:
                 at, pos = m.span()
@@ -504,11 +511,10 @@ class Grammar(object):
         while z < len(C):
             itm = C[z]
             if not itm.ended():
-                for j, jrl in enumerate(G.rules):
-                    if itm.actor == jrl.lhs:
-                        jtm = G.item(j, 0)
-                        if jtm not in C:
-                            C.append(jtm)
+                for j, jrl in G.rules_start_with(itm.actor):
+                    jtm = G.item(j, 0)
+                    if jtm not in C:
+                        C.append(jtm)
             z += 1
         return C
 
@@ -542,25 +548,13 @@ class Grammar(object):
         while z < len(C):
             itm, a = C[z]
             if not itm.ended():
-                for j, jrl in enumerate(G.rules):
-                    if itm.actor == jrl.lhs:
-                        # Dreprecated way of
-                        # beta = itm.look_over
-                        # jlk = []
-                        # for X in beta + [a]:
-                        #     for b in G.first1(X):
-                        #         if b is not EPSILON and b not in jlk:
-                        #             jlk.append(b)
-                        #     if EPSILON not in G.first1(X):
-                        #         break
-                        # for b in jlk:
-                        #     jtm = G.item(j, 0)
-                        #     if (jtm, b) not in C:
-                        #         C.append((jtm, b))
-                        for b in G.first_star(itm.look_over, a):
-                            jtm = G.item(j, 0)
-                            if (jtm, b) not in C:
-                                C.append((jtm, b))
+                # for j, jrl in enumerate(G.rules):
+                #     if itm.actor == jrl.lhs:
+                for j, jrl in G.rules_start_with(itm.actor):
+                    for b in G.first_star(itm.look_over, a):
+                        jtm = G.item(j, 0)
+                        if (jtm, b) not in C:
+                            C.append((jtm, b))
             z += 1
         return C
 
@@ -608,6 +602,98 @@ class cfg(type):
 
     """
 
+    @staticmethod
+    def read_from_raw_lists(*lsts):
+        """Extract objects from a sequence of lists and translate some of them
+        into something necessary for building a grammar object.
+
+        """
+
+        lexes = []
+        lexpats = []
+        rules = []
+        prece = {}
+        attrs = []
+
+        for lst in lsts:
+            for k, v in lst:
+                # Built-ins are of no use
+                if k.startswith('__') and k.endswith('__'):
+                    continue
+                # Handle implicit rule declaration through methods.
+                elif callable(v):
+                    r = Rule(v)
+                    if r in rules:
+                        raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
+                    rules.append(r)
+                # Lexical declaration without precedence
+                elif isinstance(v, str):
+                    if k in lexes:
+                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
+                    lexes.append(k)
+                    lexpats.append(v)
+                # With precedence
+                elif isinstance(v, tuple):
+                    assert len(v) == 2, 'Lexical pattern as tuple should be of length 2.'
+                    assert isinstance(v[0], str) and isinstance(v[1], int), \
+                        'Lexical pattern as tuple should be of type (str, int)'
+                    if k in lexes:
+                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
+                    lexes.append(k)
+                    lexpats.append(v[0])
+                    prece[k] = v[1]
+                # Handle normal private attributes/methods.
+                else:
+                    attrs.append((k, v)) 
+
+        # Default matching order of special patterns:
+
+        # Always match IGNORED secondly after END, if it is not specified;
+        if IGNORED not in lexes:
+            # lexes.move_to_end(IGNORED, last=False)
+            lexes.append(IGNORED)
+            lexpats.append(IGNORED_PATTERN_DEFAULT)
+
+        # Always match END first
+        if END not in lexes:
+            lexes.insert(0, END)
+            lexpats.insert(0, END_PATTERN_DEFAULT)
+        else:
+            i_e = lexes.index(END)
+            lexes.insert(0, lexes.pop(i_e))
+            lexpats.insert(0, lexpats.pop(i_e))
+
+        # Always match ERROR at last
+        # It may be overriden by the user.
+        if ERROR not in lexes:
+            # lexes[ERROR] = ERROR_PATTERN_DEFAULT
+            lexes.append(ERROR)
+            lexpats.append(ERROR_PATTERN_DEFAULT)
+
+        return Grammar(OrderedDict(zip(lexes, lexpats)), rules, attrs, prece)
+
+    rule_list = []
+
+    def log_rule(func):
+        """Log a method into the list prepared for grammar rules."""
+        cfg.rule_list.append((func.__name__, func))
+
+    def trans(cls_grammar):
+        """Declare a class to represent a grammar object. This should be
+        cooperating with :cfg.log_rule: method, i.e. the global :rule:
+        decorator.
+
+        """
+
+        dec_list = [(k, v) for k, v in cls_grammar.__dict__.items()
+                    if v is not None]
+        rule_list = cfg.rule_list
+
+        # Flush for each translation.
+        cfg.rule_list = []
+
+        return cfg.read_from_raw_lists(dec_list, rule_list)
+
     @classmethod
     def __prepare__(mcls, n, bs, **kw):
         return assoclist()
@@ -618,66 +704,67 @@ class cfg(type):
         a Grammar object.
 
         """
-        lexes = OrderedDict()
-        prece = {}
-        rules = []
-        attrs = []
 
-        for k, v in accu:
-            # Built-ins are of no use
-            if k.startswith('__') and k.endswith('__'):
-                continue
-            elif not k.startswith('_'):
-                # Lexical declaration without precedence
-                if isinstance(v, str):
-                    if k in lexes:
-                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
-                    lexes[k] = v
-                    # prece[k] = PRECEDENCE_DEFAULT
-                # With precedence
-                elif isinstance(v, tuple):
-                    assert isinstance(v[0], str) and isinstance(v[1], int)
-                    if k in lexes:
-                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
-                    lexes[k] = v[0]
-                    prece[k] = v[1]
-                # Handle implicit rule declaration through methods.
-                elif callable(v):
-                    r = Rule(v)
-                    if r in rules:
-                        raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
-                    rules.append(r)
-            # Handle explicit rule declaration through decorated methods.
-            elif isinstance(v, Rule):
-                if v in rules:
-                    raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(v, v.src_info))
-                rules.append(v)
-            # Handle normal private attributes/methods.
-            # These must be prefixed with (at least one) underscore
+        return cfg.read_from_raw_lists(accu)
+
+    @staticmethod
+    def extract_list(decl):
+        """Retrieve structural information of the function :decl: (i.e. the
+        body and its components IN ORDER). Then transform these
+        information into a list of lexical elements and rules as well
+        as semantics.
+
+        """
+        # The context for the rule semantics is the namespace
+        # containing the given function, here :__globals__:
+        ctx = decl.__globals__
+        t = ast.parse(inspect.getsource(decl))
+        objs = t.body[0].body
+        lst = []
+        for obj in objs:
+            if isinstance(obj, ast.Assign):
+                k = obj.targets[0].id
+                ov = obj.value
+                if isinstance(ov, ast.Tuple):
+                    v = (ov.elts[0].s, ov.elts[1].n)
+                    lst.append((k, v))
+                elif isinstance(ov, ast.Str):
+                    v = ov.s
+                    lst.append((k, v))
+            elif isinstance(obj, ast.FunctionDef):
+                name = obj.name
+                # Conventional fix
+                ast.fix_missing_locations(obj)
+                # :ast.Module: is the unit of program codes.
+                # FIXME: Is :md: necessary??
+                md = ast.Module(body=[obj])
+                code = compile(md, '<ast>', 'exec')
+                # Bind nonlocals during :exec:
+                # FIXME: How to keep the context intact??
+                # - Better method than caching old value?
+                if name in ctx:
+                    old = ctx[name]
+                    exec(code, ctx)
+                    func = ctx.pop(name)
+                    ctx[name] = old
+                else:
+                    exec(code, ctx)
+                    func = ctx.pop(name)
+                lst.append((name, func))
             else:
-                attrs.append((k, v))
+                # FIXME: Make translate attributes with other types!
+                pass
+        return lst
 
-        # Default matching order of special patterns:
-        # - Always match END first;
-        # - Always match IGNORED secondly, if it is not specified;
-        # - Always match ERROR at last;
 
-        if IGNORED not in lexes:
-            lexes[IGNORED] = IGNORED_PATTERN_DEFAULT
-            lexes.move_to_end(IGNORED, last=False)
+def v2(func):
+    lst = cfg.extract_list(func)
+    return cfg.read_from_raw_lists(lst)
 
-        # END pattern is not overridable.
-        lexes[END] = END_PATTERN_DEFAULT
-        lexes.move_to_end(END, last=False)
 
-        # ERROR pattern has the lowest priority, meaning it is only
-        # matched after failing matching all other patterns. It may be
-        # overriden by the user.
-        if ERROR not in lexes:
-            lexes[ERROR] = ERROR_PATTERN_DEFAULT
-
-        return Grammar(lexes, rules, attrs, prece)
-
+# Easy access :cfg:
+rule = cfg.log_rule
+cfg2 = cfg.trans
 
 """
 The above parts are utitlies for grammar definition and extraction methods
@@ -836,6 +923,7 @@ class ParserBase(object):
     """
 
     def __init__(self, grammar):
+        assert isinstance(grammar, Grammar)
         self.grammar = grammar
         # Share auxiliary methods declared in Grammar instance
         for k, v in grammar.attrs:
@@ -1563,9 +1651,9 @@ class LALR(ParserDeterm):
         # Since no SHIFT/SHIFT conflict exists, register
         # all SHIFT information firstly.
         for i, xto in enumerate(goto):
-            for a, j in xto.items():
-                if a in G.terminals:
-                    ACTION[i][a] = (SHIFT, j)
+            for X, j in xto.items():
+                if X in G.terminals:
+                    ACTION[i][X] = (SHIFT, j)
 
         # REDUCE for ended items
         # SHIFT/REDUCE and REDUCE/REDUCE conflicts are
@@ -1575,19 +1663,21 @@ class LALR(ParserDeterm):
             for itm, lks in itm_lks.items():
                 for lk in lks:
                     for ctm, lk1 in G.closure1_with_lookahead(itm, lk):
-                        # Try make an REDUCE action for ended item
-                        # with lookahead lk1
-                        if ctm.ended() and lk == lk1:
-                            # If there is already an action on :lk1:
+                        # Try make a REDUCE action for ended item
+                        # with lookahead :lk1:
+                        if ctm.ended():
+                            new_redu = (REDUCE, ctm)
                             if lk1 in ACTION[i]:
+                                # If there is already an action on
+                                # :lk1:, test wether conflicts may
+                                # raise for it.
                                 act, arg = ACTION[i][lk1] 
-                                # if the action is REDUCE,
+                                # if the action is REDUCE
                                 if act is REDUCE:
-                                    # and reduces another item :arg:
-                                    # than reducable :ctm:
+                                    # which reduces a different item :arg:
                                     if arg != ctm:
-                                        # REDUCE/REDUCE conflict raised
-                                        conflicts.append((i, lk, (act, arg), (REDUCE, ctm)))
+                                        # then REDUCE/REDUCE conflict is raised.
+                                        conflicts.append((i, lk1, (act, arg), new_redu))
                                         continue
                                 # If the action is SHIFT
                                 else:
@@ -1603,16 +1693,16 @@ class LALR(ParserDeterm):
                                         if ctm.size > 1 and ctm.rule.rhs[-2] in G.OP_PRE:
                                             op_lft = ctm.rule.rhs[-2]
                                             op_rgt = lk1
-                                            # It may be that :op_lft: == :op_rgt:
+                                            # Trivially, maybe :op_lft: == :op_rgt:
                                             if G.OP_PRE[op_lft] >= G.OP_PRE[op_rgt]:
                                                 # Left wins.
-                                                ACTION[i][lk1] = (REDUCE, ctm)
+                                                ACTION[i][lk1] = new_redu
                                                 continue
                                             else:
                                                 # Right wins.
                                                 continue
                                     # SHIFT/REDUCE conflict raised
-                                    conflicts.append((i, lk, (act, arg), (REDUCE, ctm)))
+                                    conflicts.append((i, lk1, (act, arg), (REDUCE, ctm)))
                             # If there is still no action on :lk1:
                             else: 
                                 ACTION[i][lk1] = (REDUCE, ctm)
@@ -1639,7 +1729,7 @@ class LALR(ParserDeterm):
 
         self.ACTION = ACTION
 
-    def parse(self, inp, interp=False):
+    def parse(self, inp, interp=False, n_warns=5):
 
         """Perform table-driven deterministic parsing process. Only one parse
         tree is to be constructed.
@@ -1660,6 +1750,7 @@ class LALR(ParserDeterm):
         # Lazy extraction of tokens
         toker = self.grammar.tokenize(inp, with_end=True) # Use END to force finishing by ACCEPT
         tok = next(toker)
+        warns = []
 
         try:
             while 1:
@@ -1670,18 +1761,22 @@ class LALR(ParserDeterm):
                 if tok.symbol not in ACTION[i]:
                     msg = '\n'.join([
                         '',
-                        '#########################',
+                        'WARNING: ',
                         'LALR - Ignoring syntax error reading Token {}'.format(tok),
                         '- Current kernel derivation stack:\n{}'.format(
                             pp.pformat([Ks[i] for i in sstack])),
-                        '- Expected tokens and actions: \n{}'.format(
+                        '- Expecting tokens and actions: \n{}'.format(
                             pp.pformat(ACTION[i])),
                         '- But got: \n{}'.format(tok),
-                        '#########################',
                         '',
                     ])
                     warnings.warn(msg)
-                    tok = next(toker)
+                    warns.append(msg)
+                    if len(warns) == n_warns:
+                        raise ParserError(
+                            'Threshold of warning tolerance {} reached. Parsing exited.'.format(n_warns))
+                    else:
+                        tok = next(toker)
 
                 else: 
                     act, arg = ACTION[i][tok.symbol]
@@ -1975,83 +2070,3 @@ class GLL(ParserBase):
             return results
 
 
-class _cfg2(object):
-
-    """Prepare alternative parser front-end functionalities for Python 2
-    environment without metaprogramming tricks.
-
-    In order to ease the use, a shared instance of rule_list is
-    referred in this method. Each time after the decorator @cfg2
-    is called and ended, this list is flushed. After that the next
-    call of @rule would log Rule instance in the fresh list.
-
-    """
-
-    _rule_list = []
-
-    def flush():
-        _cfg2._rule_list = []
-
-    def rule(method):
-        _cfg2._rule_list.append(Rule(method))
-
-    def cfg2(cls_grammar):
-        """Declare a class to represent a grammar object."""
-
-        # In Python 2, OrderedDict is not easy to use.
-        # lexes = OrderedDict()
-        lexes = []
-        lexpats = []
-        rules = []
-        attrs = []
-
-        for k, v in cls_grammar.__dict__.items():
-            # Ignore Built-ins
-            if k.startswith('__') and k.endswith('__'):
-                continue
-            # Lexical declaration.
-            if isinstance(v, str) and not k.startswith('_'):
-                if k in lexes:
-                    raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
-                lexes.append(k)
-                lexpats.append(v)
-            # Attributes
-            elif not isinstance(v, Rule) and k.startswith('_'):
-                attrs.append((k, v))
-
-        for rule in _cfg2._rule_list:
-            if rule not in rules:
-                rules.append(rule)
-            else:
-                _cfg2.flush()
-                raise GrammarError('Repeated declaration of Rule {}.'.format(rule))
-
-        _cfg2.flush()
-
-        # Default matching order of special patterns:
-
-        # Always match IGNORED secondly after END, if it is not specified;
-        if IGNORED not in lexes:
-            # lexes.move_to_end(IGNORED, last=False)
-            lexes.append(IGNORED)
-            lexpats.append(IGNORED_PATTERN_DEFAULT)
-
-        # Always match END first
-        # END pattern is not overridable.
-        # lexes[END] = END_PATTERN_DEFAULT
-        lexes.insert(0, END)
-        lexpats.insert(0, END_PATTERN_DEFAULT)
-        # lexes.move_to_end(END, last=False)
-
-        # Always match ERROR at last
-        # It may be overriden by the user.
-        if ERROR not in lexes:
-            # lexes[ERROR] = ERROR_PATTERN_DEFAULT
-            lexes.append(ERROR)
-            lexpats.append(ERROR_PATTERN_DEFAULT)
-
-        return Grammar(OrderedDict(zip(lexes, lexpats)), rules, attrs)
-
-
-rule = _cfg2.rule
-cfg2 = _cfg2.cfg2

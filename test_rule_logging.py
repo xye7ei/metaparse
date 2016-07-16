@@ -27,6 +27,7 @@ class S:
 
 psr = GLR(S)
 psr = LALR(S)
+psr = WLL1(S)
 
 inp = """
 (  (a b) c (d )  e )

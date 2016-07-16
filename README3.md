@@ -1,90 +1,79 @@
 metaparse
 =====
 
-You may need **instant parsing**<sup>[1]</sup> (and interpreting) with **full power**.
+Parsing and Interpreting can get instantly done with **full power** by merely declaring **a simple Python class**<sup>[1]</sup>.
 
-But, a **Python class<sup>[1]</sup> declaration** just suffices, including
+<sub>[1]. Python 3 preferred.</sub>
 
-* lexical definition
-* rule definition
-* semantic definition
-
-all-in-one for a grammar.
-
-
-<sub>[1]. This module is motivated by [instaparse][] in [Clojure][], but goes another way.</sub>
-<sub>[2]. Python 3 preferred.</sub>
 
 # Quick Example
 
-In `metaparse`, grammar syntax and semantics can be simply defined with **class methods**.
+Based on this module, syntax and semantics can be defined with **class methods**.
 
-To illustrate this, we create a tiny calculator which registers variables binding to expression results.
-
-Firstly, we design the grammar on a paper:
+For example, given a *C*-style statement grammar in conventional [CFG][CFG] form:
 
 ```
-assign → ID = expr
-
-expr → NUM
-expr → expr + expr
-expr → expr * expr
-expr → expr ** expr
+S  →  L = R
+   |  R
+L  →  * R
+   |  id
+R  →  L
 ```
 
-then we transform this into a handy [LALR][]-parser. The [SDT][]-style may seem familiar to [Yacc][] users.
+we can write a handy [LALR][]-parser/interpreter in Python 3 for this grammar in [SDT][]-style:
 
 ``` python
-from metaparse import LALR
+from metaparse import cfg, LALR
 
-# Global stuff
-table = {}
+# Helper for translated results
+ids = []
 
-class Calc(metaclass=LALR.meta):
+class LRVal(metaclass=cfg):
 
-    # ===== Lexical patterns / Terminals =====
+    # Special pattern ignored by the underlying tokenizer
+    IGNORED = r'\s+'
 
-    IGNORED = r'\s+'            # Special token.
+    # Lexical rules with re-patterns (raw strings preferred)
+    EQ   = r'='
+    STAR = r'\*'
+    ID   = r'[_a-zA-Z]\w*'
 
-    EQ  = r'='
-    NUM = r'[0-9]+'
-    ID  = r'[_a-zA-Z]\w*'
-    POW = r'\*\*', 3            # Can specify token precedence (mainly for LALR).
-    MUL = r'\*'  , 2
-    ADD = r'\+'  , 1
+    # Syntax-directed translation rules
 
-    # ===== Syntactic/Semantic rules in SDT-style =====
+    def S(L, EQ, R):
+        print('Got ids:', ids)
+        print('assign %s to %s' % (R, L))
+        ids.clear()
 
-    def assign(ID, EQ, expr):        # May rely on side-effect...
-        table[ID] = expr
+    def S(R):
+        return ('expr', R)
 
-    def expr(NUM):                   # or return local results for purity.
-        return int(NUM)
+    def L(STAR, R):
+        return ('REF', R)
 
-    def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂).
-        return expr_1 + expr_2
+    def L(ID):
+        ids.append(ID)
+        return ID
 
-    def expr(expr, MUL, expr_1):     # Can ignore one of the subscripts.
-        return expr * expr_1
+    def R(L):
+        return L
 
-    def expr(expr, POW, expr_1):
-        return expr ** expr_1
+P_LRVal = LALR(LRVal)
 ```
 
-Now we are done and it's quite easy to try it out.
+and simply use it for some inputs:
 
 ``` python
->>> Calc.interpret("x = 1 + 2 * 3 ** 4 + 5")
->>> Calc.interpret("y = 3 ** 4 * 5")
->>> Calc.interpret("z = 99")
+>>> P_LRVal.interpret('abc')
+Got ids: ['abc']
+('expr', 'abc')
 
->>> table
-{'x': 168, 'z': 99, 'y': 405}
+>>> P_LRVal.interpret('* abc = *  ** ops')
+Got ids: ['abc', 'ops']
+assign ('REF', ('REF', ('REF', 'ops'))) to ('REF', 'abc')
 ```
 
-IMO, tools in state of the art could hardly get more handy than this.
-
-For Python 2 compatibility, there goes [a more verbose way](#python-2-compatibility)).
+Tools under State-of-the-Art hardly gets more handy than this (In Python 2, there goes [a more verbose way](#python-2-compatibility)).
 
 
 ## Retrieving the Parse Tree
@@ -92,29 +81,27 @@ For Python 2 compatibility, there goes [a more verbose way](#python-2-compatibil
 If merely the parse tree is needed rather than the semantic result, use method `parse` instead of `interpret`:
 
 ``` python
->>> tr = Calc.parse(" w  = 1 + 2 * 3 ** 4 + 5 ")
+>>> tr = l_LRVal.parse('* abc = *  ** ops')
 >>> tr
-(assign,
- [(ID: 'w')@[1:2],
-  (EQ: '=')@[4:5],
-  (expr,
-   [(expr,
-     [(expr, [(NUM: '1')@[6:7]]),
-      (ADD: '+')@[8:9],
-      (expr,
-       [(expr, [(NUM: '2')@[10:11]]),
-        (MUL: '*')@[12:13],
-        (expr,
-         [(expr, [(NUM: '3')@[14:15]]),
-          (POW: '**')@[16:18],
-          (expr, [(NUM: '4')@[19:20]])])])]),
-    (ADD: '+')@[21:22],
-    (expr, [(NUM: '5')@[23:24]])])])
+(S,
+ [(L, [(STAR: '*')@[0:1], (R, [(L, [(ID: 'abc')@[2:5]])])]),
+  (EQ: '=')@[6:7],
+  (R,
+   [(L,
+     [(STAR: '*')@[8:9],
+      (R,
+       [(L,
+         [(STAR: '*')@[11:12],
+          (R,
+           [(L,
+             [(STAR: '*')@[12:13],
+              (R, [(L, [(ID: 'ops')@[14:17]])])])])])])])])])
 ```
 
-The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as ```(<token-name>: '<lexeme>')@[<position-in-input>]```.
+The result is a `ParseTree` object with tuple representation. Inside that, a parse leaf is just a `Token` object represented as
+```(<token-symbol>: '<lexeme>')@[<position-in-input>]```.
 
-With this tree, calling ```tr.translate()``` returns the same result as using `interpret` for the input. Epecially by LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse trees explicitly (thus saves memory space).
+With this tree, calling ```tr.translate()``` delivers the same result as using `interpret` for the input. Epecially by LALR parser, the method `interpret` performs on-the-fly interpretation without producing parse trees explicitly (thus saves memory space).
 
 
 # Design
@@ -384,7 +371,6 @@ The problem is that `type.__prepare__` creating a method collector is not suppor
 
 The resulted grammar instance is created by `cfg2` decorator which utilizes information collected by `rule`. Here no `metaclass` is needed.
 
-[clojure]: https://clojure.org/ "Clojure"
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"
 [Interpreting]: https://en.wikipedia.org/wiki/Interpreter_(computing) "Interpreter"
 [DSL]: https://en.wikipedia.org/wiki/Domain-specific_language "Domain-specific Language"

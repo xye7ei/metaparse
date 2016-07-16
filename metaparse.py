@@ -604,8 +604,12 @@ class cfg(type):
 
     @staticmethod
     def read_from_raw_lists(*lsts):
-        """Extract objects from a sequence of lists and translate some of them
-        into something necessary for building a grammar object.
+        """Extract named objects from a sequence of lists and translate some
+        of them into something necessary for building a grammar
+        object.
+
+        Note the ORDER of registering lexical rules matters. Here it is assumed
+        the k-v pairs for such rules preserve orignial declaration order.
 
         """
 
@@ -672,28 +676,6 @@ class cfg(type):
 
         return Grammar(OrderedDict(zip(lexes, lexpats)), rules, attrs, prece)
 
-    rule_list = []
-
-    def log_rule(func):
-        """Log a method into the list prepared for grammar rules."""
-        cfg.rule_list.append((func.__name__, func))
-
-    def trans(cls_grammar):
-        """Declare a class to represent a grammar object. This should be
-        cooperating with :cfg.log_rule: method, i.e. the global :rule:
-        decorator.
-
-        """
-
-        dec_list = [(k, v) for k, v in cls_grammar.__dict__.items()
-                    if v is not None]
-        rule_list = cfg.rule_list
-
-        # Flush for each translation.
-        cfg.rule_list = []
-
-        return cfg.read_from_raw_lists(dec_list, rule_list)
-
     @classmethod
     def __prepare__(mcls, n, bs, **kw):
         return assoclist()
@@ -709,28 +691,50 @@ class cfg(type):
 
     @staticmethod
     def extract_list(decl):
+
         """Retrieve structural information of the function :decl: (i.e. the
         body and its components IN ORDER). Then transform these
         information into a list of lexical elements and rules as well
         as semantics.
 
         """
-        # The context for the rule semantics is the namespace
-        # containing the given function, here :__globals__:
-        ctx = decl.__globals__
+
+        # The context for the rule semantics is :decl:'s belonging
+        # namespace, here :__globals__:.
+        glb_ctx = decl.__globals__
+
+        # The local context for registering a function definition
+        # by :exec:.
+        lcl_ctx = {}
+
+        # Parse the source.
         t = ast.parse(inspect.getsource(decl))
-        objs = t.body[0].body
+
+        # Something about :ast.parse: and :compile: with
+        # - literal string code;
+        # - target form
+        # - target mode
+        # e = ast.parse("(3, x)", mode='eval')
+        # e = compile("(3, x)", '<ast>', 'eval')
+        # s = ast.parse("def foo(): return 123", mode='exec')
+        # s = compile("def foo(): return 123", '<ast>', 'exec')
+
         lst = []
-        for obj in objs:
+        # assi_objs = []
+
+        for obj in t.body[0].body:
+
             if isinstance(obj, ast.Assign):
+                # assi_objs.append(obj)
                 k = obj.targets[0].id
                 ov = obj.value
-                if isinstance(ov, ast.Tuple):
-                    v = (ov.elts[0].s, ov.elts[1].n)
-                    lst.append((k, v))
-                elif isinstance(ov, ast.Str):
-                    v = ov.s
-                    lst.append((k, v))
+                # :ast.literal_eval: evaluates an node instantly!
+                v = ast.literal_eval(ov)
+                lst.append((k, v))
+                # Some context values may be used for defining
+                # following functions.
+                lcl_ctx[k] = v
+
             elif isinstance(obj, ast.FunctionDef):
                 name = obj.name
                 # Conventional fix
@@ -738,33 +742,26 @@ class cfg(type):
                 # :ast.Module: is the unit of program codes.
                 # FIXME: Is :md: necessary??
                 md = ast.Module(body=[obj])
+                # Compile a module-ast with '<ast>' mode targeting
+                # :exec:.
                 code = compile(md, '<ast>', 'exec')
-                # Bind nonlocals during :exec:
-                # FIXME: How to keep the context intact??
-                # - Better method than caching old value?
-                if name in ctx:
-                    old = ctx[name]
-                    exec(code, ctx)
-                    func = ctx.pop(name)
-                    ctx[name] = old
-                else:
-                    exec(code, ctx)
-                    func = ctx.pop(name)
+                # Register function into local context.
+                exec(code, glb_ctx, lcl_ctx)
+                func = lcl_ctx.pop(name)
                 lst.append((name, func))
+
             else:
-                # FIXME: Make translate attributes with other types!
+                # Ignore structures other than :Assign: and :FuncionDef:
                 pass
+
         return lst
 
+    @staticmethod
+    def v2(func):
+        lst = cfg.extract_list(func)
+        return cfg.read_from_raw_lists(lst)
 
-def v2(func):
-    lst = cfg.extract_list(func)
-    return cfg.read_from_raw_lists(lst)
-
-
-# Easy access :cfg:
-rule = cfg.log_rule
-cfg2 = cfg.trans
+grammar = cfg.v2
 
 """
 The above parts are utitlies for grammar definition and extraction methods
@@ -927,7 +924,7 @@ class ParserBase(object):
         self.grammar = grammar
         # Share auxiliary methods declared in Grammar instance
         for k, v in grammar.attrs:
-            assert k.startswith('_')
+            # assert k.startswith('_')
             setattr(self, k, v)
         # Delegation
         self.tokenize = grammar.tokenize

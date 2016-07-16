@@ -32,15 +32,15 @@ expr → expr * expr
 expr → expr ** expr
 ```
 
-then we transform this into a handy [LALR][]-parser. The [SDT][]-style may seem familiar to [Yacc][] users.
+then we transform this into Python form. For semantics, [SDT][]-style is used (similar to [Yacc][]).
 
 ``` python
-from metaparse import LALR
+from metaparse import cfg, LALR
 
 # Global stuff
 table = {}
 
-class Calc(metaclass=LALR.meta):
+class G_Calc(metaclass=cfg):
 
     # ===== Lexical patterns / Terminals =====
 
@@ -55,7 +55,7 @@ class Calc(metaclass=LALR.meta):
 
     # ===== Syntactic/Semantic rules in SDT-style =====
 
-    def assign(ID, EQ, expr):        # May rely on side-effect...
+    def assign(ID, EQ, expr):        # May rely on external side-effect...
         table[ID] = expr
 
     def expr(NUM):                   # or return local results for purity.
@@ -69,6 +69,13 @@ class Calc(metaclass=LALR.meta):
 
     def expr(expr, POW, expr_1):
         return expr ** expr_1
+
+```
+
+Then we build parser with this grammar object.
+
+```
+Calc = LALR(G_Calc)
 ```
 
 Now we are done and it's quite easy to try it out.
@@ -84,8 +91,7 @@ Now we are done and it's quite easy to try it out.
 
 IMO, tools in state of the art could hardly get more handy than this.
 
-For Python 2 compatibility, there goes [a more verbose way](#python-2-compatibility)).
-
+For Python 2 compatibility, there goes [another way](#python-2-compatibility)).
 
 ## Retrieving the Parse Tree
 
@@ -114,7 +120,7 @@ If merely the parse tree is needed rather than the semantic result, use method `
 
 The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as ```(<token-name>: '<lexeme>')@[<position-in-input>]```.
 
-With this tree, calling ```tr.translate()``` returns the same result as using `interpret` for the input. Epecially by LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse trees explicitly (thus saves memory space).
+With this tree, calling ```tr.translate()``` returns the same result as using `interpret` for the input. With LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse trees explicitly (thus saves memory space).
 
 
 # Design
@@ -139,6 +145,7 @@ The design of this module is inspired by [instaparse] in Clojure targeting at "n
 * no [DSL][] feeling<sup>[2]</sup>
 * no dependencies
 * no helper/intermediate files generated
+* optional precedence specification (for LALR)
 * etc.
 
 thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
@@ -147,7 +154,7 @@ thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#c
 
 Though this slim module does not intend to replace more extensive tools like [ANTLR][], it is extremely handy and its integration in Python projects is seamless.
 
-### Tiny Documentation
+# A Tiny Documentation
 
 Demonstrated by the above example, the code structure for grammar declaration with `metaparse` can be more formally described as
 
@@ -157,10 +164,10 @@ from metaparse import cfg, <parser>
 
 class <grammar-object> ( metaclass=cfg ) :
 
-    IGNORED = <ignore-pattern>           # when not given, default pattern is r"\s"
+    IGNORED = <ignore-pattern>           # When not given, default pattern is r"\s".
 
     <terminal> = <lexeme-pattern>
-    ...
+    ...                                  # The order of lexical rules matters.
 
     def <rule-LHS> ( <rule-RHS> ) :
         <semantic-behavior>
@@ -172,7 +179,7 @@ class <grammar-object> ( metaclass=cfg ) :
 <parser> = <parser-name> ( <grammar-object> )
 ```
 
-In words, lexical rule is represented by **class attribute** assignment, syntactical rule by method **signature** and semantic behavior by method **body**. In method body, the call arguments represents the values interpreted by successful parsing of subtrees.
+Literally, lexical rule is represented by **class attribute** assignment, syntactical rule by method **signature** and semantic behavior by method **body**. In method body, the call arguments represents the values interpreted by successful parsing of subtrees.
 
 The working mechanism of such a declaration trick is quite simple. The metaclass `cfg`
 
@@ -237,7 +244,9 @@ Using Earley/GLR parser, we get all ambiguous parse trees properly:
  (S, [(A, []), (B, [(E, [])]), (C, [(u: 'u')@[0:1]])])]
 ```
 
-These may be helpful for inspecting some grammar's characteristics. Despite this power, `LALR` would be recommended currently for practical use since it permits *no ambiguity* (which may harm the language design but cannot be directly discovered by constructing non-deterministic parsers).
+These may be helpful for inspecting some grammar's characteristics.
+
+Despite this power, `LALR` would be recommended currently for practical use since it permits *no ambiguity* (which may harm the language design but cannot be directly discovered by constructing non-deterministic parsers).
 
 Note for *non-deterministic* parsers like `Earley` and `GLR`, method `parse_many` should be used instead of `parse` since more than one parse results may be produced.
 
@@ -326,8 +335,6 @@ Though this module provides advantageous features, there are also limitations:
   ```
   where each derivation corresponds to a parse tree.
 
-* No specification of operator precedence.
-
 * Only **legal Python identifier**, rather than non-alphabetic symbols (like `<fo#o>`, `==`, `raise`, etc) can be used as symbols in grammar (seems no serious).
 
 * Algorithms in pure Python lowers performance, but lots can be optimized.
@@ -347,42 +354,44 @@ Though this module provides advantageous features, there are also limitations:
 The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, relying on provided decorators `cfg2` and `rule`:
 
 ``` python
-from metaparse import cfg2, rule
+from metaparse import cfg, LALR
 
-@cfg2
-class LRVal:
+@LALR
+@cfg.v2
+def Calc_v2():
 
-    EQ   = r'='
-    STAR = r'\*'
-    ID   = r'[_a-zA-Z]\w*'
+    IGNORED = r'\s+'
 
-    @rule
-    def S(L, EQ, R):
-        print('Got ids:', ids)
-        print('assign %s to %s' % (L, R))
-        ids.clear()
+    EQ  = r'='
+    NUM = r'[0-9]+'
+    ID  = r'[_a-zA-Z]\w*'
+    POW = r'\*\*', 3
+    MUL = r'\*'  , 2
+    ADD = r'\+'  , 1
 
-    @rule
-    def S(R):
-        print('Got ids:', ids)
-        return ('expr', R)
+    def assign(ID, EQ, expr):
+        table[ID] = expr
 
-    @rule
-    def L(STAR, R):
-        return ('REF', R)
-    @rule
-    def L(ID):
-        ids.append(ID)
-        return ID
+    def expr(NUM):
+        return int(NUM)
 
-    @rule
-    def R(L):
-        return L
+    def expr(expr_1, ADD, expr_2):
+        return expr_1 + expr_2
+
+    def expr(expr, MUL, expr_1):
+        return expr * expr_1
+
+    def expr(expr, POW, expr_1):
+        return expr ** expr_1
+
+    return
 ```
 
-The problem is that `type.__prepare__` creating a method collector is not supported in Python 2, so that repeatedly declared methods can not be collected without the help of some decorator like the `rule`.
+The problem is that `type.__prepare__` creating a method collector is not supported in Python 2. Altough `__metaclass__` is also available, it suffers from the restriction that we can *not* collect lexcial rule (Python assignment statements) in original declaration order.
 
-The resulted grammar instance is created by `cfg2` decorator which utilizes information collected by `rule`. Here no `metaclass` is needed.
+Generally, unlike `class` structure, `def` structure allows deeper access to its source code through `inspect`. After some tricks with module `ast` traversing the parsed `def` function's body, the assignments can then get collected in order and methods get registered with supposedly correct specification of global/local contexts. Finally all stuff for constructing a `Grammar` object gets prepared.
+
+Although this alternative form with merely decorators seems less verbose, it is much less explicit for understanding. Some working mechanisms may not be clear enough (especially the contexts for inner `def`s).
 
 [clojure]: https://clojure.org/ "Clojure"
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"

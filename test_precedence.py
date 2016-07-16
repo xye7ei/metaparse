@@ -40,8 +40,8 @@ import pprint as pp
 print(E)
 pp.pprint(E.OP_PRE)
 psr = LALR(E)
-print(psr.table.__len__())
-pp.pprint([*zip(psr.Ks, psr.ACTION)])
+# print(psr.table.__len__())
+# pp.pprint([*zip(psr.Ks, psr.ACTION)])
 
 # print(psr.interpret('3 + 2 * 7'))
 # print(psr.interpret('3 * 2 + 7'))

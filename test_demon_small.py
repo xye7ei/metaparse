@@ -38,17 +38,10 @@ table = {}
 #         return expr ** expr_1
 
 
-from metaparse import cfg, cfg2, rule, v2
+from metaparse import cfg
 
-# @LALR
-# @cfg2
-# class Calc1(object):
-
-@v2
+@cfg.v2
 def Calc1():
-
-    """Some interesting grammar.
-    """
 
     IGNORED = r'\s+'
 
@@ -90,6 +83,7 @@ pp.pprint(Calc1)
 # Calc1 = cfg2(Calc1)
 pCalc1 = LALR(Calc1)
 pCalc1.interpret("x = 1 + 2 * 3 ** 4 + 5")
+pCalc1.interpret("z = 99")
 print(table)
 # Calc.interpret("x = 1 + 2 * 3 ** 4 + 5")
 # Calc.interpret("y = 3 ** 4 * 5")

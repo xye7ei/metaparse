@@ -1,5 +1,8 @@
-一个（可能是世界上最易用的Parser），欢迎来测
+metaparse
+==========
 
+- 可能是世界上最易用的Parser
+- 欢迎来测
 
 如果你会Python，并接触过Parser和Interpreter的知识，知道上下文无关语言（[CFG][]），那你很可能对这个模块感兴趣。
 

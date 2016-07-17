@@ -5,6 +5,7 @@ contruct partial parse trees.
 
 """
 
+import preamble
 import pprint as pp
 
 from metaparse import *
@@ -108,11 +109,11 @@ class Lam(metaclass=cfg):
     def binds(binds, SEMI, bind):
         return {**binds, **bind}
 
-    def _env():
-        print('Env!')
+    # def _env():
+    #     print('Env!')
 
-    def _unify():
-        print('Unify!')
+    # def _unify():
+    #     print('Unify!')
 
 
 # Test whether the grammar is LALR to exclude potential ambiguity

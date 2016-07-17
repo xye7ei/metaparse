@@ -49,6 +49,9 @@ ari_glr = GLR(GArith)
 
 class TestArithParser(unittest.TestCase):
 
+    def test_FIRST(self):
+        self.assertEqual(GArith.PRED_FIRST['Expr'], {'left', 'number'})
+
     def test_single(self):
         inp = '0'
         ps1 = ari_earl.interpret_many(inp)

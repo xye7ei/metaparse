@@ -13,7 +13,7 @@ already suffice. This pseudo-class includes
 all-in-one for a grammar.
 
 
-Example: 
+Example:
 .. code:: python
 
     from metaparse import cfg, LALR
@@ -128,7 +128,10 @@ PRECEDENCE_DEFAULT = 1
 
 class Symbol(str):
 
-    """Symbol is a subclass of :str: with unquoted representation."""
+    """Symbol is a subclass of :str: with unquoted representation. It is
+    only refered for cleaner presentation.
+
+    """
 
     def __repr__(self):
         return self
@@ -136,9 +139,8 @@ class Symbol(str):
 
 class Signal(object):
 
-    """Signal is used to direct parsing actions.
+    """Signal is used to denote parsing actions, like some sort of Enum. """
 
-    """
     def __init__(self, name):
         self.name = name
 
@@ -147,7 +149,7 @@ class Signal(object):
 
 
 DUMMY   = Symbol('\0')
-EPSILON = Symbol('ε')
+EPSILON = Symbol('EPSILON')
 
 PREDICT = Signal('PREDICT')
 SHIFT   = Signal('SHIFT')
@@ -338,6 +340,17 @@ class Item(object):
         return self.rule.seman(*args)
 
 
+# Component for graph structured stacks and prediction trees.
+Node = namedtuple('Node', 'value next')
+ExpdNode = namedtuple('ExpdNode', 'value forks')
+Node.__repr__ \
+    = lambda s: tuple.__repr__((Symbol(s[0]), s[1]))
+ExpdNode.__repr__ \
+    = lambda s: tuple.__repr__((Symbol(':%s' % s[0]), s[1]))
+
+Bottom = None
+
+
 class Grammar(object):
 
     def __init__(self, lexes, rules, attrs, prece=None):
@@ -418,14 +431,9 @@ class Grammar(object):
             warnings.warn('Unreferred nonterminal symbol {}'.format(repr(nt)))
 
         # Generate top rule as Augmented Grammar only if
-        # the top rule is not explicitly given.
+        # the singleton top rule is not explicitly given.
         fst_rl = rules[0]
         if len(fst_rl.rhs) != 1 or 1 < [rl.lhs for rl in rules].count(fst_rl.lhs):
-            # For LR(1):
-            # - END should not be considered as a symbol in grammar,
-            #   only as a hint for acceptance;
-            # For LR(0):
-            # - END should be added into grammar.
             tp_lhs = "{}^".format(fst_rl.lhs)
             tp_rl = Rule.raw(
                 tp_lhs,
@@ -434,8 +442,8 @@ class Grammar(object):
             self.nonterminals.insert(0, tp_lhs)
             rules = [tp_rl] + rules
 
-        # Register other attributes/methods
-        self.attrs = attrs
+        # Register other attributes/methods (should not be relied on).
+        # self.attrs = attrs
 
         self.rules = rules
         self.symbols = self.nonterminals + [a for a in lexes if a != END]
@@ -445,21 +453,23 @@ class Grammar(object):
         self.top_symbol = self.top_rule.lhs
 
         # Helper for fast accessing with Trie like structure.
-        self.ngraph = defaultdict(list)
-        for rl in self.rules:
-            self.ngraph[rl.lhs].append(rl)
+        self._ngraph = defaultdict(list)
+        for r, rl in enumerate(self.rules):
+            self._ngraph[rl.lhs].append((r, rl))
 
         # Prepare useful information for parsing.
-        self._calc_first_and_nullable()
+        self._calc_nullable()
+        self._calc_pred_trees()
 
     def __repr__(self):
         return 'Grammar\n{}\n'.format(pp.pformat(self.rules))
 
-    def __getitem__(self, k):
-        if k in self.ngraph:
-            return self.ngraph[k]
+    def __getitem__(self, X):
+        """Note retrieved rules are enumerated with original indices."""
+        if X in self._ngraph:
+            return self._ngraph[X]
         else:
-            raise ValueError('No such LHS {} in grammar.'.format(k))
+            raise ValueError('No such LHS {} in grammar.'.format(repr(X)))
 
     def item(G, r, pos):
         """Create a pair of integers indexing the rule and active position.
@@ -467,13 +477,7 @@ class Grammar(object):
         """
         return Item(G.rules, r, pos)
 
-    def rules_start_with(G, sym):
-        """Yield enumerated matching rules."""
-        for r, rl in enumerate(G.rules):
-            if rl.lhs == sym:
-                yield r, rl
-
-    def _calc_first_and_nullable(G):
+    def _calc_nullable(G):
         """Calculate the FIRST set of this grammar as well as the NULLABLE
         set. Transitive closure algorithm is applied.
 
@@ -483,7 +487,7 @@ class Grammar(object):
         NULLABLE = {X for X, rhs in G.rules if not rhs}     # :: Set[<terminal>]
         def nullable(X, path=()):
             if X in ns and X not in path:
-                for lhs, rhs in G[X]:
+                for r, (lhs, rhs) in G[X]:
                     if rhs:
                         path += (X,)
                         if all(nullable(Y, path) for Y in rhs):
@@ -491,41 +495,101 @@ class Grammar(object):
         for n in ns:
             nullable(n)
 
-        FIRST = {}           # :: Dict[<nonterminal>: Set[<terminal>]]
-        def first1(X, path=()):
-            if X in path:
-                return {}
-            elif X not in ns:
-                return {X}
-            else:
-                F = set()
-                if X in NULLABLE:
-                    F.add(EPSILON)
-                for _, rhs in G[X]:
-                    for Y in rhs:
-                        path += (X,)
-                        F.update(first1(Y, path))
-                        if Y not in NULLABLE:
-                            break
-                if X not in FIRST:
-                    FIRST[X] = F
-                else:
-                    FIRST[X].update(F)
-                return F
-
-        # Calculate FIRST in iterative way?
-        #
-        # - Consider the construction of a prediction-tree in the
-        #   context of building a GLL parser
-
-        for n in ns:
-            first1(n)
-
         G.NULLABLE = NULLABLE
-        G.FIRST = FIRST
-        G.first1 = first1
 
-    def first_star(G, seq, tail=DUMMY):
+    def _pred_tree(G, ntml):
+        """Build a prediction tree for the given :ntml:. This tree which may
+        contain cycles due to LOOP.
+
+        Conceptually, this tree/graph is represented by a list of leaf nodes, of
+        which each one points to a perent node.
+
+        Heuristically, pre-computation of all prediction graphs can be done with
+        reversed rule declaration order (since upper rules tends to rely on lower
+        rules, which should be processed further for transplant).
+
+        S = A ; A = B c ; B = S c d
+
+        The closure:
+
+        S = .A
+        A = .B c
+        B = .S c d
+
+        Treat them in reversed direction, where >> means completion:
+
+        S $ >> {ACCEPT} ; A >> S ; B c >> A ; S c A >> B
+
+        S >> $           
+
+        A >> [S] >> $       
+
+        B >> c >> [A] >> [S] >> $ 
+
+        S >> c >> A >> [B] >> c >> [A] >> [S] >> $
+
+        But S already gets expanded...
+
+             c >> A >> [B] >> c >> [A] >> [S] >> $ 
+             |                             |
+             --------------<<---------------
+
+        """
+        global PREDICT, REDUCE
+
+        toplst = [Node(ntml, Bottom)] # None for root/bottom.
+        expdd = {}
+
+        z = 0
+        while z < len(toplst):
+            n = (X, nxt) = toplst[z]
+            if X in G.nonterminals:
+                if isinstance(n, ExpdNode): # May only happen if X in NULLABLE
+                    assert X in G.NULLABLE
+                    z += 1
+                else:
+                    toplst.pop(z) # Discard normal nonterminal node
+                    if X in expdd:
+                        assert isinstance(expdd[X], ExpdNode)
+                        expdd[X].forks.append(nxt)
+                    else:
+                        # New expanded node - shared by alternative rules.
+                        enxt = expdd[X] = ExpdNode(X, [nxt])
+                        for r, rl in G[X]:
+                            nxt1 = enxt # Share this expanded.
+                            for sub in reversed(rl.rhs):
+                                nxt1 = Node(sub, nxt1) # New normal node.
+                            toplst.append(nxt1)
+            else:
+                z += 1
+
+        assert all(isinstance(nd, ExpdNode) or nd.value in G.terminals for nd in toplst)
+        return toplst
+
+    def _calc_pred_trees(G):
+        G.PRED_TREE = {}
+        G.FIRST = {}
+        for nt in reversed(G.nonterminals):
+            pt = G._pred_tree(nt)
+            G.PRED_TREE[nt] = pt
+            G.FIRST[nt] = f = set()
+            for nd in pt:
+                if isinstance(nd, ExpdNode):
+                    f.add(EPSILON)
+                elif isinstance(nd, Node):
+                    assert nd.value in G.terminals
+                    f.add(nd.value)
+                else:
+                    raise ValueError('Not valid elem in toplist.')
+    
+    def first1(G, X):
+        if X in G.nonterminals:
+            assert X in G.FIRST
+            return G.FIRST[X]
+        else:
+            return {X}
+
+    def first_many(G, seq, tail=DUMMY):
         """Find FIRST set of a sequence of symbols.
 
         :seq:   A list of strings
@@ -541,6 +605,71 @@ class Grammar(object):
         # Note :tail: can also be EPSILON
         fs.add(tail)
         return fs
+
+    def closure(G, I):
+        """Naive CLOSURE calculation without lookaheads.
+
+        Fig 4.32：
+        SetOfItems CLOSURE(I)
+            J = I.copy()
+            for (A -> α.Bβ) in J
+                for (B -> γ) in G:
+                    if (B -> γ) not in J:
+                        J.add((B -> γ))
+            return J
+        """
+
+        C = I[:]
+        z = 0
+        while z < len(C):
+            itm = C[z]
+            if not itm.ended():
+                if itm.actor in G.nonterminals:
+                    for j, jrl in G[itm.actor]:
+                        jtm = G.item(j, 0)
+                        if jtm not in C:
+                            C.append(jtm)
+            z += 1
+        return C
+
+    def closure1_with_lookahead(G, item, a):
+        """Fig 4.40 in Dragon Book.
+
+        CLOSURE(I)
+            J = I.copy()
+            for (A -> α.Bβ, a) in J:
+                for (B -> γ) in G:
+                    for b in FIRST(βa):
+                        if (B -> γ, b) not in J:
+                            J.add((B -> γ, b))
+            return J
+
+
+        This can be done before calculating LALR-Item-Sets, thus avoid
+        computing closures repeatedly by applying the virtual DUMMY
+        lookahead(`#` in the dragonbook). Since this lookahead must
+        not be shared by any symbols within any instance of Grammar, a
+        special value is used as the dummy(Not including None, since
+        None is already used as epsilon in FIRST set).
+
+        For similar implementations within lower-level language like
+        C, this value can be replaced by any special number which
+        would never represent a unicode character.
+
+        """
+        C = [(item, a)]
+        z = 0
+        while z < len(C):
+            itm, a = C[z]
+            if not itm.ended():
+                if itm.actor in G.nonterminals:
+                    for j, jrl in G[itm.actor]:
+                        for b in G.first_many(itm.look_over, a):
+                            jtm = G.item(j, 0)
+                            if (jtm, b) not in C:
+                                C.append((jtm, b))
+            z += 1
+        return C
 
     def tokenize(G, inp, with_end):
         """Perform lexical analysis with given input string and yield matched
@@ -576,71 +705,6 @@ class Grammar(object):
                 yield Token(at, ERROR, inp[at])
         if with_end:
             yield Token(pos, END, END_PATTERN_DEFAULT)
-
-    def closure(G, I):
-        """Naive CLOSURE calculation without lookaheads.
-
-        Fig 4.32：
-        SetOfItems CLOSURE(I)
-            J = I.copy()
-            for (A -> α.Bβ) in J
-                for (B -> γ) in G:
-                    if (B -> γ) not in J:
-                        J.add((B -> γ))
-            return J
-        """
-
-        C = I[:]
-        z = 0
-        while z < len(C):
-            itm = C[z]
-            if not itm.ended():
-                for j, jrl in G.rules_start_with(itm.actor):
-                    jtm = G.item(j, 0)
-                    if jtm not in C:
-                        C.append(jtm)
-            z += 1
-        return C
-
-    def closure1_with_lookahead(G, item, a):
-        """Fig 4.40 in Dragon Book.
-
-        CLOSURE(I)
-            J = I.copy()
-            for (A -> α.Bβ, a) in J:
-                for (B -> γ) in G:
-                    for b in FIRST(βa):
-                        if (B -> γ, b) not in J:
-                            J.add((B -> γ, b))
-            return J
-
-
-        This can be done before calculating LALR-Item-Sets, thus avoid
-        computing closures repeatedly by applying the virtual DUMMY
-        lookahead(`#` in the dragonbook). Since this lookahead must
-        not be shared by any symbols within any instance of Grammar, a
-        special value is used as the dummy(Not including None, since
-        None is already used as epsilon in FIRST set).
-
-        For similar implementations within lower-level language like
-        C, this value can be replaced by any special number which
-        would never represent a unicode character.
-
-        """
-        C = [(item, a)]
-        z = 0
-        while z < len(C):
-            itm, a = C[z]
-            if not itm.ended():
-                # for j, jrl in enumerate(G.rules):
-                #     if itm.actor == jrl.lhs:
-                for j, jrl in G.rules_start_with(itm.actor):
-                    for b in G.first_star(itm.look_over, a):
-                        jtm = G.item(j, 0)
-                        if (jtm, b) not in C:
-                            C.append((jtm, b))
-            z += 1
-        return C
 
 
 class assoclist(list):
@@ -1009,9 +1073,9 @@ class ParserBase(object):
         assert isinstance(grammar, Grammar)
         self.grammar = grammar
         # Share auxiliary methods declared in Grammar instance
-        for k, v in grammar.attrs:
-            # assert k.startswith('_')
-            setattr(self, k, v)
+        # for k, v in grammar.attrs:
+        #     # assert k.startswith('_')
+        #     setattr(self, k, v)
         # Delegation
         self.tokenize = grammar.tokenize
 
@@ -1136,8 +1200,8 @@ class Earley(ParserBase):
                     if not tok.is_END():
                         # Prediction: find nonkernels
                         if jtm.actor in G.nonterminals:
-                            for r, rule in G.rules_start_with(jtm.actor):
-                                ktm = G.item(r, pos=0)
+                            for r, rule in G[jtm.actor]:
+                                ktm = G.item(r, 0)
                                 new = (k, ktm)
                                 if new not in C:
                                     C.append(new)
@@ -1209,7 +1273,7 @@ class Earley(ParserBase):
                     if not tok.is_END():
                         # Prediction
                         if jtm.actor in G.nonterminals:
-                            for r, rule in G.rules_start_with(jtm.actor):
+                            for r, rule in G[jtm.actor]:
                                 ktm = G.item(r, 0)
                                 if ktm not in chart[k][k]:
                                     chart[k][k].add(ktm)
@@ -1328,7 +1392,7 @@ class Earley(ParserBase):
                         # over nullable symbols!
 
                         if jtm.actor in G.nonterminals:
-                            for r, rule in G.rules_start_with(jtm.actor):
+                            for r, rule in G[jtm.actor]:
                                 new = (k, G.item(r, 0))
                                 if new not in s_acc:
                                     if rule.rhs:
@@ -1484,6 +1548,7 @@ class GLR(ParserBase):
 
             igoto = OrderedDict()
             for X, J in igotoset.items():
+                J = sorted(J, key=lambda i: (i.r, i.pos))
                 if J not in Ks:
                     Ks.append(J)
                 j = Ks.index(J)
@@ -1530,7 +1595,10 @@ class GLR(ParserBase):
 
         results = []
         tokens = list(G.tokenize(inp, False))
-        forest = [([0], [], 0)]          # forest :: [[State-Number, [Tree], InputPointer]]
+        # :forest: is a list of descriptors, where each descriptor is
+        # a tuple:
+        # (<item-set-number>, list<subtree>, <input-pointer>)
+        forest = [([0], [], 0)]
 
         while forest:
 
@@ -1608,6 +1676,8 @@ class GLR(ParserBase):
         else:
             return results
 
+    def parse_many_gss(self, inp, interp=False):
+        raise NotImplementedError
 
 @meta
 class LALR(ParserDeterm):
@@ -1630,9 +1700,9 @@ class LALR(ParserDeterm):
         G = self.grammar
 
         Ks = [[G.item(0, 0)]]   # Kernels
-        goto = []
+        GOTO = []
 
-        # Calculate LR(0) item sets and goto
+        # Calculate LR(0) item sets and GOTO
         i = 0
         while i < len(Ks):
 
@@ -1652,7 +1722,7 @@ class LALR(ParserDeterm):
                         igoto[X].append(jtm)
 
             # Register local :igoto: into global goto.
-            goto.append({})
+            GOTO.append({})
             for X, J in igoto.items():
                 # The Item-Sets should be treated as UNORDERED! So
                 # sort J to identify the Lists with same items.
@@ -1660,7 +1730,7 @@ class LALR(ParserDeterm):
                 if J not in Ks:
                     Ks.append(J)
                 j = Ks.index(J)
-                goto[i][X] = j
+                GOTO[i][X] = j
 
             i += 1
 
@@ -1676,7 +1746,7 @@ class LALR(ParserDeterm):
         for ctm, a in G.closure1_with_lookahead(init_item, END):
             if not ctm.ended():
                 X = ctm.actor
-                j0 = goto[0][X]
+                j0 = GOTO[0][X]
                 spont[j0][ctm.shifted].add(a)
 
         # Propagation table, registers each of the GOTO target item
@@ -1690,7 +1760,7 @@ class LALR(ParserDeterm):
                 for ctm, a in C:
                     if not ctm.ended():
                         X = ctm.actor
-                        j = goto[i][X]
+                        j = GOTO[i][X]
                         if a != DUMMY:
                             spont[j][ctm.shifted].add(a)
                         else:
@@ -1723,7 +1793,7 @@ class LALR(ParserDeterm):
         self._propa_passes = b
 
         self.Ks = Ks
-        self.GOTO = goto
+        self.GOTO = GOTO
         self.propa = propa
         self.table = table
 
@@ -1735,7 +1805,7 @@ class LALR(ParserDeterm):
         # SHIFT for non-ended items
         # Since no SHIFT/SHIFT conflict exists, register
         # all SHIFT information firstly.
-        for i, xto in enumerate(goto):
+        for i, xto in enumerate(GOTO):
             for X, j in xto.items():
                 if X in G.terminals:
                     ACTION[i][X] = (SHIFT, j)
@@ -2053,7 +2123,7 @@ class GLL(ParserBase):
             if lhs not in table:
                 table[lhs] = defaultdict(list)
             if rhs:
-                for a in G.first_star(rhs, EPSILON):
+                for a in G.first_many(rhs, EPSILON):
                     if a is not EPSILON:
                         table[lhs][a].append(rule)
             else:
@@ -2153,5 +2223,6 @@ class GLL(ParserBase):
             return [res.translate() for res in results]
         else:
             return results
+
 
 

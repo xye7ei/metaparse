@@ -44,9 +44,12 @@ class PyStructReader(metaclass=LALR.meta):
     def DTerm(Obj_1, colon, Obj_2)   : return (Obj_1, Obj_2)
 
 
-target = PyStructReader.interpret1
+target = PyStructReader.interpret
 
 class TestPyStructParser(unittest.TestCase):
+
+    def test_first(self):
+        self.assertEqual(PyStructReader.grammar.FIRST['Obj'], {'l1', 'id', 'l2', 'l3'})
 
     def test_empty_list(self):
         self.assertEqual(target('[]'), ('Lst', []))

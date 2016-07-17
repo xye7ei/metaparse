@@ -1,3 +1,5 @@
+import preamble
+
 from metaparse import *
 
 
@@ -12,7 +14,7 @@ class ListParser(metaclass=LALR.meta):
         return []
 
 
-class LispParser(metaclass=cfg):
+class LISP(metaclass=cfg):
     """A parser for scheme-like grammar. Should be easy to describe and
     parse.
 
@@ -41,21 +43,20 @@ class LispParser(metaclass=cfg):
     def appl(LEFT, sexp, sexps, RIGHT):
         return [sexp, sexps]
 
-    def parlist(parlist, SYMBOL):
-        return parlist + [SYMBOL]
+    def parlist(SYMBOL, parlist):
+        return [SYMBOL] + parlist
+    # def parlist(parlist, SYMBOL):
+    #     return parlist + [SYMBOL]
     def parlist():
         return []
 
+    def sexps(sexp, sexps):
+        return [sexp] + sexps
     # def sexps(sexp, sexps):
-    #     return [sexp] + sexps
-    def sexps(sexps, sexp):
-        return sexps + [sexp]
+    #     return sexps + [sexp]
     def sexps():
         return []
 
-# print()
-# pp.pprint(list(SExpParser.grammar.tokenize('(lambda (x y) (+ x y))', True)))
-# res = SExpParser.parse('(lambda (x y) (+ x y))')
-# pp.pprint(res)
-# pp.pprint(res.translate())
-# pp.pprint(SExpParser.interpret('(lambda (x y) (+ x y))'))
+p_lisp = WLL1(LISP)
+res = p_lisp.interpret('(lambda (x y) (+ x y))')
+print(res)

@@ -1,49 +1,41 @@
-from metaparse import LALR
+from metaparse import cfg, LALR
 
 # Global stuff
 table = {}
-results = []
 
-class Calc(metaclass=LALR.meta):
+# class Calc(metaclass=cfg):
+@cfg.v2
+def Calc():
 
-    # ===== Lexical patterns / Terminals =====
-    # - Will be matched in order when tokenizing
+    IGNORED = r'\s+'
 
-    START   = r'\A\s*'
-    END     = r'\Z'             # Special token.
-    SEPLINE = r'\n\s*'
-    IGNORED = '\s+'             # Special token.
+    L   = r'\('
+    R   = r'\)' 
     EQ  = r'='
     NUM = r'\d+'
-    ID  = r'\w+'
-    POW = r'\*\*', 3            # Can specify precedence of token!
+    ID  = r'\w+' 
+    POW = r'\*\*', 3
     MUL = r'\*'  , 2
     ADD = r'\+'  , 1
 
-    # ===== Syntactic/Semantic rules in SDT-style =====
-
-    def prog(START, stmts):
-        print(table)
-
-    def stmts():
-        pass
-    def stmts(stmts, stmt):
-        results.append(stmt)
-
-    def stmt(ID, EQ, expr, SEPLINE):
-        table[ID] = expr
+    def stmt(ID, EQ, expr):
+        table[ID] = expr 
         return expr
-    def stmt(expr, SEPLINE):
+
+    def stmt(expr):
         return expr
 
     def expr(ID):
         if ID in table:
             return table[ID]
         else:
-            raise ValueError('ID refered before binding: {}'.format(ID))
+            raise ValueError('ID yet bound: {}'.format(ID))
 
     def expr(NUM):
         return int(NUM) 
+
+    def expr(L, expr, R):
+        return expr
 
     def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂)
         return expr_1 + expr_2
@@ -54,20 +46,11 @@ class Calc(metaclass=LALR.meta):
     def expr(expr, POW, expr_1):
         return expr ** expr_1
 
-inp = """
-a = 1
 
-b = 3
-c = a + 2 * 3 ** b * 5 + 1
+calc = LALR(Calc)
 
-"""
+calc.interpret(' (3) ')
+calc.interpret(' x = 3 ')
+calc.interpret(' y = 4 * x ** (2 + 1) * 2')
 
-
-Calc.interpret(inp)
-
-assert table['a'] == 1
-assert table['c'] == 1 + 2 * 3 ** 3 * 5 + 1
-
-print(Calc.parse("""
-3 + 2 ** 2 * 5 + 1
-"""))
+print(table)

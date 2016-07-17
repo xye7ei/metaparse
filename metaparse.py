@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """``metaparse``
 
-When powerful instant parsing is needed, a **Python class[1] declaration**
-just suffices. This pseudo-class includes
+A tool for powerful instant parsing.
+
+For typical parsing work, a **Python class[1] declaration** will
+already suffice. This pseudo-class includes
 
 -  lexical definition
 -  rule definition
@@ -11,13 +13,7 @@ just suffices. This pseudo-class includes
 all-in-one for a grammar.
 
 
-Example
-
--------
-
-To illustrate this, we create a tiny calculator which registers variables
-binding to expression results.
-
+Example: 
 .. code:: python
 
     from metaparse import cfg, LALR
@@ -58,7 +54,7 @@ binding to expression results.
     Calc = LALR(G_Calc)
 
 
-
+Usage:
 .. code:: python
 
     >>> Calc.interpret("x = 1 + 2 * 3 ** 4 + 5")
@@ -67,6 +63,22 @@ binding to expression results.
 
     >>> table
     {'x': 168, 'z': 99, 'y': 405}
+
+
+TODO:
+    - Support GSS structure for non-deterministic parsing.
+    - Online-parsing
+
+
+INFO:
+    Author:  ShellayLee 
+    Mail:    shellaylee@hotmail.com 
+    License: MIT
+
+
+.. _Project site:
+    https://github.com/Shellay
+
 """
 
 import re
@@ -1146,10 +1158,10 @@ class Earley(ParserBase):
                 z_j += 1
             if not C1:
                 if not tok.is_END():
-                    msg = '\n####################'
+                    msg = '\n===================='
                     msg += '\nUnrecognized {}'.format(tok)
                     msg += '\nChoked active ItemSet: \n{}\n'.format(pp.pformat(C))
-                    msg += '####################\n'
+                    msg += '====================\n'
                     msg += '\nStates:'
                     msg += '\n{}\n'.format(pp.pformat(S))
                     raise ParserError(msg)
@@ -1579,11 +1591,11 @@ class GLR(ParserBase):
                     #
                     # msg = '\n'.join([
                     #     '',
-                    #     '#########################',
+                    #     '=========================',
                     #     'GLR - Ignoring syntax error by Token {}'.format(tok),
                     #     ' Current left-derivation fork:\n{}'.format(
                     #         pp.pformat([self.Ks[i] for i in stk])),
-                    #     '#########################',
+                    #     '=========================',
                     #     '',
                     # ])
                     # warnings.warn(msg)

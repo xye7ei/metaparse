@@ -4,8 +4,7 @@ import unittest
 from metaparse import *
 # from earley import earley
 
-# class PyStructReader(metaclass=earley):
-class PyStructReader(metaclass=LALR.meta):
+class G_PyStruct(metaclass=cfg):
 
     """
     Grammar for python object and built-in container types.
@@ -44,7 +43,14 @@ class PyStructReader(metaclass=LALR.meta):
     def DTerm(Obj_1, colon, Obj_2)   : return (Obj_1, Obj_2)
 
 
+PyStructReader = LALR(G_PyStruct)
 target = PyStructReader.interpret
+
+ePyStructReader = Earley(G_PyStruct)
+target = lambda inp: ePyStructReader.interpret_many(inp)[0]
+
+gPyStructReader = GLR(G_PyStruct)
+target = lambda inp: gPyStructReader.interpret_many(inp)[0]
 
 class TestPyStructParser(unittest.TestCase):
 

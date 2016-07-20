@@ -20,50 +20,70 @@ class GLL(ParserBase):
             if lhs not in table:
                 table[lhs] = defaultdict(list)
             if rhs:
-                for a in G.first_star(rhs, EPSILON):
+                for a in G.first_of_seq(rhs, EPSILON):
                     if a is not EPSILON:
                         table[lhs][a].append(rule)
             else:
                 table[lhs][EPSILON].append(rule)
 
+    def recognize(self, inp, interp=False):
+        """Discover a recursive automaton on-the-fly.
+
+        - Transplant a prediction tree whenever needed.
+
+        - Tracing all states, especially forked states induced by
+          expanded nodes.
+
+        """
+
+        G = self.grammar
+
+        toks = []
+        toplst = G.pred_tree(G.top_symbol)
+
+        acts = toplst[:]
+
+        # Caution on nullable-cycle
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+            toks.append(tok)
+            acts1 = []
+            # Transitive closure on :acts:
+            z = 0
+            while z < len(acts):
+                act = acts[z]
+                if isinstance(act, Node):
+                    if act.value in G.terminals:
+                        if act.value == tok.symbol:
+                            acts1.append(act.next)
+                        else:
+                            pass
+                    else:
+                        # Transplant new prediction tree onto
+                        # current rest.
+                        sub_pred = G.pred_tree(act.value, act.next)
+                        acts.extend(sub_pred)
+                elif isinstance(act, ExpdNode):
+                    if act.value == G.top_symbol:
+                        if tok.is_END():
+                            # print('Full parse on: \n{}'.format(pp.pformat(toks[:k])))
+                            return True
+                        else:
+                            # print('Partial parse on: \n{}.'.format(pp.pformat(toks[:k])))
+                            pass
+                    # TODO
+                    # - Find cluster of neighbored ExpdNodes!
+                    #   - which means EPSILON-transition in automata
+                    # - Select one representative!
+                    for nxt in act.forks:
+                        if nxt not in acts:
+                            acts.append(nxt)
+                else:
+                    pass
+
+                z += 1
+
+            acts = acts1
+                        
     def parse_many(self, inp, interp=False):
+        pass
 
-        raise NotImplementedError()
-
-
-class S(metaclass=cfg):
-    a, b = r'ab'
-    def S(A, B): return
-    def A(a): return
-    def A(X): return
-    def B(b): return
-    def X(a): return
-
-
-# gS = S.prediction_graph('S')
-# gA = S.prediction_graph('A')
-# gB = S.prediction_graph('B')
-
-# print(gS)
-# print(gA)
-# print(gB)
-
-@grammar
-def S():
-    a = r'a'
-    b = r'b'
-    c = r'c'
-    def S(A, B): return
-    def A(a): return
-    def A(c): return
-    def A(): return
-    def A(S): return
-    def B(b): return
-
-print(S.PRED_TREE['S'])
-print(S.PRED_TREE['A'])
-print(S.PRED_TREE['B'])
-
-print(S.FIRST['S'])
-print(S.FIRST['A'])
-print(S.FIRST['B'])

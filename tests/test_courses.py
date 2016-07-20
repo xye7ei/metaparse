@@ -7,7 +7,7 @@ def fappend(l, x):
     l.append(x)
     return l
 
-class Gcourses(metaclass=Earley.meta):
+class Gcourses(metaclass=LALR.meta):
 
     """
     Grammar to assign multiple numbers to precedend course name.

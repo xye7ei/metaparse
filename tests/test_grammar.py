@@ -17,19 +17,26 @@ class G(metaclass=cfg):
     def C(c): pass
     def C(D): pass
     def D(d, D): pass
-    def D(): pass
+    def D(E): pass
+    def E(D): pass
+    def E(B): pass
 
 
 class TestGrammar(unittest.TestCase):
 
     def test_first(self):
-        self.assertEqual(G.PRED_FIRST['S'], {'a', 'd', EPSILON})
-        self.assertEqual(G.PRED_FIRST['S'], {'a', 'd', EPSILON})
+        self.assertEqual(G.FIRST['S'], {'a', 'd', EPSILON})
 
+    def test_first_many(self):
+        self.assertEqual(G.first_of_seq(['A', 'B', 'C'], '#'), {'a', 'd', 'c', 'd', '#'})
+
+    def test_nullalbe(self):
+        self.assertEqual(G.NULLABLE, {'S^', 'S', 'A', 'B', 'C', 'D', 'E'})
 
 if __name__ == '__main__':
-    # unittest.main()
-    from pprint import pprint
+    unittest.main()
+    # from pprint import pprint
 
-    pprint(G.PRED_TREE['S'])
-    pprint(G.PRED_FIRST['S'])
+    # pprint(G.PRED_TREE['S'])
+    # pprint(G.FIRST['S'])
+    # pprint(G.NULLABLE)

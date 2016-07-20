@@ -71,8 +71,8 @@ TODO:
 
 
 INFO:
-    Author:  ShellayLee 
-    Mail:    shellaylee@hotmail.com 
+    Author:  ShellayLee
+    Mail:    shellaylee@hotmail.com
     License: MIT
 
 
@@ -209,7 +209,7 @@ class Rule(object):
 
     def __init__(self, func):
         self.lhs = func.__name__
-        self.rhs = []
+        rhs = []
         # Signature only works in Python 3
         # for x in inspect.signature(func).parameters:
         for x in inspect.getargspec(func).args:
@@ -218,7 +218,9 @@ class Rule(object):
             # s = re.search(r'_?(\d+)$', x)
             if s:
                 x = x[:s.start()]
-            self.rhs.append(x)
+            rhs.append(x)
+        # Make it immutable.
+        self.rhs = tuple(rhs)
         self.seman = func
         # Make use of annotations?
         # self.anno = func.__annotations__
@@ -366,7 +368,7 @@ class Grammar(object):
             A list of grammar rules.
 
         :attrs:
-            A list of extra attributes/methods
+            A list of extra attributes/methods (may not be advised for usage)
 
         :prece:
             A dict of operator's precedence numbers
@@ -477,76 +479,72 @@ class Grammar(object):
         """
         return Item(G.rules, r, pos)
 
-    def _calc_nullable(G):
-        """Calculate the FIRST set of this grammar as well as the NULLABLE
-        set. Transitive closure algorithm is applied.
+    def pred_tree(G, ntml, bottom=None):
+        """Build a prediction tree for the given :ntml:. A prediction tree
+        concludes all information about FIRST and NULLABLE.
 
-        """
-        ns = set(G.nonterminals)
+        This tree may contain cycles due to LOOP in the grammar.
 
-        NULLABLE = {X for X, rhs in G.rules if not rhs}     # :: Set[<terminal>]
-        def nullable(X, path=()):
-            if X in ns and X not in path:
-                for r, (lhs, rhs) in G[X]:
-                    if rhs:
-                        path += (X,)
-                        if all(nullable(Y, path) for Y in rhs):
-                            NULLABLE.add(X)
-        for n in ns:
-            nullable(n)
+        Conceptually, this tree/graph is represented by a list of leaf
+        nodes, namely :top list:, of which each one points to a parent
+        node.
 
-        G.NULLABLE = NULLABLE
+        Once the tree is built, the FIRST set is exactly the terminal
+        node values in this top list. A :expanded node: appears in the
+        top list iff it is nullable. If there is a path from the top
+        list to the bottom passing a sequence of :expanded node:s,
+        then this nonterminal is transitively nullable.
 
-    def _pred_tree(G, ntml):
-        """Build a prediction tree for the given :ntml:. This tree which may
-        contain cycles due to LOOP.
+        For example, given the grammar
 
-        Conceptually, this tree/graph is represented by a list of leaf nodes, of
-        which each one points to a perent node.
+        S = A; A = B c; B = S c d
 
-        Heuristically, pre-computation of all prediction graphs can be done with
-        reversed rule declaration order (since upper rules tends to rely on lower
-        rules, which should be processed further for transplant).
+        The closure for kernel item (S = .A):
 
-        S = A ; A = B c ; B = S c d
-
-        The closure:
-
-        S = .A
-        A = .B c
-        B = .S c d
+        S = .A; A = .B c; B = .S c d
 
         Treat them in reversed direction, where >> means completion:
 
         S $ >> {ACCEPT} ; A >> S ; B c >> A ; S c A >> B
 
-        S >> $           
+        S >> $
 
-        A >> [S] >> $       
+        A >> [S] >> $
 
-        B >> c >> [A] >> [S] >> $ 
+        B >> c >> [A] >> [S] >> $
 
         S >> c >> A >> [B] >> c >> [A] >> [S] >> $
 
-        But S already gets expanded...
+        But S already gets expanded, link it back.
 
-             c >> A >> [B] >> c >> [A] >> [S] >> $ 
+             c >> A >> [B] >> c >> [A] >> [S] >> $
              |                             |
              --------------<<---------------
 
+        It is teasing that the 'prediction graph' is indeed a
+        'completion graph', denoting paths for completion.
+
         """
+
         global PREDICT, REDUCE
 
-        toplst = [Node(ntml, Bottom)] # None for root/bottom.
+        # None for root/bottom.
+        # - should bottom be mutable like [] to allow transplant?
+        toplst = [Node(ntml, bottom)]
         expdd = {}
 
         z = 0
         while z < len(toplst):
             n = (X, nxt) = toplst[z]
             if X in G.nonterminals:
-                if isinstance(n, ExpdNode): # May only happen if X in NULLABLE
+                if isinstance(n, ExpdNode):
                     assert X in G.NULLABLE
                     z += 1
+                    # Skip and append 
+                    # for fk in n.forks:
+                    #     if fk not in toplst:
+                    #         if fk is not bottom:
+                    #             toplst.append(fk)
                 else:
                     toplst.pop(z) # Discard normal nonterminal node
                     if X in expdd:
@@ -558,19 +556,62 @@ class Grammar(object):
                         for r, rl in G[X]:
                             nxt1 = enxt # Share this expanded.
                             for sub in reversed(rl.rhs):
-                                nxt1 = Node(sub, nxt1) # New normal node.
+                                # New normal node.
+                                nxt1 = Node(sub, nxt1)
+                            # If `rl` is a null-rule, the expanded node
+                            # gets appended.
                             toplst.append(nxt1)
             else:
+                # Path led by terminal stays.
                 z += 1
 
         assert all(isinstance(nd, ExpdNode) or nd.value in G.terminals for nd in toplst)
         return toplst
 
+    def _calc_nullable(G):
+
+        # There may be multiple alternative nullable rules
+        # for the same nonterminal, use a ddict<list> to
+        # remenber them all.
+        G.NULLABLE = defaultdict(list)
+        candis = []
+
+        # Find order-1 nullable.
+        for rl in G.rules:
+            lhs, rhs = rl
+            if not rhs:
+                G.NULLABLE[lhs].append(rl)
+            elif all(X in G.nonterminals for X in rhs):
+                candis.append(rl)
+
+        # Find order-n nullable use stupid but clear More-Pass.
+        while 1:
+            has_new = False
+            for rl in candis:
+                lhs, rhs = rl
+                if all(X in G.NULLABLE for X in rhs):
+                    if rl not in G.NULLABLE[lhs]:
+                        G.NULLABLE[lhs].append(rl)
+                        has_new = True
+                        break
+            if not has_new:
+                break 
+        
+        # Compute singly transitive derivations
+        G.DERIV1 = defaultdict(set)
+        for lhs, rhs in G.rules:
+            for i, X in enumerate(rhs):
+                if X in G.nonterminals:
+                    if all(Y in G.NULLABLE for Y in rhs[:i] + rhs[i+1:]):
+                        G.DERIV1[lhs].add(X)
+
+        # Compute LOOP clusters
+
     def _calc_pred_trees(G):
         G.PRED_TREE = {}
         G.FIRST = {}
         for nt in reversed(G.nonterminals):
-            pt = G._pred_tree(nt)
+            pt = G.pred_tree(nt)
             G.PRED_TREE[nt] = pt
             G.FIRST[nt] = f = set()
             for nd in pt:
@@ -581,30 +622,32 @@ class Grammar(object):
                     f.add(nd.value)
                 else:
                     raise ValueError('Not valid elem in toplist.')
-    
-    def first1(G, X):
-        if X in G.nonterminals:
-            assert X in G.FIRST
-            return G.FIRST[X]
-        else:
-            return {X}
 
-    def first_many(G, seq, tail=DUMMY):
-        """Find FIRST set of a sequence of symbols.
+    def first_of_seq(G, seq, tail=DUMMY):
+        """Find the FIRST set of a sequence of symbols. This relies
+        on the precompulated order-n nullables.
 
         :seq:   A list of strings
 
         """
+        # FIXME: This relies on higher-order NULLABLE!
         assert not isinstance(seq, str)
         fs = set()
         for X in seq:
-            fs.update(G.first1(X))
-            if EPSILON not in fs:
+            if X in G.nonterminals:
+                fs.update(G.FIRST[X])
+            else:
+                fs.add(X)
+            if X not in G.NULLABLE:
+                fs.discard(EPSILON)
                 return fs
         fs.discard(EPSILON)
         # Note :tail: can also be EPSILON
         fs.add(tail)
         return fs
+
+    def is_nullable_seq(G, seq):
+        return all(X in G.NULLABLE for X in seq)
 
     def closure(G, I):
         """Naive CLOSURE calculation without lookaheads.
@@ -631,6 +674,18 @@ class Grammar(object):
                             C.append(jtm)
             z += 1
         return C
+
+    # def closure1_eager(G, ntml):
+    #     C = []
+    #     for _, rl in G[ntml]:
+    #         C.append(rl)
+    #     z = 0
+    #     while z < len(C):
+    #         rl1 = C[z]
+    #         if rl1.rhs and rl1.rhs[0] in G.nonterminals:
+    #             for _, rl2 in G[rl1.rhs[0]]:
+    #                 if rl2 not in C:
+    #                     C.append(rl2)
 
     def closure1_with_lookahead(G, item, a):
         """Fig 4.40 in Dragon Book.
@@ -664,7 +719,7 @@ class Grammar(object):
             if not itm.ended():
                 if itm.actor in G.nonterminals:
                     for j, jrl in G[itm.actor]:
-                        for b in G.first_many(itm.look_over, a):
+                        for b in G.first_of_seq(itm.look_over, a):
                             jtm = G.item(j, 0)
                             if (jtm, b) not in C:
                                 C.append((jtm, b))
@@ -705,6 +760,44 @@ class Grammar(object):
                 yield Token(at, ERROR, inp[at])
         if with_end:
             yield Token(pos, END, END_PATTERN_DEFAULT)
+
+    def find_loop(G, ntml):
+        """LOOP is the case that for some terminal S there is
+
+        S => ... => S
+
+        (not including partial LOOP like S => ... => S a)
+
+        Some properties:
+
+        - Along the path the rule must be ALL nonterminals;
+
+        - If S => .. => A and some non-singleton rule exits (A = B C D),
+          there LOOP may exits only when all except one of {B, C, D} are
+          nullable.
+        
+        - Thus LOOP can be found by testing reachability through
+          single-derivations.
+
+        """
+
+        paths = [[ntml]]
+        while paths:
+            path = paths.pop()
+            act = path[-1]
+            # Whole cycle from start.
+            if act == path[0] and len(path) > 1:
+                # cluster.update(path)
+                yield path
+            # Parital cycle linking to middle.
+            elif act in path[:-1]:
+                # j = path.index(act)
+                # yield path[j:]
+                pass
+            # Still no cycle, try explore further.
+            else:
+                for nxt in G.DERIV1[act]:
+                    paths.append(path + [nxt])
 
 
 class assoclist(list):
@@ -1679,6 +1772,7 @@ class GLR(ParserBase):
     def parse_many_gss(self, inp, interp=False):
         raise NotImplementedError
 
+
 @meta
 class LALR(ParserDeterm):
 
@@ -2011,7 +2105,7 @@ class WLL1(ParserDeterm):
                 table[lhs] = {}
             # NON-NULL rule
             if rhs:
-                for a in G.first1(rhs[0]):
+                for a in G.FIRST(rhs[0]): # Or first_of_seq(rhs, END)?
                     if a is EPSILON:
                         pass
                     elif a in table[lhs]:
@@ -2091,8 +2185,9 @@ class WLL1(ParserDeterm):
                         else:
                             argstack.append(tok)
                     k, tok = next(toker)
+
         except StopIteration:
-            raise ParserError('No enough token for complete parsing.')
+            raise ParserError('No enough tokens to complete parsing.')
 
 
 @meta
@@ -2123,7 +2218,7 @@ class GLL(ParserBase):
             if lhs not in table:
                 table[lhs] = defaultdict(list)
             if rhs:
-                for a in G.first_many(rhs, EPSILON):
+                for a in G.first_of_seq(rhs, EPSILON):
                     if a is not EPSILON:
                         table[lhs][a].append(rule)
             else:
@@ -2223,6 +2318,3 @@ class GLL(ParserBase):
             return [res.translate() for res in results]
         else:
             return results
-
-
-

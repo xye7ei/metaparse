@@ -6,13 +6,14 @@ This is a tool for **instant parsing** with **full power** in native Python envi
 Moreover, You might be amazed that merely defining a Python `class`<sup>[2]</sup> just suffices to get parse work done, including
 
 * lexical
-* snytatical
+* syntatical
 * semantic
 
 definitions altogether.
 
 
 <sub>[1]. This module is motivated by [instaparse][] in [Clojure][], but travels another way more like [PLY][].</sub>
+
 <sub>[2]. Python 3 preferred.</sub>
 
 # Quick Example

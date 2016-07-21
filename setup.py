@@ -8,5 +8,5 @@ setup(name='metaparse',
       author='Xuelei Li',
       author_email='lixuelei86@gmail.com',
       url='https://github.com/Shellay/metaparse',
-      py_modules=['metaparse.py'],
+      py_modules=['metaparse'],
 )

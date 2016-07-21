@@ -2,6 +2,8 @@
 
 from distutils.core import setup
 
+import metaparse
+
 setup(name='metaparse',
       version='0.1',
       description='A tool for powerful instant parsing supported by optional algorithms.',

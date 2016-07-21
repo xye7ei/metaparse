@@ -675,18 +675,6 @@ class Grammar(object):
             z += 1
         return C
 
-    # def closure1_eager(G, ntml):
-    #     C = []
-    #     for _, rl in G[ntml]:
-    #         C.append(rl)
-    #     z = 0
-    #     while z < len(C):
-    #         rl1 = C[z]
-    #         if rl1.rhs and rl1.rhs[0] in G.nonterminals:
-    #             for _, rl2 in G[rl1.rhs[0]]:
-    #                 if rl2 not in C:
-    #                     C.append(rl2)
-
     def closure1_with_lookahead(G, item, a):
         """Fig 4.40 in Dragon Book.
 
@@ -939,17 +927,25 @@ class cfg(type):
         as semantics.
 
         """
+        import textwrap
 
-        # The context for the rule semantics is :decl:'s belonging
-        # namespace, here :__globals__:.
+        # The context for the rule semantics is `decl`'s belonging
+        # namespace, here `__globals__`.
         glb_ctx = decl.__globals__
 
         # The local context for registering a function definition
-        # by :exec:.
+        # by `exec`.
         lcl_ctx = {}
 
-        # Parse the source.
-        t = ast.parse(inspect.getsource(decl))
+        # Prepare the source. If the `decl` is a method, the source
+        # then contains indentation spaces thus should be dedented in
+        # order to be parsed independently.  `textwrap.dedent`
+        # performs dedenation until no leading spaces.
+        src = inspect.getsource(decl)
+        src = textwrap.dedent(src)
+
+        # Parse the source to Python syntax tree.
+        t = ast.parse(src)
 
         # Something about :ast.parse: and :compile: with
         # - literal string code;

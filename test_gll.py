@@ -19,23 +19,27 @@ class S2(metaclass=cfg):
     def B(): return
 
 
-class S3(metaclass=cfg):
-    a = 'a'
-    def S(A): return
-    def A(S): return
-    def A(S, a): return
-    def A(a): return
 
+# class S4(metaclass=cfg):
+class Foo:
 
-class S4(metaclass=cfg):
-    a = 'a'
-    def S(S, T, U): return
-    def T(T, U, S): return
-    def U(U, S, T): return
-    def S(): return
-    def T(): return
-    def U(): return
-    def S(a): return
+    class S3(metaclass=cfg):
+        a = 'a'
+        def S(A): return
+        def A(S): return
+        def A(S, a): return
+        def A(a): return
+
+    @grammar
+    def S4():
+        a = 'a'
+        def S(S, T, U): return
+        def T(T, U, S): return
+        def U(U, S, T): return
+        def S(): return
+        def T(): return
+        def U(): return
+        def S(a): return
 
 
 # print('NULLABLE: ', S2.NULLABLE)
@@ -59,15 +63,16 @@ class S4(metaclass=cfg):
 # p2.recognize('aaabb')
 
 # # Non-pure Loop is totally not problem for recognition
-# p3 = GLL(S3)
-# e3 = Earley(S3)
-# # Seems GLL spends only 1/3 time of Earley recognizing such input.
+p3 = GLL(Foo.S3)
+e3 = Earley(Foo.S3)
+# Seems GLL spends only 1/3 time of Earley recognizing such input.
 # print(S3.PRED_TREE['S'])
-# p3.recognize('aaaaaaaa')
-# e3.recognize('aaaaaaaa')
+p3.recognize('aaaaaaaa')
+e3.recognize('aaaaaaaa')
+# LOOPed Grammar. Parse not terminated.
 # rs = e3.parse_many('aaaaaaaa')
 # print(rs)
-# assert 0
+assert 0
 
 # # Pure loop is fatal for recognition
 # # - 
@@ -76,6 +81,7 @@ class S4(metaclass=cfg):
 # print(S4.pred_tree('S').__len__())
 # pp.pprint(S4.pred_tree('S'))
 # pp.pprint(S4.NULLABLE)
+S4 = Foo.S4
 pp.pprint(S4.DERIV1)
 pp.pprint([*S4.find_loop('S')])
 

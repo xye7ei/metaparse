@@ -25,6 +25,7 @@ Firstly, we design the grammar on a paper, as in textbooks,
 ```
 assign → ID = expr
 expr → NUM
+expr → ID
 expr → expr₁ + expr₂
 expr → expr₁ * expr₂
 expr → expr₁ ** expr₂
@@ -34,6 +35,7 @@ then think about some similarity with `def` signatures in Python:
 ``` python
 def assign(ID, EQ, expr): ...
 def expr(NUM): ...
+def expr(ID): ...
 def expr(expr_1, ADD, expr_2): ...
 def expr(expr_1, MUL, expr_2): ...
 def expr(expr_1, POW, expr_2): ...
@@ -50,25 +52,29 @@ table = {}
 class G_Calc(metaclass=cfg):
 
     # ===== Lexical patterns / Terminals =====
+    # - Will be matched in order when tokenizing
 
-    IGNORED = r'\s+'            # Special token.
+    IGNORED = r'\s+'             # Special token.
 
     EQ  = r'='
-    NUM = r'[0-9]+'
+    NUM = r'[1-9][0-9]*'
     ID  = r'[_a-zA-Z]\w*'
-    POW = r'\*\*', 3            # Can specify token precedence (mainly for LALR).
+    POW = r'\*\*', 3            # Can specify precedence of token (mainly for LALR)
     MUL = r'\*'  , 2
     ADD = r'\+'  , 1
 
     # ===== Syntactic/Semantic rules in SDT-style =====
 
-    def assign(ID, EQ, expr):        # May rely on external side-effect...
+    def assign(ID, EQ, expr):        # May rely on side-effect...
         table[ID] = expr
 
-    def expr(NUM):                   # or return local results for purity.
+    def expr(NUM):                   # or return local results for purity
         return int(NUM)
 
-    def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂).
+    def expr(ID):
+        return table[ID]
+
+    def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂)
         return expr_1 + expr_2
 
     def expr(expr, MUL, expr_1):     # Can ignore one of the subscripts.
@@ -83,21 +89,22 @@ Then we get a `Grammar` object and build parser with it:
 ```
 >>> type(G_Calc)
 <class 'metaparse.Grammar'>
->>> Calc = LALR(G_Calc)
+>>> pCalc = LALR(G_Calc)
 ```
 
 
 Now we are done and it's quite easy to try it out.
 
 ``` python
->>> Calc.interpret("x = 1 + 2 * 3 ** 4 + 5")
->>> table
-{'x': 168}
+>>> pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
+42
+>>> pCalc.interpret("y = 5 + x * 2")
+89
+>>> pCalc.interpret("z = 99")
+99
 
->>> Calc.interpret("y = 3 ** 4 * 5")
->>> Calc.interpret("z = 99")
 >>> table
-{'x': 168, 'z': 99, 'y': 405}
+{'x': 42, 'y': 89, 'z': 99}
 ```
 
 IMO, tools in state-of-the-art could hardly get more handy than this.

@@ -6,6 +6,7 @@
 *.cache
 *_raw.py
 .ipython
-tests/.python_history
 metaparse.egg-info
 dist
+*.ipython
+*.python_history

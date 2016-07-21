@@ -29,6 +29,9 @@ class G_Calc(metaclass=cfg):
     def expr(NUM):                   # or return local results for purity
         return int(NUM)
 
+    def expr(ID):
+        return table[ID]
+
     def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂)
         return expr_1 + expr_2
 
@@ -38,7 +41,6 @@ class G_Calc(metaclass=cfg):
     def expr(expr, POW, expr_1):
         return expr ** expr_1
 
-# print(type(G_Calc))
 
 from metaparse import cfg
 
@@ -48,7 +50,7 @@ class Foo(object):
         return 99
 
 @cfg.v2
-def Calc1():
+def G_Calc1():
 
     IGNORED = r'\s+'
 
@@ -67,6 +69,9 @@ def Calc1():
     def expr(NUM):
         return int(NUM)
 
+    def expr(ID):
+        return table[ID]
+
     def expr(expr_1, ADD, expr_2):
         return expr_1 + expr_2
 
@@ -81,31 +86,9 @@ def Calc1():
 
 import ast
 import inspect
-import sys
 
-
-# print(e[-1]('abc', None, 8))
-# print(table)
-
-pp.pprint(Calc1.terminals)
-pp.pprint(Calc1)
-# Calc1 = cfg2(Calc1)
-pCalc1 = LALR(Calc1)
-pCalc1.interpret("x = 1 + 2 * 3 ** 4 + 5")
+pCalc = LALR(G_Calc)
+pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
+pCalc.interpret("y = 5 + x * 2")
+pCalc.interpret("z = 99")
 print(table)
-
-pCalc1.interpret("y = 3 ** 4 * 5")
-pCalc1.interpret("z = 99")
-print(table)
-# Calc.interpret("x = 1 + 2 * 3 ** 4 + 5")
-# Calc.interpret("y = 3 ** 4 * 5")
-# Calc.interpret("z = 99")
-
-# print(table)
-
-# tr = Calc.parse(" w  = 1 + 2 * 3 ** 4 + 5 ")
-# pp.pprint(Calc1)
-# pp.pprint(Calc1.terminals)
-# tr = Calc1.parse(" w  = 1 + 2 * 3 ** 4 + 5 ")
-
-# pp.pprint(tr)

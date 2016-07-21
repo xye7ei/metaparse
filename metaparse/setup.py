@@ -4,9 +4,9 @@ from distutils.core import setup
 
 setup(name='metaparse',
       version='0.1',
-      description='A tool for Powerful Instant Parsing',
+      description='A tool for powerful instant parsing supported by optional algorithms.',
       author='Xuelei Li',
       author_email='lixuelei86@gmail.com',
       url='https://github.com/Shellay/metaparse',
-      py_modules=['metaparse'],
+      py_modules=['metaparse.py'],
 )

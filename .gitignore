@@ -3,5 +3,9 @@
 *.stats
 *.html
 *.py#
-tests/.python_history
 *.cache
+*_raw.py
+.ipython
+tests/.python_history
+metaparse.egg-info
+dist

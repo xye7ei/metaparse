@@ -50,7 +50,7 @@ ari_glr = GLR(GArith)
 class TestArithParser(unittest.TestCase):
 
     def test_FIRST(self):
-        self.assertEqual(GArith.PRED_FIRST['Expr'], {'left', 'number'})
+        self.assertEqual(GArith.FIRST['Expr'], {'left', 'number'})
 
     def test_single(self):
         inp = '0'
@@ -76,8 +76,9 @@ class TestArithParser(unittest.TestCase):
         ps3 = ari_glr.interpret_many(tough_inp)
         self.assertEqual(ps1, ps2)
         self.assertEqual(ps2, ps3)
-        
+
 
 if __name__ == '__main__':
 
     unittest.main()
+    # pass

@@ -39,51 +39,121 @@ class GLL(ParserBase):
         G = self.grammar
 
         toks = []
-        toplst = G.pred_tree(G.top_symbol)
 
-        acts = toplst[:]
+        bottom = ACCEPT
+        toplst = G.pred_tree(G.top_symbol, bottom)
+        stklst = [[] for _ in toplst]
 
-        # Caution on nullable-cycle
         for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+        # for k, tok in enumerate(G.tokenize(inp, with_end=False)):
+
             toks.append(tok)
-            acts1 = []
-            # Transitive closure on :acts:
+            toplst1 = []
+            # stklst1 = []
+
+            # Transitive closure on :toplst:
             z = 0
-            while z < len(acts):
-                act = acts[z]
-                if isinstance(act, Node):
-                    if act.value in G.terminals:
-                        if act.value == tok.symbol:
-                            acts1.append(act.next)
-                        else:
-                            pass
-                    else:
+            while z < len(toplst):
+                n = (act, x), nxt = toplst[z]
+                # stk = stklst[z]
+                if act is PREDICT:
+                    if x in G.nonterminals:
                         # Transplant new prediction tree onto
-                        # current rest.
-                        sub_pred = G.pred_tree(act.value, act.next)
-                        acts.extend(sub_pred)
-                elif isinstance(act, ExpdNode):
-                    if act.value == G.top_symbol:
+                        # current nonterminal node.
+                        sub_pred = G.pred_tree(x, nxt)
+                        for m in sub_pred:
+                            toplst.append(m)
+                            # stklst.append(stk[:])
+                    else:
+                        if x == tok.symbol:
+                            toplst1.append(nxt)
+                            # stklst1.append(stk + [tok.value])
+                elif act is REDUCE:
+                    assert isinstance(nxt, ExpdNode)
+                    if nxt.value == G.top_symbol:
                         if tok.is_END():
-                            # print('Full parse on: \n{}'.format(pp.pformat(toks[:k])))
-                            return True
+                            print('Full parse on: \n{}'.format(pp.pformat(toks[:k])))
+                            # return [stk for stk in stklst if stk[-1] == G.top_symbol]
+                            # return True
                         else:
-                            # print('Partial parse on: \n{}.'.format(pp.pformat(toks[:k])))
+                            print('Partial parse on: \n{}.'.format(pp.pformat(toks[:k])))
                             pass
                     # TODO
-                    # - Find cluster of neighbored ExpdNodes!
-                    #   - which means EPSILON-transition in automata
-                    # - Select one representative!
-                    for nxt in act.forks:
-                        if nxt not in acts:
-                            acts.append(nxt)
+                    for nnxt in nxt.forks:
+                        if nnxt is not bottom and nnxt not in toplst:
+                            toplst.append(nnxt)
+                            # stklst.append(stklst[z] + [':%s' % act.value])
                 else:
-                    pass
+                    raise
 
                 z += 1
 
-            acts = acts1
-                        
+            toplst = toplst1
+            # if tok.is_END():
+            #     return stklst
+            # else:
+            #     stklst = stklst1
+
     def parse_many(self, inp, interp=False):
-        pass
+        """Discover a recursive automaton on-the-fly.
+
+        - Transplant a prediction tree whenever needed.
+
+        - Tracing all states, especially forked states induced by
+          expanded nodes.
+
+        """
+        global START, PREDICT, REDUCE, ACCEPT
+
+        lbottom = START
+        bottom = ACCEPT
+        G = self.grammar
+
+        # GSS push
+        push = Node
+
+        # (<active-node>, <cumulative-stack>)
+        toplst = [(n, lbottom)
+                  for n in G.pred_tree(G.top_symbol, bottom)]
+        toplsts = []
+
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+
+            toplst1 = []
+            # Start from current node in top list, find a path
+            # searching the active token.
+            srchs = [(n, stk) for n, stk in toplst]
+
+            while srchs:
+                n, stk = srchs.pop()
+                if n is bottom:
+                    # 
+                    print(stk.to_list()[::-1])
+                    # print(stk)
+                    # yield stk
+                else:
+                    (act, x), nxt = n
+                    if act is PREDICT:
+                        if x in G.terminals:
+                            if x == tok.symbol:
+                                # toplst1.append((nxt, stk + [tok.value]))
+                                toplst1.append((nxt, push(tok.value, stk)))
+                        else:
+                            for m in G.pred_tree(x, nxt):
+                                # srchs.append((m, stk))
+                                # Prediction information not directly available...
+                                srchs.append((m, stk))
+                    else:
+                        assert isinstance(nxt, ExpdNode)
+                        for fk in nxt.forks:
+                            # srchs.append((fk, stk + [x, nxt.value]))
+                            # Mind the push order!
+                            # - ExpdNode redundant in stack
+                            srchs.append((fk, push(x, stk)))
+
+            toplst = toplst1
+            # toplsts.append(toplst1)
+
+        # # Find traverse
+        # return toplsts[-1]
 

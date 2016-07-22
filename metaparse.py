@@ -141,20 +141,25 @@ class Signal(object):
 
     """Signal is used to denote parsing actions, like some sort of Enum. """
 
-    def __init__(self, name):
+    def __init__(self, name, repr=None):
         self.name = name
+        self.repr = repr
 
     def __repr__(self):
-        return self.name
+        if self.repr:
+            return self.repr
+        else:
+            return self.name
 
 
 DUMMY   = Symbol('\0')
 EPSILON = Symbol('EPSILON')
 
-PREDICT = Signal('PREDICT')
-SHIFT   = Signal('SHIFT')
-REDUCE  = Signal('REDUCE')
-ACCEPT  = Signal('ACCEPT')
+START   = Signal('START', '^')
+PREDICT = Signal('PREDICT', '?')
+SHIFT   = Signal('SHIFT', '<')
+REDUCE  = Signal('REDUCE', '!')
+ACCEPT  = Signal('ACCEPT', '.')
 
 
 class Token(object):
@@ -344,9 +349,12 @@ class Item(object):
 
 # Component for graph structured stacks and prediction trees.
 Node = namedtuple('Node', 'value next')
-ExpdNode = namedtuple('ExpdNode', 'value forks')
 Node.__repr__ \
     = lambda s: tuple.__repr__((Symbol(s[0]), s[1]))
+Node.to_list \
+    = lambda s: [s.value] + (s.next.to_list() if isinstance(s.next, Node) else [s.next])
+
+ExpdNode = namedtuple('ExpdNode', 'value forks')
 ExpdNode.__repr__ \
     = lambda s: tuple.__repr__((Symbol(':%s' % s[0]), s[1]))
 
@@ -479,7 +487,7 @@ class Grammar(object):
         """
         return Item(G.rules, r, pos)
 
-    def pred_tree(G, ntml, bottom=None):
+    def pred_tree(G, ntml, bottom=ACCEPT):
         """Build a prediction tree for the given :ntml:. A prediction tree
         concludes all information about FIRST and NULLABLE.
 
@@ -509,44 +517,38 @@ class Grammar(object):
 
         S >> $
 
-        A >> [S] >> $
+        A >> (!S=A) >> [S] >> $
 
-        B >> c >> [A] >> [S] >> $
+        B >> c >> (!A=Bc) >> [A] >> (!S=A) >> [S] >> $
 
-        S >> c >> A >> [B] >> c >> [A] >> [S] >> $
+        S >> c >> A >> (!B=ScA) >> [B] >> c >> (!A=Bc) >> [A] >> (!S=A) >> [S] >> $
 
-        But S already gets expanded, link it back.
+        But S already gets expanded, just link it back.
 
-             c >> A >> [B] >> c >> [A] >> [S] >> $
-             |                             |
-             --------------<<---------------
+        S >> c >> A >> (!B=ScA) >> [B] >> c >> (!A=Bc) >> [A] >> (!S=A) >> [S] >> $
+             |                                                              |
+             -----------------------------<<---------------------------------
 
-        It is teasing that the 'prediction graph' is indeed a
+        It is funny that the 'prediction graph' is indeed a
         'completion graph', denoting paths for completion.
 
         """
 
         global PREDICT, REDUCE
+        assert ntml in G.nonterminals
 
         # None for root/bottom.
         # - should bottom be mutable like [] to allow transplant?
-        toplst = [Node(ntml, bottom)]
+        toplst = [Node((PREDICT, ntml), bottom)]
         expdd = {}
 
         z = 0
         while z < len(toplst):
-            n = (X, nxt) = toplst[z]
-            if X in G.nonterminals:
-                if isinstance(n, ExpdNode):
-                    assert X in G.NULLABLE
-                    z += 1
-                    # Skip and append 
-                    # for fk in n.forks:
-                    #     if fk not in toplst:
-                    #         if fk is not bottom:
-                    #             toplst.append(fk)
-                else:
-                    toplst.pop(z) # Discard normal nonterminal node
+            n = toplst[z]
+            (act, X), nxt = n
+            if act is PREDICT:
+                if X in G.nonterminals:
+                    toplst.pop(z) # Discard predictive nonterminal node
                     if X in expdd:
                         assert isinstance(expdd[X], ExpdNode)
                         expdd[X].forks.append(nxt)
@@ -554,18 +556,30 @@ class Grammar(object):
                         # New expanded node - shared by alternative rules.
                         enxt = expdd[X] = ExpdNode(X, [nxt])
                         for r, rl in G[X]:
-                            nxt1 = enxt # Share this expanded.
-                            for sub in reversed(rl.rhs):
+                            # Share this expanded.
+                            nxt1 = Node((REDUCE, rl), enxt)
+                            for Y in reversed(rl.rhs):
                                 # New normal node.
-                                nxt1 = Node(sub, nxt1)
-                            # If `rl` is a null-rule, the expanded node
-                            # gets appended.
+                                nxt1 = Node((PREDICT, Y), nxt1)
+                            # If `rl` is a null-rule, the expanded
+                            # node itself gets appended.
+                            assert nxt1.value[0] in [PREDICT, REDUCE]
                             toplst.append(nxt1)
+                else:
+                    # Path led by terminal stays.
+                    z += 1
             else:
-                # Path led by terminal stays.
                 z += 1
 
-        assert all(isinstance(nd, ExpdNode) or nd.value in G.terminals for nd in toplst)
+        # No ExpdNode is exposed to the top, since at least a REDUCE
+        # node covers it, which is only possible for nullable rules.
+        for n in toplst:
+            assert isinstance(n, Node)
+            (act, x), nxt = n
+            assert \
+                (act is PREDICT and x in G.terminals) or \
+                (act is REDUCE and x in G.rules), (act, x)
+        
         return toplst
 
     def _calc_nullable(G):
@@ -608,18 +622,22 @@ class Grammar(object):
         # Compute LOOP clusters
 
     def _calc_pred_trees(G):
-        G.PRED_TREE = {}
         G.FIRST = {}
         for nt in reversed(G.nonterminals):
             pt = G.pred_tree(nt)
-            G.PRED_TREE[nt] = pt
             G.FIRST[nt] = f = set()
             for nd in pt:
                 if isinstance(nd, ExpdNode):
                     f.add(EPSILON)
                 elif isinstance(nd, Node):
-                    assert nd.value in G.terminals
-                    f.add(nd.value)
+                    act, x = nd.value
+                    if isinstance(x, str):
+                        assert x in G.terminals
+                        f.add(x)
+                    elif isinstance(x, Rule):
+                        pass
+                    else:
+                        raise ValueError('Not valid elem in toplist.')
                 else:
                     raise ValueError('Not valid elem in toplist.')
 
@@ -675,7 +693,7 @@ class Grammar(object):
             z += 1
         return C
 
-    def closure1_with_lookahead(G, item, a):
+    def closure1_with_lookahead(G, item, a=DUMMY):
         """Fig 4.40 in Dragon Book.
 
         CLOSURE(I)
@@ -688,12 +706,8 @@ class Grammar(object):
             return J
 
 
-        This can be done before calculating LALR-Item-Sets, thus avoid
-        computing closures repeatedly by applying the virtual DUMMY
-        lookahead(`#` in the dragonbook). Since this lookahead must
-        not be shared by any symbols within any instance of Grammar, a
-        special value is used as the dummy(Not including None, since
-        None is already used as epsilon in FIRST set).
+        The lookahead must not be shared by any symbols within any instance of
+        Grammar, a special value is used as the dummy.
 
         For similar implementations within lower-level language like
         C, this value can be replaced by any special number which
@@ -1684,8 +1698,8 @@ class GLR(ParserBase):
 
         results = []
         tokens = list(G.tokenize(inp, False))
-        # :forest: is a list of descriptors, where each descriptor is
-        # a tuple:
+        # `forest` is a list of descriptors, where each descriptor is
+        # a tuple like:
         # (<item-set-number>, list<subtree>, <input-pointer>)
         forest = [([0], [], 0)]
 

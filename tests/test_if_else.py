@@ -3,7 +3,7 @@ import unittest
 
 from metaparse import *
 
-import pprint as pp
+from pprint import pprint
 
 class Gif(metaclass=cfg):
 
@@ -92,26 +92,38 @@ class TestLRGrammar(unittest.TestCase):
     def test_many(self):
 
         p_ear = Earley(Gif)
-        p_gll = GLL(Gif)
+        # p_gll = GLL(Gif)
         p_glr = GLR(Gif)
 
         inp = 'if e then if e then if e then s else s else s'
 
         p1 = sorted(p_ear.interpret_many(inp))
         p2 = sorted(p_glr.interpret_many(inp))
-        p3 = sorted(p_gll.interpret_many(inp))
+        # p3 = sorted(p_gll.interpret_many(inp))
 
         pp.pprint(p1)
         pp.pprint(p2)
-        pp.pprint(p3)
+        # pp.pprint(p3)
 
         self.assertEqual(p1, p2)
-        self.assertEqual(p2, p3)
+        # self.assertEqual(p2, p3)
         self.assertEqual(len(p1), 3)
 
 
 if __name__ == '__main__':
 
-    # unittest.main()
+    unittest.main()
 
-    LALR(Gif)
+    # g = GLR(Gif)
+
+# g.parse_many_gss('if e then if e then if e then s else s else s')
+# pprint(len([*g.parse_many_gss('if e then if e then if e then s else s else s')]))
+# pprint([*g.parse_many_gss('if e then if e then if e then s else s else s')])
+
+# assert 0
+
+# timeit [*g.parse_many_gss('if e then if e then if e then s else s else s')]
+# 1.11 ms per loop
+
+# timeit [*g.parse_many('if e then if e then if e then s else s else s')]
+# ~900 us per loop

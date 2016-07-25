@@ -1,6 +1,6 @@
 import preamble
 
-from metaparse import *
+from metaparse import LALR
 
 
 def fappend(l, x):

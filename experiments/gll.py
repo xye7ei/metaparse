@@ -72,11 +72,11 @@ class GLL(ParserBase):
                     assert isinstance(nxt, ExpdNode)
                     if nxt.value == G.top_symbol:
                         if tok.is_END():
-                            print('Full parse on: \n{}'.format(pp.pformat(toks[:k])))
+                            print('Full recognition on: \n{}'.format(pp.pformat(toks[:k])))
                             # return [stk for stk in stklst if stk[-1] == G.top_symbol]
                             # return True
                         else:
-                            print('Partial parse on: \n{}.'.format(pp.pformat(toks[:k])))
+                            print('Partial recognition on: \n{}.'.format(pp.pformat(toks[:k])))
                             pass
                     # TODO
                     for nnxt in nxt.forks:
@@ -105,31 +105,34 @@ class GLL(ParserBase):
         """
         global START, PREDICT, REDUCE, ACCEPT
 
-        lbottom = START
-        bottom = ACCEPT
         G = self.grammar
+
+        stk_btm = START
+        bottom = ExpdNode((ACCEPT, G.top_symbol), [])
 
         # GSS push
         push = Node
 
         # (<active-node>, <cumulative-stack>)
-        toplst = [(n, lbottom)
+        toplst = [(n, stk_btm)
                   for n in G.pred_tree(G.top_symbol, bottom)]
         toplsts = []
 
         for k, tok in enumerate(G.tokenize(inp, with_end=True)):
 
             toplst1 = []
-            # Start from current node in top list, find a path
-            # searching the active token.
-            srchs = [(n, stk) for n, stk in toplst]
+            # Start from current node in top list and search the
+            # active token.
+
+            # Memoization to avoid cycles!
+            # FIXME:
+            # - explored should be set for each path! NOT shared!
+            srchs = [(n, {}, stk) for n, stk in toplst]
 
             while srchs:
-                n, stk = srchs.pop()
+                n, expdd, stk = srchs.pop()
                 if n is bottom:
-                    # 
                     print(stk.to_list()[::-1])
-                    # print(stk)
                     # yield stk
                 else:
                     (act, x), nxt = n
@@ -139,17 +142,27 @@ class GLL(ParserBase):
                                 # toplst1.append((nxt, stk + [tok.value]))
                                 toplst1.append((nxt, push(tok.value, stk)))
                         else:
-                            for m in G.pred_tree(x, nxt):
-                                # srchs.append((m, stk))
-                                # Prediction information not directly available...
-                                srchs.append((m, stk))
+                            #
+                            if x in expdd:
+                                expdd[x].forks.append(nxt)
+                            # Plant tree.
+                            # FIXME: infinite planting?
+                            else:
+                                for m in G.pred_tree(x, nxt):
+                                    # srchs.append((m, stk))
+                                    # Prediction information not directly available.
+                                    # FIXME: may store this in prediction trees.
+                                    srchs.append((m, expdd, stk))
                     else:
-                        assert isinstance(nxt, ExpdNode)
-                        for fk in nxt.forks:
-                            # srchs.append((fk, stk + [x, nxt.value]))
-                            # Mind the push order!
-                            # - ExpdNode redundant in stack
-                            srchs.append((fk, push(x, stk)))
+                        assert isinstance(nxt, ExpdNode), nxt
+                        m, rst = nxt
+                        if m not in expdd:
+                            expdd[m] = nxt
+                            for fk in nxt.forks:
+                                # srchs.append((fk, stk + [x, nxt.value]))
+                                # Mind the push order!
+                                # - ExpdNode redundant in stack, thus not pushed.
+                                srchs.append((fk, expdd, push(x, stk)))
 
             toplst = toplst1
             # toplsts.append(toplst1)

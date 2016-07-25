@@ -1,8 +1,8 @@
 import preamble
 
-from metaparse import *
+from metaparse import LALR
 
-class Gchurch(metaclass=Earley.meta):
+class Gchurch(metaclass=LALR.meta):
 
     """
     Grammar for interpreting Church-Numerals.
@@ -19,7 +19,7 @@ class Gchurch(metaclass=Earley.meta):
 
 if __name__ == '__main__':
 
-    assert Gchurch.interpret('zero')                == [0]
-    assert Gchurch.interpret('succ zero')           == [1]
-    assert Gchurch.interpret('succ succ zero')      == [2]
-    assert Gchurch.interpret('succ succ succ zero') == [3]
+    assert Gchurch.interpret('zero')                == 0
+    assert Gchurch.interpret('succ zero')           == 1
+    assert Gchurch.interpret('succ succ zero')      == 2
+    assert Gchurch.interpret('succ succ succ zero') == 3

@@ -31,12 +31,8 @@ class TestGrammar(unittest.TestCase):
         self.assertEqual(G.first_of_seq(['A', 'B', 'C'], '#'), {'a', 'd', 'c', 'd', '#'})
 
     def test_nullalbe(self):
-        self.assertEqual(G.NULLABLE, {'S^', 'S', 'A', 'B', 'C', 'D', 'E'})
+        self.assertEqual(set(G.NULLABLE), {'S^', 'S', 'A', 'B', 'C', 'D', 'E'})
 
 if __name__ == '__main__':
     unittest.main()
-    # from pprint import pprint
-
-    # pprint(G.PRED_TREE['S'])
-    # pprint(G.FIRST['S'])
-    # pprint(G.NULLABLE)
+    # pass

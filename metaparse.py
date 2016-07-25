@@ -126,6 +126,7 @@ ERROR_PATTERN_DEFAULT = r'.'
 
 PRECEDENCE_DEFAULT = 1
 
+
 class Symbol(str):
 
     """Symbol is a subclass of :str: with unquoted representation. It is
@@ -159,7 +160,7 @@ START   = Signal('START', '^')
 PREDICT = Signal('PREDICT', '?')
 SHIFT   = Signal('SHIFT', '<')
 REDUCE  = Signal('REDUCE', '!')
-ACCEPT  = Signal('ACCEPT', '.')
+ACCEPT  = Signal('ACCEPT', '$')
 
 
 class Token(object):
@@ -356,9 +357,11 @@ Node.to_list \
 
 ExpdNode = namedtuple('ExpdNode', 'value forks')
 ExpdNode.__repr__ \
-    = lambda s: tuple.__repr__((Symbol(':%s' % s[0]), s[1]))
+    = lambda s: tuple.__repr__((Symbol(':{}'.format(s[0])),
+                                [Symbol(n) for n in s.forks]))
+    # = lambda s: tuple.__repr__((Symbol(':{}'.format(s[0])), s[1]))
 
-Bottom = None
+BOTTOM = ExpdNode(ACCEPT, [])
 
 
 class Grammar(object):
@@ -425,9 +428,13 @@ class Grammar(object):
                 unused_nt.discard(X)
                 if X not in self.terminals and X not in self.nonterminals:
                     msg += '\n'.join([
+                        '',
+                        '====================',
                         'Undeclared symbol:',
                         "@{}`th symbol '{}' in {}`th rule {}. Source info:".format(j, X, r, rl),
                         rl.src_info,
+                        '====================',
+                        '',
                     ])
         if msg:
             msg += '\n...Failed to construct the grammar.'
@@ -487,33 +494,31 @@ class Grammar(object):
         """
         return Item(G.rules, r, pos)
 
-    def pred_tree(G, ntml, bottom=ACCEPT):
-        """Build a prediction tree for the given :ntml:. A prediction tree
-        concludes all information about FIRST and NULLABLE.
+    def pred_tree(G, ntml, bottom=None):
+        """Build a prediction tree for the given `ntml` by pushing rule
+        symbols as nodes into a GSS structure where alternative rules
+        comprise branching and left-recursion comprise cycles.  All
+        the leaf nodes form the Top List representing this tree.
 
-        This tree may contain cycles due to LOOP in the grammar.
+        A prediction tree contains 3 types of nodes:
 
-        Conceptually, this tree/graph is represented by a list of leaf
-        nodes, namely :top list:, of which each one points to a parent
-        node.
+            - Prediction node
+            - Reduction node
+            - Expansion node (Symbol-completion node)
 
-        Once the tree is built, the FIRST set is exactly the terminal
-        node values in this top list. A :expanded node: appears in the
-        top list iff it is nullable. If there is a path from the top
-        list to the bottom passing a sequence of :expanded node:s,
-        then this nonterminal is transitively nullable.
+        The FIRST (which are the leaf nodes) and NULLABLE (which is
+        the reachability from leaves to root without bypassing
+        prediction nodes).
+
+        This tree may contain pure REDUCTION/EXPANSION-cycles due to
+        LOOP in the grammar.
 
         For example, given the grammar
 
         S = A; A = B c; B = S c d
 
-        The closure for kernel item (S = .A):
-
-        S = .A; A = .B c; B = .S c d
-
-        Treat them in reversed direction, where >> means completion:
-
-        S $ >> {ACCEPT} ; A >> S ; B c >> A ; S c A >> B
+        we construct a prediction tree as follows, where (!X=Y)
+        denotes reduction and [X] denotes expansion:
 
         S >> $
 
@@ -525,30 +530,38 @@ class Grammar(object):
 
         But S already gets expanded, just link it back.
 
-        S >> c >> A >> (!B=ScA) >> [B] >> c >> (!A=Bc) >> [A] >> (!S=A) >> [S] >> $
+             c >> A >> (!B=ScA) >> [B] >> c >> (!A=Bc) >> [A] >> (!S=A) >> [S] >> $
              |                                                              |
              -----------------------------<<---------------------------------
 
         It is funny that the 'prediction graph' is indeed a
-        'completion graph', denoting paths for completion.
+        'completion graph' denoting paths for completion.
 
         """
 
         global PREDICT, REDUCE
         assert ntml in G.nonterminals
 
+        if bottom is None:
+            bottom = ExpdNode(ACCEPT, [])
+
         # None for root/bottom.
-        # - should bottom be mutable like [] to allow transplant?
+        # - Should bottom be some "gate" to allow transplant?
         toplst = [Node((PREDICT, ntml), bottom)]
         expdd = {}
 
+        # Each entry in top list is either a PREDICT/REDUCE node.
         z = 0
         while z < len(toplst):
             n = toplst[z]
-            (act, X), nxt = n
+            (act, arg), nxt = n
+            #
             if act is PREDICT:
+                X = arg
                 if X in G.nonterminals:
-                    toplst.pop(z) # Discard predictive nonterminal node
+                    # Discard predictive nonterminal node.
+                    toplst.pop(z)
+                    # Link the expansion node back.
                     if X in expdd:
                         assert isinstance(expdd[X], ExpdNode)
                         expdd[X].forks.append(nxt)
@@ -556,20 +569,47 @@ class Grammar(object):
                         # New expanded node - shared by alternative rules.
                         enxt = expdd[X] = ExpdNode(X, [nxt])
                         for r, rl in G[X]:
-                            # Share this expanded.
+                            # A reduction node gating the expansion
+                            # node.
                             nxt1 = Node((REDUCE, rl), enxt)
+                            # Note if `rl` is a null-rule, the
+                            # expansion node immediately follows the
+                            # reduction node.
                             for Y in reversed(rl.rhs):
-                                # New normal node.
+                                # New normal prediction node.
                                 nxt1 = Node((PREDICT, Y), nxt1)
-                            # If `rl` is a null-rule, the expanded
-                            # node itself gets appended.
+                            # All leaf nodes are either prediction
+                            # node or reduction node.
                             assert nxt1.value[0] in [PREDICT, REDUCE]
                             toplst.append(nxt1)
                 else:
                     # Path led by terminal stays.
                     z += 1
-            else:
+
+            # Strategy of eager construction:
+            # When any reduction node appears in the top list, the
+            # associated rule must be nullable and the subsequent
+            # nodes, which are the forks from the following expansion
+            # node, should be added to top list.
+            elif act is REDUCE:
+                # rl = arg
+                # assert G.is_nullable_seq(rl.rhs)
+                # assert isinstance(nxt, ExpdNode)
+                # #
+                # for fk in nxt.forks:
+                #     # `fk` maybe the bottom.
+                #     if fk is not bottom:
+                #         (act1, arg), _ = fk
+                #         if act1 is PREDICT:
+                #             toplst.append(fk)
+                #         elif act1 is REDUCE:
+                #             if fk not in toplst:
+                #                 toplst.append(fk)
+                #         else:
+                #             assert False, ('Invaid node following ExpdNode.')
                 z += 1
+            else:
+                assert False, act
 
         # No ExpdNode is exposed to the top, since at least a REDUCE
         # node covers it, which is only possible for nullable rules.
@@ -579,7 +619,7 @@ class Grammar(object):
             assert \
                 (act is PREDICT and x in G.terminals) or \
                 (act is REDUCE and x in G.rules), (act, x)
-        
+
         return toplst
 
     def _calc_nullable(G):
@@ -609,9 +649,18 @@ class Grammar(object):
                         has_new = True
                         break
             if not has_new:
-                break 
-        
-        # Compute singly transitive derivations
+                break
+
+        # From here all NULLABLE are available.
+
+        # Find hidden left recursions.
+        G.NULL_LEAD = []
+        for rl in G.rules:
+            lhs, rhs = rl
+            if rhs and rhs[0] in G.NULLABLE:
+                G.NULL_LEAD.append(rl)
+
+        # Compute singleton transitive derivations.
         G.DERIV1 = defaultdict(set)
         for lhs, rhs in G.rules:
             for i, X in enumerate(rhs):
@@ -619,7 +668,63 @@ class Grammar(object):
                     if all(Y in G.NULLABLE for Y in rhs[:i] + rhs[i+1:]):
                         G.DERIV1[lhs].add(X)
 
-        # Compute LOOP clusters
+        # Compute LOOP clusters with representatives.
+        G.LOOP = {}
+        loops = []
+        for ntml in G.nonterminals:
+            for loop in G.find_loops(ntml):
+                loops.append(loop)
+                for x in loop:
+                    if x not in G.LOOP:
+                        G.LOOP[x] = ntml
+
+        if loops:
+            msg = '\n'.join([
+                '',
+                '==================================================',
+                repr(G),
+                ' contains loops ',
+                pp.pformat(loops),
+                '==================================================',
+                '',
+            ])
+            warnings.warn(msg)
+
+    def find_loops(G, ntml):
+        """LOOP is the case that for some terminal S there is
+
+        S => ... => S
+
+        (not including partial LOOP like S => ... => S a)
+
+        - Along the path the rule must be ALL nonterminals;
+
+        - If S => .. => A and some non-singleton rule exits like
+          (A=BCD), then LOOP may exits only when all except one of
+          {B, C, D} are nullable.
+
+        - Thus LOOP can be found by testing reachability through
+          singleton-derivations.
+
+        """
+
+        paths = [[ntml]]
+        while paths:
+            path = paths.pop()
+            X = path[-1]
+            # Whole cycle from start.
+            if X == path[0] and len(path) > 1:
+                # cluster.update(path)
+                yield path
+            # Parital cycle linking to middle.
+            elif X in path[:-1]:
+                # j = path.index(X)
+                # yield path[j:]
+                pass
+            # Still no cycle, try explore further.
+            else:
+                for nxt in G.DERIV1[X]:
+                    paths.append(path + [nxt])
 
     def _calc_pred_trees(G):
         G.FIRST = {}
@@ -627,28 +732,26 @@ class Grammar(object):
             pt = G.pred_tree(nt)
             G.FIRST[nt] = f = set()
             for nd in pt:
-                if isinstance(nd, ExpdNode):
-                    f.add(EPSILON)
-                elif isinstance(nd, Node):
+                if isinstance(nd, Node):
                     act, x = nd.value
-                    if isinstance(x, str):
+                    if act is PREDICT:
                         assert x in G.terminals
                         f.add(x)
-                    elif isinstance(x, Rule):
-                        pass
+                    elif act is REDUCE:
+                        assert x in G.rules
+                        f.add(EPSILON)
                     else:
-                        raise ValueError('Not valid elem in toplist.')
+                        raise ValueError('Not valid action in toplist.')
                 else:
-                    raise ValueError('Not valid elem in toplist.')
+                    raise ValueError('Not valid node in toplist.')
 
     def first_of_seq(G, seq, tail=DUMMY):
-        """Find the FIRST set of a sequence of symbols. This relies
-        on the precompulated order-n nullables.
+        """Find the FIRST set of a sequence of symbols. This relies on the
+        precompulated indirect nullables.
 
         :seq:   A list of strings
 
         """
-        # FIXME: This relies on higher-order NULLABLE!
         assert not isinstance(seq, str)
         fs = set()
         for X in seq:
@@ -762,44 +865,6 @@ class Grammar(object):
                 yield Token(at, ERROR, inp[at])
         if with_end:
             yield Token(pos, END, END_PATTERN_DEFAULT)
-
-    def find_loop(G, ntml):
-        """LOOP is the case that for some terminal S there is
-
-        S => ... => S
-
-        (not including partial LOOP like S => ... => S a)
-
-        Some properties:
-
-        - Along the path the rule must be ALL nonterminals;
-
-        - If S => .. => A and some non-singleton rule exits (A = B C D),
-          there LOOP may exits only when all except one of {B, C, D} are
-          nullable.
-        
-        - Thus LOOP can be found by testing reachability through
-          single-derivations.
-
-        """
-
-        paths = [[ntml]]
-        while paths:
-            path = paths.pop()
-            act = path[-1]
-            # Whole cycle from start.
-            if act == path[0] and len(path) > 1:
-                # cluster.update(path)
-                yield path
-            # Parital cycle linking to middle.
-            elif act in path[:-1]:
-                # j = path.index(act)
-                # yield path[j:]
-                pass
-            # Still no cycle, try explore further.
-            else:
-                for nxt in G.DERIV1[act]:
-                    paths.append(path + [nxt])
 
 
 class assoclist(list):
@@ -1013,6 +1078,7 @@ class cfg(type):
     def v2(func):
         lst = cfg.extract_list(func)
         return cfg.read_from_raw_lists(lst)
+
 
 grammar = cfg.v2
 
@@ -1663,7 +1729,7 @@ class GLR(ParserBase):
 
             k += 1
 
-    def parse_many(self, inp, interp=False):
+    def parse_many_dfs(self, inp, interp=False):
 
         """Note during the algorithm, When forking the stack, there may be
         some issues:
@@ -1700,7 +1766,7 @@ class GLR(ParserBase):
         tokens = list(G.tokenize(inp, False))
         # `forest` is a list of descriptors, where each descriptor is
         # a tuple like:
-        # (<item-set-number>, list<subtree>, <input-pointer>)
+        # (stack<item-set-number>, list<subtree>, <input-pointer>)
         forest = [([0], [], 0)]
 
         while forest:
@@ -1779,9 +1845,59 @@ class GLR(ParserBase):
         else:
             return results
 
-    def parse_many_gss(self, inp, interp=False):
-        raise NotImplementedError
+    def parse_many(self, inp, interp=False):
 
+        G = self.grammar
+        GOTO = self.GOTO
+        ACTION = self.ACTION
+        agenda = [(Node(0, START), START)]
+
+        results = []
+
+        # BFS scheme with synchronization.
+        for k, tok in enumerate(G.tokenize(inp, True)):
+
+            agenda1 = []
+
+            while agenda:
+                # stk, trs = agenda.pop()
+                gss, trs = agenda.pop()
+                # Aliasing.
+                redus = ACTION[gss.value][REDUCE]
+                shfts = ACTION[gss.value][SHIFT]
+                # Reductions.
+                for ritm in redus:
+                    gss1, trs1 = gss, trs
+                    subs = deque()
+                    for _ in range(ritm.size):
+                        subs.appendleft(trs1.value)
+                        # Pop from GSS.
+                        gss1 = gss1.next
+                        trs1 = trs1.next
+                    if ritm.target == G.top_symbol:
+                        if tok.is_END():
+                            # yield subs[0]
+                            if interp:
+                                results.append(subs[0].translate())
+                            else:
+                                results.append(subs[0])
+                    else:
+                        tr = ParseTree(ritm.rule, list(subs))
+                        # Augment GSS.
+                        trs1 = Node(tr, trs1)
+                        gss1 = Node(GOTO[gss1.value][ritm.target], gss1)
+                        agenda.append((gss1, trs1))
+                # Predictions.
+                if not tok.is_END():
+                    if tok.symbol in shfts:
+                        trs = Node(tok, trs)
+                        gss = Node(GOTO[gss.value][tok.symbol], gss)
+                        agenda1.append((gss, trs))
+                #
+
+            agenda = agenda1
+
+        return results
 
 @meta
 class LALR(ParserDeterm):
@@ -2202,23 +2318,20 @@ class WLL1(ParserDeterm):
 
 @meta
 class GLL(ParserBase):
-    """Generalized LL(1) Parser.
-
-    Honestly, GLL(1) Parser is just the prototype of Earley Parser
-    with BFS nature but without integration of *Dynamic Programming*
-    techniques (thus unable to detect left-recursion). The
-    augmentation by memoizing recognition at certain postitions is
-    quite straightforward.
-
-    Since all LL(1) prediction conflicts in the table are traced by
-    forking parallel stacks during parsing, left-sharing problem gets
-    handled elegantly and correctly.
+    """GLL parser can handle left-recursion, left-sharing problem and
+    loops properly in grammar without nullability. However, *hidden
+    left recursion* must be handled with special caution and is yet
+    supported.
 
     """
 
     def __init__(self, grammar):
         super(GLL, self).__init__(grammar)
         self._calc_gll1_table()
+
+    def _find_hidden_left_rec(self):
+        G = self.grammar
+
 
     def _calc_gll1_table(self):
         G = self.grammar
@@ -2234,97 +2347,143 @@ class GLL(ParserBase):
             else:
                 table[lhs][EPSILON].append(rule)
 
-    def parse_many(self, inp, interp=False):
-        """
-        """
-        # Tracing parallel stacks, where signal (α>A) means reducing
-        # production A with sufficient amount of arguments on the
-        # argument stack.
-        # | aβd#               :: {inp-stk}
-        # | (#      ,      S#) :: ({arg-stk}, {pred-stk})
-        # ==(S -> aBc), (S -> aD)==>>
-        # | aβd#
-        # | (#      ,    aBd(aBd>S)#)
-        #   (#      ,    aDe(aD>S)#)
-        # ==a==>>
-        # | βd#
-        # | (#a     ,     Bd(aBd>S)#)
-        #   (#a     ,     De(aD>S)#)
-        # ==prediction (B -> b h)
-        #   prediction (D -> b m), push predicted elements into states ==>>
-        # | βd#
-        # | (#a     ,bh(bh>B)d(aBd>S)#)
-        #   (#a     ,bm(bm>D)De(aD>S)#)
-        # ==b==>
-        # | βd#
-        # | (#ab    ,h(bh>B)d(aBd>S)#)
-        #   (#ab    ,m(bm>D)De(aD>S)#)
-        # ==h==>
-        # | βd#
-        # | (#abh   ,(bh>B)d(aBd>S)#)
-        #   (#ab    ,{FAIL} m(bm>D)De(aD>S)#)
-        # ==(reduce B -> β), push result into args ==>>
-        # | βd#
-        # | (#aB    ,d(aBd>S)#)
-        # and further.
-        # """
+    def recognize(self, inp, interp=False):
+        """Discover a recursive automaton on-the-fly.
 
-        push, pop = list.append, list.pop
-        table = self.table
+        - Transplant a prediction tree whenever needed.
+
+        - Tracing all states, especially forked states induced by
+          expanded nodes.
+
+        """
+
         G = self.grammar
-        #
-        agenda = [([], [(PREDICT, G.top_symbol)])]
-        results = []
-        #
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
-            at, look, lexeme = tok
-            # AGMENTATION AGENDA should be used!
-            agenda1 = []
-            while agenda:
-                (astk, pstk) = agenda.pop(0)
-                if not pstk and len(astk) == 1: # and tok.symbol == END:
-                    # Deliver partial result?
-                    if tok.is_END():
-                        results.append(astk[0])
-                else:
-                    act, actor = pstk.pop(0)
-                    # Prediction
-                    if act is PREDICT:
-                        if actor in G.nonterminals:
-                            if look in table[actor]:
-                                for rule in table[actor][look]:
-                                    nps = [(PREDICT, x) for x in rule.rhs] + [(REDUCE, rule)]
-                                    agenda.append((astk[:], nps + pstk))
-                            # NULLABLE
-                            if EPSILON in table[actor]:
-                                erule = table[actor][EPSILON][0]
-                                arg = ParseTree(erule, [])
-                                agenda.append((astk + [arg], pstk[:]))
-                        else:
-                            assert isinstance(actor, str)
-                            if look == actor:
-                                astk.append(tok)
-                                agenda1.append((astk, pstk))
-                            else:
-                                # # May report dead state here for inspection
-                                # print('Expecting \'{}\', but got {}: \n{}\n'.format(
-                                #     actor,
-                                #     tok,
-                                #     pp.pformat((astk, pstk))))
-                                # # BUT this can be quite many!!
-                                pass
-                    # Completion
-                    else:
-                        assert isinstance(actor, Rule)
-                        subs = []
-                        for _ in actor.rhs:
-                            subs.insert(0, astk.pop())
-                        astk.append(ParseTree(actor, subs))
-                        agenda.append((astk, pstk))
-            if agenda1:
-                agenda = agenda1
 
-        if interp:
-            return [res.translate() for res in results]
-        else:
-            return results
+        toks = []
+
+        toplst = G.pred_tree(G.top_symbol, BOTTOM)
+        stklst = [[] for _ in toplst]
+
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+
+            toks.append(tok)
+            toplst1 = []
+
+            # Transitive closure on :toplst:
+            z = 0
+            while z < len(toplst):
+                n = (act, x), nxt = toplst[z]
+                if act is PREDICT:
+                    # Expand
+                    if x in G.nonterminals:
+                        # Transplant new prediction tree onto
+                        # current nonterminal node.
+                        for m in G.pred_tree(x, nxt):
+                            toplst.append(m)
+                    # Match
+                    else:
+                        if x == tok.symbol:
+                            toplst1.append(nxt)
+                elif act is REDUCE:
+                    # Skipping nullable reduction.
+                    assert isinstance(nxt, ExpdNode)
+                    if nxt.value == G.top_symbol:
+                        if tok.is_END():
+                            print('Full recognition on: \n{}'.format(pp.pformat(toks[:k])))
+                        else:
+                            print('Partial recognition on: \n{}.'.format(pp.pformat(toks[:k])))
+                    for nnxt in nxt.forks:
+                        if nnxt is not BOTTOM:
+                            # Check whether `nnxt` is already in the
+                            # top list to avoid repeatedly appending
+                            # existing nodes.
+                            # But direct comparison between nodes may
+                            # lead to nontermination.
+                            if id(nnxt) not in (id(m) for m in toplst):
+                                toplst.append(nnxt)
+                else:
+                    raise
+
+                z += 1
+
+            toplst = toplst1
+
+    def parse_many(self, inp, interp=False):
+        """Discover a recursive automaton on-the-fly.
+
+        - Transplant a prediction tree whenever needed.
+
+        - Tracing all states, especially forked states induced by
+          expanded nodes.
+
+        """
+        global START, PREDICT, REDUCE, ACCEPT
+
+        G = self.grammar
+
+        stk_btm = START
+        # `bottom` comes after the reduction of top-symbol
+        bottom = ExpdNode(ACCEPT, [])
+
+        # GSS push
+        push = Node
+
+        # (<active-node>, <cumulative-stack>)
+        toplst = [(n, stk_btm)
+                  for n in G.pred_tree(G.top_symbol, bottom)]
+        results = []
+
+        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+
+            toplst1 = []
+            # Start from current node in top list and search the
+            # active token.
+
+            # Memoization to avoid cycles!
+            # FIXME:
+            # - explored should be prepared for each path! NOT shared!
+            srchs = [(n, {}, stk) for n, stk in toplst]
+
+            while srchs:
+                n, expdd, stk = srchs.pop()
+                if n is bottom:
+                    # print(stk.to_list()[::-1])
+                    if tok.is_END():
+                        results.append(stk.to_list()[::-1])
+                else:
+                    (act, arg), nxt = n
+                    if act is PREDICT:
+                        X = arg
+                        if X in G.terminals:
+                            if X == tok.symbol:
+                                # toplst1.append((nxt, stk + [tok.value]))
+                                toplst1.append((nxt, push(tok.value, stk)))
+                        else:
+                            #
+                            if X in expdd:
+                                expdd[X].forks.append(nxt)
+                            # Plant tree.
+                            # FIXME: infinite planting?
+                            else:
+                                for m in G.pred_tree(X, nxt):
+                                    # srchs.append((m, stk))
+                                    # Prediction information not directly available.
+                                    # FIXME: may store this in prediction trees.
+                                    srchs.append((m, expdd, stk))
+                    else:
+                        rl = arg
+                        assert isinstance(nxt, ExpdNode), nxt
+                        m, fks = nxt
+                        # FIXME:
+                        # if m not in expdd:
+                        if 1:
+                            # expdd[m] = nxt
+                            for fk in fks:
+                                # srchs.append((fk, stk + [x, nxt.value]))
+                                # Mind the push order!
+                                # - ExpdNode redundant in stack, thus not pushed.
+                                srchs.append((fk, {**expdd, m: nxt}, push(rl, stk)))
+
+            toplst = toplst1
+
+        return results

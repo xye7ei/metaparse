@@ -1,3 +1,5 @@
+import preamble
+
 from metaparse import cfg, LALR
 
 # Global stuff

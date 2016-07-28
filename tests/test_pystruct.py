@@ -47,10 +47,10 @@ PyStructReader = LALR(G_PyStruct)
 target = PyStructReader.interpret
 
 ePyStructReader = Earley(G_PyStruct)
-target = lambda inp: ePyStructReader.interpret_many(inp)[0]
+target1 = lambda inp: ePyStructReader.interpret_many(inp)[0]
 
 gPyStructReader = GLR(G_PyStruct)
-target = lambda inp: gPyStructReader.interpret_many(inp)[0]
+target2 = lambda inp: gPyStructReader.interpret_many(inp)[0]
 
 class TestPyStructParser(unittest.TestCase):
 

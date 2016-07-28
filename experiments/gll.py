@@ -1,15 +1,17 @@
-# import preamble
+import preamble
 
 from metaparse import *
 
 from collections import namedtuple
+from pprint import pprint
 
 
 @meta
-class GLL(ParserBase):
+class WGLL(ParserBase):
+    """Table driven GLL without left-recursion support."""
 
     def __init__(self, grammar):
-        super(GLL, self).__init__(grammar)
+        super(WGLL, self).__init__(grammar)
         self._calc_gll1_table()
 
     def _calc_gll1_table(self):
@@ -26,147 +28,84 @@ class GLL(ParserBase):
             else:
                 table[lhs][EPSILON].append(rule)
 
-    def recognize(self, inp, interp=False):
-        """Discover a recursive automaton on-the-fly.
-
-        - Transplant a prediction tree whenever needed.
-
-        - Tracing all states, especially forked states induced by
-          expanded nodes.
-
-        """
-
+    def parse_many(self, inp):
         G = self.grammar
+        table = self.table
+        agenda = [(Node((PREDICT, G.top_symbol), None), None)]
 
-        toks = []
-
-        bottom = ACCEPT
-        toplst = G.pred_tree(G.top_symbol, bottom)
-        stklst = [[] for _ in toplst]
-
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
-        # for k, tok in enumerate(G.tokenize(inp, with_end=False)):
-
-            toks.append(tok)
-            toplst1 = []
-            # stklst1 = []
-
-            # Transitive closure on :toplst:
-            z = 0
-            while z < len(toplst):
-                n = (act, x), nxt = toplst[z]
-                # stk = stklst[z]
-                if act is PREDICT:
-                    if x in G.nonterminals:
-                        # Transplant new prediction tree onto
-                        # current nonterminal node.
-                        sub_pred = G.pred_tree(x, nxt)
-                        for m in sub_pred:
-                            toplst.append(m)
-                            # stklst.append(stk[:])
-                    else:
-                        if x == tok.symbol:
-                            toplst1.append(nxt)
-                            # stklst1.append(stk + [tok.value])
-                elif act is REDUCE:
-                    assert isinstance(nxt, ExpdNode)
-                    if nxt.value == G.top_symbol:
-                        if tok.is_END():
-                            print('Full recognition on: \n{}'.format(pp.pformat(toks[:k])))
-                            # return [stk for stk in stklst if stk[-1] == G.top_symbol]
-                            # return True
-                        else:
-                            print('Partial recognition on: \n{}.'.format(pp.pformat(toks[:k])))
-                            pass
-                    # TODO
-                    for nnxt in nxt.forks:
-                        if nnxt is not bottom and nnxt not in toplst:
-                            toplst.append(nnxt)
-                            # stklst.append(stklst[z] + [':%s' % act.value])
-                else:
-                    raise
-
-                z += 1
-
-            toplst = toplst1
-            # if tok.is_END():
-            #     return stklst
-            # else:
-            #     stklst = stklst1
-
-    def parse_many(self, inp, interp=False):
-        """Discover a recursive automaton on-the-fly.
-
-        - Transplant a prediction tree whenever needed.
-
-        - Tracing all states, especially forked states induced by
-          expanded nodes.
-
-        """
-        global START, PREDICT, REDUCE, ACCEPT
-
-        G = self.grammar
-
-        stk_btm = START
-        bottom = ExpdNode((ACCEPT, G.top_symbol), [])
-
-        # GSS push
+        pop = lambda x: x
         push = Node
 
-        # (<active-node>, <cumulative-stack>)
-        toplst = [(n, stk_btm)
-                  for n in G.pred_tree(G.top_symbol, bottom)]
-        toplsts = []
+        for k, tok in enumerate(G.tokenize(inp, True)):
 
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+            agenda1 = []
 
-            toplst1 = []
-            # Start from current node in top list and search the
-            # active token.
-
-            # Memoization to avoid cycles!
-            # FIXME:
-            # - explored should be set for each path! NOT shared!
-            srchs = [(n, {}, stk) for n, stk in toplst]
-
-            while srchs:
-                n, expdd, stk = srchs.pop()
-                if n is bottom:
-                    print(stk.to_list()[::-1])
-                    # yield stk
-                else:
-                    (act, x), nxt = n
-                    if act is PREDICT:
-                        if x in G.terminals:
-                            if x == tok.symbol:
-                                # toplst1.append((nxt, stk + [tok.value]))
-                                toplst1.append((nxt, push(tok.value, stk)))
-                        else:
-                            #
-                            if x in expdd:
-                                expdd[x].forks.append(nxt)
-                            # Plant tree.
-                            # FIXME: infinite planting?
-                            else:
-                                for m in G.pred_tree(x, nxt):
-                                    # srchs.append((m, stk))
-                                    # Prediction information not directly available.
-                                    # FIXME: may store this in prediction trees.
-                                    srchs.append((m, expdd, stk))
+            while agenda:
+                sstk, tstk = agenda.pop()
+                # Pop from GSS.
+                (act, arg), sstk = pop(sstk)
+                if act is PREDICT:
+                    X = arg
+                    if X in G.nonterminals:
+                        if tok.symbol in table[X]:
+                            for rl in table[X][tok.symbol]:
+                                sstk1 = sstk
+                                sstk1 = push((REDUCE, rl), sstk1)
+                                for Y in reversed(rl.rhs):
+                                    sstk1 = push((PREDICT, Y), sstk1)
+                                agenda.append((sstk1, tstk))
+                        if EPSILON in table[X]:
+                            rl = table[X][EPSILON][0]
+                            sstk = push((REDUCE, rl), sstk)
+                            agenda.append((sstk, tstk))
                     else:
-                        assert isinstance(nxt, ExpdNode), nxt
-                        m, rst = nxt
-                        if m not in expdd:
-                            expdd[m] = nxt
-                            for fk in nxt.forks:
-                                # srchs.append((fk, stk + [x, nxt.value]))
-                                # Mind the push order!
-                                # - ExpdNode redundant in stack, thus not pushed.
-                                srchs.append((fk, expdd, push(x, stk)))
+                        if tok.symbol == X:
+                            agenda1.append((sstk, push(tok, tstk)))
+                else:
+                    rl = arg
+                    subs = deque()
+                    for _ in rl.rhs:
+                        sub, tstk = pop(tstk)
+                        subs.appendleft(sub)
+                    t = ParseTree(rl, subs)
+                    if rl.lhs is G.top_symbol:
+                        if tok.is_END():
+                            yield t
+                    else:
+                        agenda.append((sstk, push(t, tstk)))
 
-            toplst = toplst1
-            # toplsts.append(toplst1)
+            agenda = agenda1
 
-        # # Find traverse
-        # return toplsts[-1]
 
+@grammar
+def IF():
+    IF = 'if'
+    THEN = 'then'
+    ELSE = 'else'
+    EXPR = '\d+'
+    STMT = '\w+'
+    def stmt(STMT): pass
+    def stmt(IF, EXPR, THEN, stmt, ELSE, stmt_1): pass
+    def stmt(IF, EXPR, THEN, stmt): pass
+
+
+g = WGLL(IF)
+
+# pprint([*g.parse_many('if 1 then a')])
+# pprint([*g.parse_many('if 1 then a else b')])
+pprint([*g.parse_many('if 1 then if 2 then a else b')])
+
+
+@WGLL
+@grammar
+def sexp():
+    SYM = r'[^\[\]\(\)\{\}\s\t\v\n]+'
+    # L, R = '()'
+    L = r'\('
+    R = r'\)'
+    def sexp(SYM): pass
+    def sexp(L, slist, R): pass
+    def slist(): pass
+    def slist(sexp, slist): pass
+
+pprint([*sexp.parse_many('(a (b))')])

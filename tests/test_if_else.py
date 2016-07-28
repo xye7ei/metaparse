@@ -122,8 +122,8 @@ if __name__ == '__main__':
 
 # assert 0
 
-# timeit [*g.parse_many_gss('if e then if e then if e then s else s else s')]
+# timeit [*g.parse_many('if e then if e then if e then s else s else s')]
 # 1.11 ms per loop
 
-# timeit [*g.parse_many('if e then if e then if e then s else s else s')]
+# timeit [*g.parse_many_dfs('if e then if e then if e then s else s else s')]
 # ~900 us per loop

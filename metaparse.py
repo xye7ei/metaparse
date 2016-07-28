@@ -156,11 +156,11 @@ class Signal(object):
 DUMMY   = Symbol('\0')
 EPSILON = Symbol('EPSILON')
 
-START   = Signal('START', '^')
-PREDICT = Signal('PREDICT', '?')
-SHIFT   = Signal('SHIFT', '<')
-REDUCE  = Signal('REDUCE', '!')
-ACCEPT  = Signal('ACCEPT', '$')
+START   = Signal('START', 'START')
+PREDICT = Signal('PREDICT', 'PRD')
+SHIFT   = Signal('SHIFT', 'SFT')
+REDUCE  = Signal('REDUCE', 'RDU')
+ACCEPT  = Signal('ACCEPT', 'ACC')
 
 
 class Token(object):
@@ -1040,17 +1040,15 @@ class cfg(type):
         for obj in t.body[0].body:
 
             if isinstance(obj, ast.Assign):
-                k = obj.targets[0].id
-                ov = obj.value
-                # :ast.literal_eval: evaluates an node instantly!
-                try:
-                    v = ast.literal_eval(ov)
-                    lst.append((k, v))
-                    # Some context values may be used for defining
-                    # following functions.
-                    lcl_ctx[k] = v
-                except ValueError:
-                    pass
+                if type(obj.value) in [ast.Str, ast.Tuple]:
+                    # Temporary context.
+                    ctx1 = OrderedDict()
+                    md = ast.Module([obj])
+                    co = compile(md, '<ast>', 'exec')
+                    # Execute the assignments with given context!
+                    exec(co, glb_ctx, ctx1)
+                    for kv in ctx1.items():
+                        lst.append(kv)
 
             elif isinstance(obj, ast.FunctionDef):
                 name = obj.name
@@ -1059,8 +1057,8 @@ class cfg(type):
                 # :ast.Module: is the unit of program codes.
                 # FIXME: Is :md: necessary??
                 md = ast.Module(body=[obj])
-                # Compile a module-ast with '<ast>' mode targeting
-                # :exec:.
+                # Compile a module into ast with '<ast>' mode
+                # targeting 'exec'.
                 code = compile(md, '<ast>', 'exec')
                 # Register function into local context, within the
                 # circumference of global context.
@@ -1069,7 +1067,7 @@ class cfg(type):
                 lst.append((name, func))
 
             else:
-                # Ignore structures other than :Assign: and :FuncionDef:
+                # Ignore structures other than `Assign` and `FuncionDef`
                 pass
 
         return lst
@@ -1298,31 +1296,23 @@ class ParserDeterm(ParserBase):
 @meta
 class Earley(ParserBase):
 
-    """Earley parser is able to parse ANY Context-Free Language properly
-    using the technique of dynamic programming. It performs
+    """Earley parser is able to recognize ANY Context-Free Language
+    properly using the technique of dynamic programming. It performs
     non-deterministic parsing since all parse results due to potential
     ambiguity of given grammar should be found.
 
-    The underlying parse forest is indeed a Tomita-style *Graph
-    Structured Stack*. But such structure cannot be directly traversed
-    for the conventional tree-based parsing semantics. In order to
-    prepare valid traverses, the result here is a list of parse trees
-    where some subtrees are replicatedly referenced by these trees.
-
-    However the parsing process is relatively slow due to the
-    on-the-fly computation of item set closures, as well as the
-    subtree stacks prepared for completing parse trees.
-
-    WARNING: In case with grammar having NULLABLE-LOOPs like:
+    WARNING: In this implementation, grammars having NULLABLE-LOOPs
+    like:
 
       A -> A B
       A ->
       B -> b
       B ->
 
-    where A => ... => A consuming no input tokens, the on-the-fly
-    computation of parse trees will not terminate. However,
-    recognition without building parse trees stays intact.
+    where A => ... => A consuming no input tokens, may suffer from
+    nontermination under on-the-fly computation of parse
+    trees. However, recognition without building parse trees stays
+    intact.
 
     """
 
@@ -1344,28 +1334,9 @@ class Earley(ParserBase):
             z_j = 0
             while z_j < len(C):
                 j, jtm = C[z_j]
-                # ISSUES by grammars having ε-Rules:
-                #
-                # - In grammar without nullable rules, each predicted
-                #   non-kernel item consumes no further nonterminal
-                #   symbols, which means each completion item has no
-                #   effect on generated prediction items and can be
-                #   processed only ONCE and merely SINGLE-PASS-CLOSURE
-                #   is needed;
-                #
-                # - BUT in grammar with nullable rules, each predicted
-                #   non-kernel item can consume arbitrarily many
-                #   further nonterminals which leads to its
-                #   completion, meaning prediction may result in new
-                #   completion items, leading to repeated processing
-                #   of the identical completion item. Thus
-                #   LOOP-closure is needed. But this can be avoided
-                #   with an enhanced predictor which can predict one
-                #   more symbol over a nullable actor.
-                #
                 if not jtm.ended():
-                    # Prediction/Completion no more needed when
-                    # recognizing END-Token
+                    # Prediction/Scanning is not needed when
+                    # recognizing END-Token.
                     if not tok.is_END():
                         # Prediction: find nonkernels
                         if jtm.actor in G.nonterminals:
@@ -1379,10 +1350,11 @@ class Earley(ParserBase):
                                     enew = (j, jtm.shifted)
                                     if enew not in C:
                                         C.append(enew)
-                        # Scanning/proceed for the next State
+                        # Scanning
                         elif jtm.actor == tok.symbol:
                             C1.append((j, jtm.shifted))
-                else: # jtm.ended() at k
+                # Completion
+                else:
                     for (i, itm) in S[j]:
                         if not itm.ended() and itm.actor == jtm.target:
                             new = (i, itm.shifted)
@@ -1407,35 +1379,23 @@ class Earley(ParserBase):
     def parse_chart(self, inp):
         """Perform general chart-parsing framework method with Earley's
         recognition algorithm. The result is a chart, which
-        semantically includes Graph Structured Stack i.e. all possible
-        parse trees.
-
-        Semantics of local variables:
-
-        :tokens:
-            Caching the input tokens;
-
-        :chart:
-            The graph recording all recognitions, where chart[j][k] is
-            a set containing all recognized parsings on input segment
-            from j'th to k'th tokens.
-
-        :agenda:
-            During the Earley parsing process, the agenda caches all
-            items that should be processed when consuming the k'th
-            input token.
+        semantically includes all possible parsing results.
 
         """
+
         G = self.grammar
-        # chart[i][j] registers active items from @i to @j
+
+        # `chart[i][j]` registers active items which are initialized
+        # @i and still alive @j.
         chart = self.chart = defaultdict(lambda: defaultdict(set))
+
         agenda = [(0, G.item(0, 0))]
 
         for k, tok in enumerate(G.tokenize(inp, True)):
             agenda1 = []
             while agenda:
                 j, jtm = agenda.pop()
-                # Directly register intermediate state item
+                # Directly register intermediate state item.
                 if jtm not in chart[j][k]:
                     chart[j][k].add(jtm)
                 if not jtm.ended():
@@ -1487,14 +1447,6 @@ class Earley(ParserBase):
 
         Since parse trees are computed on-the-fly, the result is a set
         of feasible parse trees.
-
-        CAUTION: Interpretation on-the-fly is NOT allowed! Since the
-        traversal execution order of sibling subtrees' semantic
-        behaviors should be preserved for their parent tree, whereas
-        during AGENDA completion the execution of some shared item's
-        behavior may be interleaving (rigor proof still absent). OTOS,
-        after all top trees have been constructed, the traverses by
-        each can deliver correct semantic results.
 
         """
         G = self.grammar
@@ -1633,15 +1585,21 @@ class Earley(ParserBase):
         return fin
 
 
+# TODO:
+# 
+# LR parsers can indeed corporate pre-order semantics. Each ItemSet
+# has prepared a set of prediction paths, while each GOTO action
+# confirms which path to go and triggers the corresponding semantics
+# (though at most ONE token gets consumed already).
+# 
 @meta
 class GLR(ParserBase):
 
     """GLR parser is a type of non-deterministic parsers which produces
-    parse forest rather than exactly one parse tree, like the Earley
-    parser. Similarly, The traversal order of semantic behaviors of
-    subtrees under the same parent rule should be preserved until full
-    parse is generated. This means execution of semantic behavior
-    during parsing process is banned.
+    parse forest rather than exactly one parse tree. The traversal
+    order of semantic behaviors of subtrees under the same parent rule
+    should be preserved until full parse is generated. This means
+    execution of semantic behavior during parsing process is banned.
 
     Here the assumption of LR(0) grammar is assumed. Nontermination of
     reduction process may happen for Non-LR(0) grammars, e.g. for the
@@ -1731,8 +1689,8 @@ class GLR(ParserBase):
 
     def parse_many_dfs(self, inp, interp=False):
 
-        """Note during the algorithm, When forking the stack, there may be
-        some issues:
+        """This function applies DFS scheme, which fetch the input ultimately
+        in order to find the first full-parse result. 
 
         - SHIFT consumes a token, while REDUCE consumes no.
 
@@ -1763,15 +1721,18 @@ class GLR(ParserBase):
         ACTION = self.ACTION
 
         results = []
+
+        # Fetch input totally.
         tokens = list(G.tokenize(inp, False))
+
         # `forest` is a list of descriptors, where each descriptor is
         # a tuple like:
-        # (stack<item-set-number>, list<subtree>, <input-pointer>)
+        # (stack<item-set-index>, list<subtree>, <input-token-index>)
         forest = [([0], [], 0)]
 
         while forest:
 
-            # DFS/BFS depends on the pop direction
+            # DFS depends on the pop direction
             stk, trs, i = forest.pop()
 
             # State on the stack top
@@ -1779,9 +1740,9 @@ class GLR(ParserBase):
             reds = ACTION[st][REDUCE]
             shif = ACTION[st][SHIFT]
 
-            # REDUCE
-            # There may be multiple reduction options. Each option leads
-            # to ONE NEW FORK of the parsing thread.
+            # REDUCE: There may be multiple reduction options. Each
+            # option leads to a new fork of the parsing thread,
+            # represented as a descriptor.
             for ritm in reds:
                 # Forking, copying State-Stack and trs
                 # Index of input remains unchanged.
@@ -1795,19 +1756,17 @@ class GLR(ParserBase):
 
                 # Deliver/Transit after reduction
                 if ritm.target == G.top_rule.lhs:
-                    # Discard partial top-tree, which can be legally
-                    # completed while i < len(tokens)
+                    # Full parse is reported, while partial parse is
+                    # discarded.
                     if i == len(tokens):
-                        # Not delivering augmented top tree
                         results.append(subs[0])
                 else:
-                    trs1.append(ParseTree(ritm.rule, subs))
                     frk.append(GOTO[frk[-1]][ritm.target])
+                    trs1.append(ParseTree(ritm.rule, subs))
                     forest.append([frk, trs1, i]) # index i stays
 
-            # SHIFT
-            # There can be only 1 option for shifting given a symbol due
-            # to the nature of LR automaton.
+            # SHIFT: There can be only 1 option of shifting according
+            # to the LR automaton handling active token.
             if i < len(tokens):
                 tok = tokens[i]
                 if tok.symbol in shif:
@@ -1846,10 +1805,17 @@ class GLR(ParserBase):
             return results
 
     def parse_many(self, inp, interp=False):
+        """Parse input with BFS scheme, where active forks all get reduced to
+        synchronized states, so as to accept the active input token.
+
+        """
 
         G = self.grammar
         GOTO = self.GOTO
         ACTION = self.ACTION
+        
+        # Agenda is a list of tuples. Each tuple is two parallel
+        # GSS's, (gss-stack<state>, gss-stack<subtree>).
         agenda = [(Node(0, START), START)]
 
         results = []
@@ -1860,51 +1826,58 @@ class GLR(ParserBase):
             agenda1 = []
 
             while agenda:
-                # stk, trs = agenda.pop()
-                gss, trs = agenda.pop()
-                # Aliasing.
-                redus = ACTION[gss.value][REDUCE]
-                shfts = ACTION[gss.value][SHIFT]
-                # Reductions.
+
+                ss, ts = agenda.pop()
+                redus = ACTION[ss.value][REDUCE]
+                shfts = ACTION[ss.value][SHIFT]
+                # REDUCE: Note the (ended) items triggering reduction
+                # action 
                 for ritm in redus:
-                    gss1, trs1 = gss, trs
+                    ss1, ts1 = ss, ts
                     subs = deque()
                     for _ in range(ritm.size):
-                        subs.appendleft(trs1.value)
-                        # Pop from GSS.
-                        gss1 = gss1.next
-                        trs1 = trs1.next
+                        # Register the peeked element into subtrees.
+                        subs.appendleft(ts1.value)
+                        # 'Pop' from GSS.
+                        ss1 = ss1.next
+                        ts1 = ts1.next
                     if ritm.target == G.top_symbol:
                         if tok.is_END():
-                            # yield subs[0]
-                            if interp:
-                                results.append(subs[0].translate())
-                            else:
-                                results.append(subs[0])
+                            # NOTE: Translation on-the-fly should not
+                            # be supported due to possibly impure
+                            # semantics.
+                            results.append(subs[0])
                     else:
-                        tr = ParseTree(ritm.rule, list(subs))
-                        # Augment GSS.
-                        trs1 = Node(tr, trs1)
-                        gss1 = Node(GOTO[gss1.value][ritm.target], gss1)
-                        agenda.append((gss1, trs1))
+                        tr = ParseTree(ritm.rule, subs)
+                        # 'Push/Augment' GSS.
+                        ss1 = Node(GOTO[ss1.value][ritm.target], ss1)
+                        ts1 = Node(tr, ts1)
+                        agenda.append((ss1, ts1))
                 # Predictions.
                 if not tok.is_END():
                     if tok.symbol in shfts:
-                        trs = Node(tok, trs)
-                        gss = Node(GOTO[gss.value][tok.symbol], gss)
-                        agenda1.append((gss, trs))
-                #
+                        ss = Node(GOTO[ss.value][tok.symbol], ss)
+                        ts = Node(tok, ts)
+                        agenda1.append((ss, ts))
 
-            agenda = agenda1
+            if not tok.is_END() and not agenda1:
+                raise ParserError('No parse.')
+            else:
+                agenda = agenda1
 
-        return results
+        if interp:
+            return [t.translate() for t in results]
+        else:
+            return results
+
 
 @meta
 class LALR(ParserDeterm):
 
-    """Lookahead Leftmost-reading Rightmost-derivation (LALR) parser may
-    be the most widely used parser type. It is a parser generator which
-    pre-computes automaton before any parsing work is executed.
+    """Look-Ahead Leftmost-reading Rightmost-derivation (LALR) parser may
+    be the most widely used parser variant. It has almost the same
+    automaton like GLR, with potential ambiguity eliminated by raising
+    SHIFT/REDUCE and REDUCE/REDUCE conflicts.
 
     Due to its deterministic nature and table-driven process does it
     have linear-time performance.
@@ -1941,7 +1914,7 @@ class LALR(ParserDeterm):
                     if jtm not in igoto[X]:
                         igoto[X].append(jtm)
 
-            # Register local :igoto: into global goto.
+            # Register `igoto` into global goto.
             GOTO.append({})
             for X, J in igoto.items():
                 # The Item-Sets should be treated as UNORDERED! So
@@ -2039,25 +2012,25 @@ class LALR(ParserDeterm):
                 for lk in lks:
                     for ctm, lk1 in G.closure1_with_lookahead(itm, lk):
                         # Try make a REDUCE action for ended item
-                        # with lookahead :lk1:
+                        # with lookahead `lk1`
                         if ctm.ended():
                             new_redu = (REDUCE, ctm)
                             if lk1 in ACTION[i]:
                                 # If there is already an action on
-                                # :lk1:, test wether conflicts may
+                                # `lk1`, test wether conflicts may
                                 # raise for it.
                                 act, arg = ACTION[i][lk1]
                                 # if the action is REDUCE
                                 if act is REDUCE:
-                                    # which reduces a different item :arg:
+                                    # which reduces a different item `arg`
                                     if arg != ctm:
                                         # then REDUCE/REDUCE conflict is raised.
                                         conflicts.append((i, lk1, (act, arg), new_redu))
                                         continue
                                 # If the action is SHIFT
                                 else:
-                                    # :ctm: is the item prepared for
-                                    # shifting on :lk:
+                                    # `ctm` is the item prepared for
+                                    # shifting on `lk`
                                     #
                                     # if the left operator
                                     # ctm.rule.rhs[-2] has
@@ -2068,7 +2041,7 @@ class LALR(ParserDeterm):
                                         if ctm.size > 1 and ctm.rule.rhs[-2] in G.OP_PRE:
                                             op_lft = ctm.rule.rhs[-2]
                                             op_rgt = lk1
-                                            # Trivially, maybe :op_lft: == :op_rgt:
+                                            # Trivially, maybe `op_lft` == `op_rgt`
                                             if G.OP_PRE[op_lft] >= G.OP_PRE[op_rgt]:
                                                 # Left wins.
                                                 ACTION[i][lk1] = new_redu
@@ -2076,16 +2049,16 @@ class LALR(ParserDeterm):
                                             else:
                                                 # Right wins.
                                                 continue
-                                    # SHIFT/REDUCE conflict raised
+                                    # SHIFT/REDUCE conflict raised.
                                     conflicts.append((i, lk1, (act, arg), (REDUCE, ctm)))
-                            # If there is still no action on :lk1:
+                            # If there is still no action on `lk1`.
                             else:
                                 ACTION[i][lk1] = (REDUCE, ctm)
                 # Accept-Item
                 if itm.index_pair == (0, 1):
                     ACTION[i][END] = (ACCEPT, None)
 
-        # Report LALR-conflicts, if any
+        # Report LALR-conflicts, if any.
         if conflicts:
             msg = "\n============================"
             for i, lk, act0, act1 in conflicts:
@@ -2093,10 +2066,9 @@ class LALR(ParserDeterm):
                     '',
                     '! LALR-Conflict raised:',
                     '  * in state [{}]: '.format(i),
-                    '{}'.format(pp.pformat(Ks[i])),
+                    pp.pformat(Ks[i]),
                     "  * on lookahead {}: ".format(repr(lk)),
-                    "{}".format({lk: [act0, act1]}),
-                    # "{{{}: {}}}".format(repr(lk), act1),
+                    pp.pformat({lk: [act0, act1]}),
                     '',
                 ])
             msg += "============================"
@@ -2149,7 +2121,7 @@ class LALR(ParserDeterm):
                     warns.append(msg)
                     if len(warns) == n_warns:
                         raise ParserError(
-                            'Threshold of warning tolerance {} reached. Parsing exited.'.format(n_warns))
+                            'Warning tolerance {} reached. Parsing exited.'.format(n_warns))
                     else:
                         tok = next(toker)
 
@@ -2201,7 +2173,7 @@ class LALR(ParserDeterm):
 class WLL1(ParserDeterm):
     """Weak-LL(1)-Parser.
 
-    Since strong-LL(1) grammar parser includes the usage of FOLLOW
+    Since 'strong'-LL(1) grammar parser includes the usage of FOLLOW
     set, which is only heuristically helpful for the recognitive
     capability when handling NULLABLE rules, this parser suppress the
     need of FOLLOW.
@@ -2214,7 +2186,7 @@ class WLL1(ParserDeterm):
 
     This variation allows predicting (A -> ε) even when lookahead a is
     not in FOLLOW, which means this parser will postpone the
-    recognition error in compared with strong-LL(1) parser.
+    recognition error compared to strong-LL(1) parser.
 
     """
 
@@ -2318,10 +2290,10 @@ class WLL1(ParserDeterm):
 
 @meta
 class GLL(ParserBase):
-    """GLL parser can handle left-recursion, left-sharing problem and
-    loops properly in grammar without nullability. However, *hidden
-    left recursion* must be handled with special caution and is yet
-    supported.
+    """This implemenation of GLL parser can handle left-recursion,
+    left-sharing problem and loops properly. However, *hidden left
+    recursion* must be handled with special caution and is currently
+    not supported.
 
     """
 
@@ -2331,7 +2303,7 @@ class GLL(ParserBase):
 
     def _find_hidden_left_rec(self):
         G = self.grammar
-
+        raise NotImplementedError()
 
     def _calc_gll1_table(self):
         G = self.grammar

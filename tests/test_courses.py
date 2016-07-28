@@ -1,27 +1,27 @@
 import preamble
 
-from metaparse import LALR
+from metaparse import cfg, LALR
 
 
 def fappend(l, x):
     l.append(x)
     return l
 
-class Gcourses(metaclass=LALR.meta):
+class G_Courses(metaclass=cfg):
 
     """
     Grammar to assign multiple numbers to precedend course name.
     Examples:
 
-"CS 2110"                        => ("CS", 2110) # 0
+    "CS 2110"                        => ("CS", 2110) # 0
 
-"CS 2110 and INFO 3300"          => [("CS", 2110), ("INFO", 3300)] # 1
-"CS 2110, INFO 3300"             => [("CS", 2110), ("INFO", 3300)] # 1
-"CS 2110, 3300, 3140"            => [("CS", 2110), ("CS", 3300), ("CS", 3140)] # 1
+    "CS 2110 and INFO 3300"          => [("CS", 2110), ("INFO", 3300)] # 1
+    "CS 2110, INFO 3300"             => [("CS", 2110), ("INFO", 3300)] # 1
+    "CS 2110, 3300, 3140"            => [("CS", 2110), ("CS", 3300), ("CS", 3140)] # 1
 
-"CS 2110 or INFO 3300"           => [[("CS", 2110)], [("INFO", 3300)]] # 2
+    "CS 2110 or INFO 3300"           => [[("CS", 2110)], [("INFO", 3300)]] # 2
 
-"MATH 2210, 2230, 2310, or 2940" => [[("MATH", 2210), ("MATH", 2230), ("MATH", 2310)], [("MATH", 2940)]] # 3
+    "MATH 2210, 2230, 2310, or 2940" => [[("MATH", 2210), ("MATH", 2230), ("MATH", 2310)], [("MATH", 2940)]] # 3
 
     """
 
@@ -61,7 +61,7 @@ class Gcourses(metaclass=LALR.meta):
 
 import pprint as pp
 
-gcrs = Gcourses
+gcrs = LALR(G_Courses)
 
 assert gcrs.interpret('CS 2110') == \
     [('CS', '2110')]
@@ -76,12 +76,12 @@ assert gcrs.interpret('CS 2110 or INFO 3300') == \
 
 # Compare forms with same semantics...
 inp = "MATH 2210, 2230, 2310 or 2940"
-s1 =  Gcourses.parse(inp)
-v1 =  Gcourses.interpret(inp)
+s1 =  gcrs.parse(inp)
+v1 =  gcrs.interpret(inp)
 
 inp = "MATH 2210, 2230, 2310, or 2940"
-s2 = Gcourses.parse(inp)
-v2 =  Gcourses.interpret(inp)
+s2 = gcrs.parse(inp)
+v2 =  gcrs.interpret(inp)
 
 assert s1 == s2
 assert v1 == v2

@@ -5,6 +5,8 @@ from metaparse import *
 
 class GArith(metaclass=cfg):
 
+    'Textbook grammar for simple arithmetics.'
+
     # E -> E + T
     # E -> T
     # T -> T * F
@@ -40,11 +42,12 @@ class GArith(metaclass=cfg):
         return int(number)
 
 
-ari_earl = Earley(GArith)
+ari_ear = Earley(GArith)
 ari_lalr = LALR(GArith)
 # Naive GLL still cannot handle left-recursion
 # ari_gll = GLR(GArith)
 ari_glr = GLR(GArith)
+ari_gll = GLL(GArith)
 
 
 class TestArithParser(unittest.TestCase):
@@ -54,7 +57,7 @@ class TestArithParser(unittest.TestCase):
 
     def test_single(self):
         inp = '0'
-        ps1 = ari_earl.interpret_many(inp)
+        ps1 = ari_ear.interpret_many(inp)
         ps2 = ari_lalr.interpret_many(inp)
         ps3 = ari_glr.interpret_many(inp)
         self.assertEqual(ps1, ps2)
@@ -62,7 +65,7 @@ class TestArithParser(unittest.TestCase):
 
     def test_normal(self):
         inp = '3 + 2 * (5 + 11) * 2 + 3'
-        ps1 = ari_earl.interpret_many(inp)
+        ps1 = ari_ear.interpret_many(inp)
         ps2 = ari_lalr.interpret_many(inp)
         ps3 = ari_glr.interpret_many(inp)
         self.assertEqual(ps1, ps2)
@@ -71,7 +74,7 @@ class TestArithParser(unittest.TestCase):
     def test_tough(self):
         inp = '3 + 2 * (5 + 11)'
         tough_inp = ' + '.join(inp for _ in range(100))
-        ps1 = ari_earl.interpret_many(tough_inp)
+        ps1 = ari_ear.interpret_many(tough_inp)
         ps2 = ari_lalr.interpret_many(tough_inp)
         ps3 = ari_glr.interpret_many(tough_inp)
         self.assertEqual(ps1, ps2)
@@ -80,5 +83,5 @@ class TestArithParser(unittest.TestCase):
 
 if __name__ == '__main__':
 
-    unittest.main()
-    # pass
+    # unittest.main()
+    pass

@@ -366,10 +366,26 @@ BOTTOM = ExpdNode(ACCEPT, [])
 
 class Grammar(object):
 
-    def __init__(self, lexes, rules, attrs, prece=None):
-        """A grammar object containing lexical rules, syntactic rules and
-        associating semantics.
+    """A grammar object containing lexical rules, syntactic rules and
+    associating rule semantics.
 
+
+    Notes:
+
+    * Auto-augmentation: add a singleton top rule if not explicitly
+      given.
+
+    * Auto-check:
+
+        * Reference to undeclared symbols;
+        * Unused tokens;
+        * Unreachable rules;
+        * LOOPs;
+
+    """
+
+    def __init__(self, lexes, rules, attrs, prece=None):
+        """
         Parameters:
 
         :lexes:  : odict{str<terminal-name> : str<terminal-pattern>}
@@ -378,23 +394,11 @@ class Grammar(object):
         :rules:  : [Rule]
             A list of grammar rules.
 
-        :attrs:
-            A list of extra attributes/methods (may not be advised for usage)
+        :attrs:  : {}
+            A list of extra attributes/methods (may not be advised for usage).
 
-        :prece:
-            A dict of operator's precedence numbers
-
-        Notes:
-
-        * Checks whether there is a singleton TOP-rule and add such
-          one if not.
-
-        * Needs to check validity and completeness!!
-            * Undeclared tokens;
-            * Undeclared nonterminals;
-            * Unused tokens;
-            * Unreachable nonterminals/rules;
-            * FIXME: Cyclic rules; ???
+        :prece:  : {<token>: <int-precedence>}
+            A dict of operator's precedence numbers.
 
         """
 
@@ -921,6 +925,7 @@ class cfg(type):
 
         """
 
+        docstr = ''
         lexes = []
         lexpats = []
         rules = []
@@ -930,7 +935,9 @@ class cfg(type):
         for lst in lsts:
             for k, v in lst:
                 # Built-ins are of no use
-                if k.startswith('__') and k.endswith('__'):
+                if k == '__doc__':
+                    docstr = v
+                elif k.startswith('__') and k.endswith('__'):
                     continue
                 # Handle implicit rule declaration through methods.
                 elif callable(v):
@@ -982,7 +989,11 @@ class cfg(type):
             lexes.append(ERROR)
             lexpats.append(ERROR_PATTERN_DEFAULT)
 
-        return Grammar(OrderedDict(zip(lexes, lexpats)), rules, attrs, prece)
+        g = Grammar(OrderedDict(zip(lexes, lexpats)), rules, attrs, prece)
+        if docstr:
+            g.__doc__ = docstr
+
+        return g
 
     @classmethod
     def __prepare__(mcls, n, bs, **kw):
@@ -2103,17 +2114,17 @@ class LALR(ParserDeterm):
             while 1:
 
                 # Peek state
-                i = sstack[-1]
+                s = sstack[-1]
 
-                if tok.symbol not in ACTION[i]:
+                if tok.symbol not in ACTION[s]:
                     msg = '\n'.join([
                         '',
                         'WARNING: ',
                         'LALR - Ignoring syntax error reading Token {}'.format(tok),
-                        '- Current kernel derivation stack:\n{}'.format(
-                            pp.pformat([Ks[i] for i in sstack])),
-                        '- Expecting tokens and actions: \n{}'.format(
-                            pp.pformat(ACTION[i])),
+                        '- Current kernel derivation stack:',
+                        pp.pformat([Ks[i] for i in sstack]),
+                        '- Expecting tokens and actions:',
+                        pp.pformat(ACTION[s]),
                         '- But got: \n{}'.format(tok),
                         '',
                     ])
@@ -2126,7 +2137,7 @@ class LALR(ParserDeterm):
                         tok = next(toker)
 
                 else:
-                    act, arg = ACTION[i][tok.symbol]
+                    act, arg = ACTION[s][tok.symbol]
 
                     # SHIFT
                     if act == SHIFT:
@@ -2134,7 +2145,7 @@ class LALR(ParserDeterm):
                             trees.append(tok.value)
                         else:
                             trees.append(tok)
-                        sstack.append(GOTO[i][tok.symbol])
+                        sstack.append(GOTO[s][tok.symbol])
                         # Go on scanning
                         tok = next(toker)
 

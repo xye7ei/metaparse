@@ -162,17 +162,18 @@ class Token(object):
 
     """
 
-    def __init__(self, at, symbol, value):
+    def __init__(self, at, symbol, lexeme, value):
         self.at = at
         self.symbol = symbol
+        self.lexeme = lexeme
         self.value = value
 
     def __repr__(self):
         return '({}: {})@[{}:{}]'.format(
             self.symbol,
-            repr(self.value),
+            repr(self.lexeme),
             self.at,
-            self.at + len(self.value))
+            self.at + len(self.lexeme))
 
     def __eq__(self, other):
         return self.symbol == other.symbol
@@ -180,7 +181,8 @@ class Token(object):
     def __iter__(self):
         yield self.at
         yield self.symbol
-        yield self.value
+        yield self.lexeme
+        # yield self.value
 
     def is_END(self):
         return self.symbol == END
@@ -202,26 +204,24 @@ class Rule(object):
 
     The equality is needed mainly for detecting rule duplication
     during declaring grammar objects.
+    
+    Note: a rule is associated with some semantics. More advancedly,
+    pre-order semantics and post-order semantics may be prepared, with
+    the former executed when the rule is chosen by the parser
+    algorithm, whilst the latter executed when the rule is completed.
 
     """
 
-    def __init__(self, func):
-        self.lhs = func.__name__
-        rhs = []
-        # Signature only works in Python 3
-        # for x in inspect.signature(func).parameters:
-        for x in inspect.getargspec(func).args:
-            # Tail digital subscript like xxx_4
-            s = re.search(r'_(\d+)$', x)
-            # s = re.search(r'_?(\d+)$', x)
-            if s:
-                x = x[:s.start()]
-            rhs.append(x)
-        # Make it immutable.
-        self.rhs = tuple(rhs)
-        self.seman = func
+    # def __init__(self, func):
+    def __init__(self, lhs, rhs, seman, early_seman=None):
         # Make use of annotations?
         # self.anno = func.__annotations__
+        self.lhs = lhs
+        self.rhs = rhs
+        self.seman = seman
+        self.early_seman = early_seman
+        if early_seman:
+            assert len(rhs) > 1, "Earley semantics only makes sense with length > 1."
 
     def __eq__(self, other):
         """Equality of Rule object relies only upon LHS and RHS, not
@@ -243,11 +243,32 @@ class Rule(object):
         yield self.rhs
 
     @staticmethod
-    def raw(lhs, rhs, seman):
-        rl = Rule(seman)
-        rl.lhs = lhs
-        rl.rhs = list(rhs)
-        return rl
+    def read(func, early=None):
+        lhs = func.__name__
+        rhs = []
+        # Signature only works in Python 3
+        # for x in inspect.signature(func).parameters:
+        for x in inspect.getargspec(func).args:
+            # Tail digital subscript like xxx_4
+            s = re.search(r'_(\d+)$', x)
+            # s = re.search(r'_?(\d+)$', x)
+            if s:
+                x = x[:s.start()]
+            rhs.append(x)
+        # Make it immutable.
+        rhs = tuple(rhs)
+        return Rule(lhs, rhs, func, early)
+
+    def eval_early(self, arg1):
+        """Eval the early semantics when the rule gets chosen. It is assumed
+        one symbol is recognized for the choice, meaning it should be
+        the argument of early semantics.
+
+        """
+        if self.early_seman:
+            return self.early_seman(arg1)
+        else:
+            pass
 
     def eval(self, *args):
         return self.seman(*args)
@@ -381,7 +402,7 @@ class Grammar(object):
 
     """
 
-    def __init__(self, lexpats, rules, attrs, prece=None):
+    def __init__(self, lexpats, rules, prece=None, lexhdls=None):
         """
         Parameters:
 
@@ -391,9 +412,6 @@ class Grammar(object):
         :rules:  : [Rule]
             A list of grammar rules.
 
-        :attrs:  : {}
-            A list of extra attributes/methods (may not be advised for usage).
-
         :prece:  : {<token>: <int-precedence>}
             A dict of operator's precedence numbers.
 
@@ -401,6 +419,7 @@ class Grammar(object):
 
         # Operator precedence table may be useful.
         self.OP_PRE = dict(prece) if prece else {}
+        self.lex_handlers = dict(lexhdls) if lexhdls else {}
 
         # Cache terminals
         self.terminals = set()
@@ -455,7 +474,7 @@ class Grammar(object):
         fst_rl = rules[0]
         if len(fst_rl.rhs) != 1 or 1 < [rl.lhs for rl in rules].count(fst_rl.lhs):
             tp_lhs = "{}^".format(fst_rl.lhs)
-            tp_rl = Rule.raw(tp_lhs, (fst_rl.lhs, ), id_func)
+            tp_rl = Rule(tp_lhs, (fst_rl.lhs, ), id_func)
             self.nonterminals.insert(0, tp_lhs)
             rules = [tp_rl] + rules
 
@@ -861,15 +880,26 @@ class Grammar(object):
                 elif cat == ERROR:
                     # Call ERROR handler!
                     at, pos = m.span()
-                    yield Token(at, ERROR, m.group())
+                    lxm = m.group()
+                    if ERROR in G.lex_handlers:
+                        h = G.lex_handlers[ERROR]
+                        yield Token(at, ERROR, lxm, h(lxm))
+                    else:
+                        yield Token(at, ERROR, lxm, lxm)
                 else:
                     at, pos = m.span()
-                    yield Token(at, cat, m.group())
+                    lxm = m.group()
+                    if cat in G.lex_handlers:
+                        # Call normal token handler.
+                        h = G.lex_handlers[cat]
+                        yield Token(at, cat, lxm, h(lxm))
+                    else:
+                        yield Token(at, cat, lxm, lxm)
             else:
                 # Report unrecognized Token here!
                 raise GrammarError('No defined pattern for unrecognized symbol {}!'.format(inp[at]))
         if with_end:
-            yield Token(pos, END, END_PATTERN_DEFAULT)
+            yield Token(pos, END, END_PATTERN_DEFAULT, None)
 
 
 class assoclist(list):
@@ -929,6 +959,7 @@ class cfg(type):
         docstr = ''
         lexes = []
         lexpats = []
+        lexhdls = {}            # Handler for some specified lexical pattern.
         rules = []
         prece = {}
         attrs = []
@@ -944,12 +975,35 @@ class cfg(type):
                 elif k.startswith('__') and k.endswith('__'):
                     continue
 
-                # Handle implicit rule declaration through methods.
+                # Handle methods.
                 elif callable(v):
-                    r = Rule(v)
-                    if r in rules:
-                        raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
-                    rules.append(r)
+
+                    # For lexical pattern rule handlers
+
+                    # Scheme 1:
+                    # '''
+                    # def ID(lex: r'\w\w') -> 3:
+                    #     return lex
+                    # '''
+                    if v.__name__ in lexes:
+                        assert 'lex' in v.__annotations__, 'Must declare param `lex`.'
+                        lexhdls[v.__name__] = v
+                    elif hasattr(v, '__annotations__') and 'lex' in v.__annotations__:
+                        lx = v.__name__
+                        ann = v.__annotations__
+                        assert v.__code__.co_argcount == 1, 'Single argument handler required.'
+                        lexes.append(lx)
+                        lexpats.append(ann['lex'])
+                        lexhdls[lx] = v
+                        if 'return' in ann:
+                            prece[lx] = ann['return']
+
+                    # For rule declarations
+                    else:
+                        r = Rule.read(v)
+                        if r in rules:
+                            raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
+                        rules.append(r)
 
                 # Lexical declaration allows repeatition!!
                 # - String pattern without precedence
@@ -993,7 +1047,7 @@ class cfg(type):
             lexes.append(ERROR)
             lexpats.append(ERROR_PATTERN_DEFAULT)
 
-        g = Grammar(zip(lexes, lexpats), rules, attrs, prece)
+        g = Grammar(zip(lexes, lexpats), rules, prece, lexhdls)
         if docstr:
             g.__doc__ = docstr
 
@@ -1001,21 +1055,17 @@ class cfg(type):
 
     @classmethod
     def __prepare__(mcls, n, bs, **kw):
+        "Prepare a collector list."
         return assoclist()
 
     def __new__(mcls, n, bs, accu):
-        """After gathering definition of grammar elements, reorganization
-        and first checkings are done in this method, resulting in creating
-        a Grammar object.
-
-        """
+        """Read a grammar from the collector list `accu`. """
 
         return cfg.read_from_raw_lists(accu)
 
     @staticmethod
-    def extract_list(decl):
-
-        """Retrieve structural information of the function :decl: (i.e. the
+    def extract_list(decl): 
+        """Retrieve structural information of the function `decl` (i.e. the
         body and its components IN ORDER). Then transform these
         information into a list of lexical elements and rules as well
         as semantics.
@@ -1034,21 +1084,12 @@ class cfg(type):
         # Prepare the source. If the `decl` is a method, the source
         # then contains indentation spaces thus should be dedented in
         # order to be parsed independently.  `textwrap.dedent`
-        # performs dedenation until no leading spaces.
+        # performs dedenation until there are no leading spaces.
         src = inspect.getsource(decl)
         src = textwrap.dedent(src)
 
         # Parse the source to Python syntax tree.
         t = ast.parse(src)
-
-        # Something about :ast.parse: and :compile: with
-        # - literal string code;
-        # - target form
-        # - target mode
-        # e = ast.parse("(3, x)", mode='eval')
-        # e = compile("(3, x)", '<ast>', 'eval')
-        # s = ast.parse("def foo(): return 123", mode='exec')
-        # s = compile("def foo(): return 123", '<ast>', 'exec')
 
         lst = []
 
@@ -1201,7 +1242,7 @@ class ParseTree(object):
                 elif trans_leaf:
                     push(astk, trans_leaf(t))
                 else:
-                    push(astk, t.eval())
+                    push(astk, t.value)
             elif isinstance(t, ParseTree):
                 # mark reduction
                 push(sstk, (REDUCE, t))

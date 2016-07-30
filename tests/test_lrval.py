@@ -2,28 +2,39 @@ import preamble
 
 from metaparse import *
 
+table = []
+refs = 0
+
 class Glrval(metaclass=LALR.meta):
 
     EQ   = r'='
-    STAR = r'\*'
-    ID   = r'id'
 
+    STAR = r'\*'
+    def STAR(lex: r'\*') -> 3:
+        global refs
+        refs += 1
+        # return lex
+
+    # ID   = r'[_a-zA-Z]\w*'
+    def ID(lex: r'[_a-zA-Z]\w*') -> 3:
+        table.append(lex)
+        return lex
+
+    # def ID(ID = r'[_a-zA-Z]\w*') -> 3:
+        # table.add(ID)
+        # return ID
 
     def S(L, EQ, R):
         return ('assign', L, R)
 
-
     def S(R):
         return ('expr', R)
-
 
     def L(STAR, R):
         return ('deref', R)
 
-
     def L(ID):
-        return 'id'
-
+        return ID
 
     def R(L):
         return L
@@ -31,15 +42,16 @@ class Glrval(metaclass=LALR.meta):
 
 if __name__ == '__main__':
 
-    inp = '*id = **id'
-    Glrval.parse(inp)
+    inp = '*a = **b'
 
     import pprint as pp
-
-    pp.pprint(Glrval.parse(inp))
 
     result = Glrval.interpret(inp)
     assert result == \
         ('assign',
-         ('deref', 'id'),
-         ('deref', ('deref', 'id')))
+         ('deref', 'a'),
+         ('deref', ('deref', 'b')))
+
+    assert table == ['a', 'b'], table
+    assert refs == 3
+

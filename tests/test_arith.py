@@ -18,7 +18,10 @@ class GArith(metaclass=cfg):
 
     plus   = r'\+'
     times  = r'\*'
-    number = r'\d+'
+    # number = r'\d+'
+    def number(lex: r'\d+'):
+        return int(lex)
+
     left   = r'\('
     right  = r'\)'
 
@@ -33,13 +36,13 @@ class GArith(metaclass=cfg):
     def Term(Factor):
         return Factor
 
-    def Factor(Atom):
-        return Atom
+    def Factor(number):
+        return number
     def Factor(left, Expr, right):
         return Expr
 
-    def Atom(number):
-        return int(number)
+    # def Atom(number):
+    #     return int(number)
 
 
 ari_ear = Earley(GArith)
@@ -65,18 +68,22 @@ class TestArithParser(unittest.TestCase):
 
     def test_normal(self):
         inp = '3 + 2 * (5 + 11) * 2 + 3'
+        ps0 = [eval(inp)]
         ps1 = ari_ear.interpret_many(inp)
         ps2 = ari_lalr.interpret_many(inp)
         ps3 = ari_glr.interpret_many(inp)
+        self.assertEqual(ps0, ps1)
         self.assertEqual(ps1, ps2)
         self.assertEqual(ps2, ps3)
 
     def test_tough(self):
         inp = '3 + 2 * (5 + 11)'
         tough_inp = ' + '.join(inp for _ in range(100))
+        ps0 = [eval(tough_inp)]
         ps1 = ari_ear.interpret_many(tough_inp)
         ps2 = ari_lalr.interpret_many(tough_inp)
         ps3 = ari_glr.interpret_many(tough_inp)
+        self.assertEqual(ps0, ps2)
         self.assertEqual(ps1, ps2)
         self.assertEqual(ps2, ps3)
 
@@ -84,4 +91,8 @@ class TestArithParser(unittest.TestCase):
 if __name__ == '__main__':
 
     unittest.main()
+
+    # For debugging
+    # t = TestArithParser()
+    # t.test_normal()
 

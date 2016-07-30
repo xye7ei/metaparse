@@ -94,18 +94,8 @@ from collections import deque
 from collections import Iterable
 
 
-class GrammarWarning(UserWarning):
-    """Any way to specify user warning? """
-    pass
-
-
 class GrammarError(Exception):
     """Specifies exceptions raised when constructing a grammar."""
-    pass
-
-
-class ParserWarning(UserWarning):
-    """Any way to specify user warning? """
     pass
 
 
@@ -162,6 +152,8 @@ SHIFT   = Signal('SHIFT', 'SFT')
 REDUCE  = Signal('REDUCE', 'RDU')
 ACCEPT  = Signal('ACCEPT', 'ACC')
 
+def id_func(x):
+    return x
 
 class Token(object):
 
@@ -297,10 +289,15 @@ class Item(object):
         return '({} = {}.{})'.format(lhs, rhs1, rhs2)
 
     def __eq__(self, x):
+        "Only compare the indices."
         return self.r == x.r and self.pos == x.pos
 
     def __hash__(self):
         return hash((self.r, self.pos))
+
+    def __lt__(self, other):
+        "Support sorting of item objects."
+        return self.index_pair < other.index_pair
 
     @property
     def rule(s):
@@ -384,11 +381,11 @@ class Grammar(object):
 
     """
 
-    def __init__(self, lexes, rules, attrs, prece=None):
+    def __init__(self, lexpats, rules, attrs, prece=None):
         """
         Parameters:
 
-        :lexes:  : odict{str<terminal-name> : str<terminal-pattern>}
+        :lexes:  : list<(<terminal-name> : <terminal-pattern>)>
             A ordered dict representing lexical rules.
 
         :rules:  : [Rule]
@@ -405,12 +402,14 @@ class Grammar(object):
         # Operator precedence table may be useful.
         self.OP_PRE = dict(prece) if prece else {}
 
-        # odict{lex-name: lex-re}
-        self.terminals = OrderedDict()
-        for tmn, pat in lexes.items():
+        # Cache terminals
+        self.terminals = set()
+        self.lexers = []
+        for tmn, pat in lexpats:
             # Name trailing with integer subscript indicating
             # the precedence.
-            self.terminals[tmn] = re.compile(pat, re.MULTILINE)
+            self.terminals.add(tmn)
+            self.lexers.append((tmn, re.compile(pat, re.MULTILINE)))
 
         # [<unrepeated-nonterminals>]
         self.nonterminals = []
@@ -419,7 +418,7 @@ class Grammar(object):
                 self.nonterminals.append(rl.lhs)
 
         # Sort rules with consecutive grouping of LHS.
-        rules.sort(key=lambda r: self.nonterminals.index(r.lhs))
+        # rules.sort(key=lambda r: self.nonterminals.index(r.lhs))
 
         # This block checks completion of given grammar.
         unused_t = set(self.terminals).difference([IGNORED, END, ERROR])
@@ -456,10 +455,7 @@ class Grammar(object):
         fst_rl = rules[0]
         if len(fst_rl.rhs) != 1 or 1 < [rl.lhs for rl in rules].count(fst_rl.lhs):
             tp_lhs = "{}^".format(fst_rl.lhs)
-            tp_rl = Rule.raw(
-                tp_lhs,
-                (fst_rl.lhs, ),
-                lambda x: x)
+            tp_rl = Rule.raw(tp_lhs, (fst_rl.lhs, ), id_func)
             self.nonterminals.insert(0, tp_lhs)
             rules = [tp_rl] + rules
 
@@ -467,7 +463,7 @@ class Grammar(object):
         # self.attrs = attrs
 
         self.rules = rules
-        self.symbols = self.nonterminals + [a for a in lexes if a != END]
+        self.symbols = self.nonterminals + [a for a in self.terminals if a != END]
 
         # Top rule of Augmented Grammar.
         self.top_rule = self.rules[0]
@@ -852,21 +848,26 @@ class Grammar(object):
 
         pos = 0
         while pos < len(inp):
-            for lex, rgx in G.terminals.items():
+            m = None
+            for cat, rgx in G.lexers:
                 m = rgx.match(inp, pos=pos)
                 # The first match with non-zero length is yielded.
                 if m and len(m.group()) > 0:
                     break
-            if m and lex == IGNORED:
-                at, pos = m.span()
-            elif m and lex != IGNORED:
-                at, pos = m.span()
-                yield Token(at, lex, m.group())
+            if m:
+                if cat == IGNORED:
+                    # Need IGNORED handler?
+                    at, pos = m.span()
+                elif cat == ERROR:
+                    # Call ERROR handler!
+                    at, pos = m.span()
+                    yield Token(at, ERROR, m.group())
+                else:
+                    at, pos = m.span()
+                    yield Token(at, cat, m.group())
             else:
                 # Report unrecognized Token here!
-                at = pos
-                pos += 1
-                yield Token(at, ERROR, inp[at])
+                raise GrammarError('No defined pattern for unrecognized symbol {}!'.format(inp[at]))
         if with_end:
             yield Token(pos, END, END_PATTERN_DEFAULT)
 
@@ -934,33 +935,36 @@ class cfg(type):
 
         for lst in lsts:
             for k, v in lst:
-                # Built-ins are of no use
+
+                # Docstring for grammar
                 if k == '__doc__':
                     docstr = v
+
+                # Built-ins are of no use
                 elif k.startswith('__') and k.endswith('__'):
                     continue
+
                 # Handle implicit rule declaration through methods.
                 elif callable(v):
                     r = Rule(v)
                     if r in rules:
                         raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
                     rules.append(r)
-                # Lexical declaration without precedence
+
+                # Lexical declaration allows repeatition!!
+                # - String pattern without precedence
                 elif isinstance(v, str):
-                    if k in lexes:
-                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
                     lexes.append(k)
                     lexpats.append(v)
-                # With precedence
+                # - String pattern with precedence
                 elif isinstance(v, tuple):
                     assert len(v) == 2, 'Lexical pattern as tuple should be of length 2.'
                     assert isinstance(v[0], str) and isinstance(v[1], int), \
                         'Lexical pattern as tuple should be of type (str, int)'
-                    if k in lexes:
-                        raise GrammarError('Repeated declaration of lexical symbol {}.'.format(k))
                     lexes.append(k)
                     lexpats.append(v[0])
                     prece[k] = v[1]
+
                 # Handle normal private attributes/methods.
                 else:
                     attrs.append((k, v))
@@ -989,7 +993,7 @@ class cfg(type):
             lexes.append(ERROR)
             lexpats.append(ERROR_PATTERN_DEFAULT)
 
-        g = Grammar(OrderedDict(zip(lexes, lexpats)), rules, attrs, prece)
+        g = Grammar(zip(lexes, lexpats), rules, attrs, prece)
         if docstr:
             g.__doc__ = docstr
 
@@ -1119,62 +1123,58 @@ class ParseTree(object):
         self.rule = rule
         self.subs = subs
 
-    def translate(tree, trans_tree=None, trans_leaf=None):
+    def translate(tree, trans_tree=None, trans_leaf=None, as_tuple=False):
         """Postorder tree traversal with double-stack scheme.
-
-        Example:
-        - prediction stack
-        - processed argument stack
-
-        i-  [T]$
-        a- $[]
-
-        =(T -> AB)=>>
-
-        i-  [A B (->T)]$
-        a- $[]
-
-        =(A -> a1 a2)=>>
-
-        i-  [a1 a2 (->A) B (->T)]$
-        a- $[]
-
-        =a1, a2=>>
-
-        i-  [(->A) B (->T)]$
-        a- $[a1 a2]
-
-        =(a1 a2 ->A)=>>
-
-        i-  [B (->T)]$
-        a- $[A]
-
-        =(B -> b)=>>
-
-        i-  [b (->B) (->T)]$
-        a- $[A]
-
-        =b=>>
-
-        i-  [(->B) (->T)]$
-        a- $[A b]
-
-        =(b ->B)=>>
-
-        i-  [(->T)]$
-        a- $[A B]
-
-        =(A B ->T)=>>
-
-        i-  []$
-        a- $[T]
-
         """
+
+        # Example:
+        # - prediction stack
+        # - processed argument stack
+
+        # i-  [T]$
+        # a- $[]
+
+        # =(T -> AB)=>>
+
+        # i-  [A B (->T)]$
+        # a- $[]
+
+        # =(A -> a1 a2)=>>
+
+        # i-  [a1 a2 (->A) B (->T)]$
+        # a- $[]
+
+        # =a1, a2=>>
+
+        # i-  [(->A) B (->T)]$
+        # a- $[a1 a2]
+
+        # =(a1 a2 ->A)=>>
+
+        # i-  [B (->T)]$
+        # a- $[A]
+
+        # =(B -> b)=>>
+
+        # i-  [b (->B) (->T)]$
+        # a- $[A]
+
+        # =b=>>
+
+        # i-  [(->B) (->T)]$
+        # a- $[A b]
+
+        # =(b ->B)=>>
+
+        # i-  [(->T)]$
+        # a- $[A B]
+
+        # =(A B ->T)=>>
+
+        # i-  []$
+        # a- $[T]
+
         # Direct translation
-        if not trans_tree:
-            trans_tree = lambda t, args: t.rule.seman(*args)
-        if not trans_leaf:
-            trans_leaf = lambda tok: tok.value
         # Aliasing push/pop, simulating stack behavior
         push, pop = list.append, list.pop
         sstk = [(PREDICT, tree)]
@@ -1184,11 +1184,24 @@ class ParseTree(object):
             if act == REDUCE:
                 args = []
                 for _ in t.subs:
-                    push(args, pop(astk))
-                # apply semantics
-                push(astk, trans_tree(t, args[::-1]))
+                    a = pop(astk)
+                    args.append(a)
+                args = args[::-1]
+                # Apply semantics
+                if as_tuple:
+                    push(astk, (Symbol(t.rule.lhs), args))
+                elif trans_tree:
+                    push(astk, trans_tree(t, args))
+                else:
+                    push(astk, t.rule.seman(*args))
             elif isinstance(t, ParseLeaf):
-                push(astk, trans_leaf(t))
+                # Apply semantics
+                if as_tuple:
+                    push(astk, t)
+                elif trans_leaf:
+                    push(astk, trans_leaf(t))
+                else:
+                    push(astk, t.eval())
             elif isinstance(t, ParseTree):
                 # mark reduction
                 push(sstk, (REDUCE, t))
@@ -1200,9 +1213,7 @@ class ParseTree(object):
         return astk.pop()
 
     def to_tuple(self):
-        """Translate the parse tree into Python tuple form. """
-        return self.translate(lambda t, subs: (Symbol(t.rule.lhs), subs),
-                              lambda tok: tok)
+        return self.translate(as_tuple=True)
 
     def __eq__(self, other):
         if isinstance(other, ParseTree):
@@ -1686,7 +1697,8 @@ class GLR(ParserBase):
 
             igoto = OrderedDict()
             for X, J in igotoset.items():
-                J = sorted(J, key=lambda i: (i.r, i.pos))
+                # J = sorted(J, key=lambda i: (i.r, i.pos))
+                J.sort()
                 if J not in Ks:
                     Ks.append(J)
                 j = Ks.index(J)
@@ -1839,10 +1851,12 @@ class GLR(ParserBase):
             while agenda:
 
                 ss, ts = agenda.pop()
+
                 redus = ACTION[ss.value][REDUCE]
                 shfts = ACTION[ss.value][SHIFT]
+
                 # REDUCE: Note the (ended) items triggering reduction
-                # action 
+                # action may induce further reduction items.
                 for ritm in redus:
                     ss1, ts1 = ss, ts
                     subs = deque()
@@ -1864,7 +1878,8 @@ class GLR(ParserBase):
                         ss1 = Node(GOTO[ss1.value][ritm.target], ss1)
                         ts1 = Node(tr, ts1)
                         agenda.append((ss1, ts1))
-                # Predictions.
+
+                # SHIFT
                 if not tok.is_END():
                     if tok.symbol in shfts:
                         ss = Node(GOTO[ss.value][tok.symbol], ss)
@@ -1930,7 +1945,8 @@ class LALR(ParserDeterm):
             for X, J in igoto.items():
                 # The Item-Sets should be treated as UNORDERED! So
                 # sort J to identify the Lists with same items.
-                J = sorted(J, key=lambda i: (i.r, i.pos))
+                # J = sorted(J, key=lambda i: (i.r, i.pos))
+                J.sort()
                 if J not in Ks:
                     Ks.append(J)
                 j = Ks.index(J)
@@ -2067,7 +2083,7 @@ class LALR(ParserDeterm):
                                 ACTION[i][lk1] = (REDUCE, ctm)
                 # Accept-Item
                 if itm.index_pair == (0, 1):
-                    ACTION[i][END] = (ACCEPT, None)
+                    ACTION[i][END] = (ACCEPT, itm)
 
         # Report LALR-conflicts, if any.
         if conflicts:
@@ -2101,9 +2117,11 @@ class LALR(ParserDeterm):
         # Aliasing
         trees = []
         Ks = self.Ks
-        sstack = self.sstack = [0]
         GOTO = self.GOTO
         ACTION = self.ACTION
+
+        # State stack: list more performant than deque.
+        sstack = [0]
 
         # Lazy extraction of tokens
         toker = self.grammar.tokenize(inp, with_end=True) # Use END to force finishing by ACCEPT
@@ -2140,7 +2158,7 @@ class LALR(ParserDeterm):
                     act, arg = ACTION[s][tok.symbol]
 
                     # SHIFT
-                    if act == SHIFT:
+                    if act is SHIFT:
                         if interp:
                             trees.append(tok.value)
                         else:
@@ -2150,13 +2168,13 @@ class LALR(ParserDeterm):
                         tok = next(toker)
 
                     # REDUCE
-                    elif act == REDUCE:
+                    elif act is REDUCE:
                         assert isinstance(arg, Item)
                         rtm = arg
-                        subts = []
+                        subts = deque()
                         for _ in range(rtm.size):
                             subt = trees.pop()
-                            subts.insert(0, subt)
+                            subts.appendleft(subt)
                             sstack.pop()
                         if interp:
                             tree = rtm.eval(*subts)
@@ -2167,9 +2185,14 @@ class LALR(ParserDeterm):
                         sstack.append(GOTO[sstack[-1]][rtm.target])
 
                     # ACCEPT
-                    elif act == ACCEPT:
-                        return trees[-1]
-
+                    elif act is ACCEPT:
+                        # Reduce the top semantics.
+                        assert isinstance(arg, Item)
+                        ttm = arg
+                        if interp:
+                            return ttm.eval(*trees)
+                        else:
+                            return ParseTree(ttm.rule, trees)
                     else:
                         raise ParserError('Invalid action {} on {}'.format(act, arg))
 
@@ -2214,7 +2237,7 @@ class WLL1(ParserDeterm):
                 table[lhs] = {}
             # NON-NULL rule
             if rhs:
-                for a in G.FIRST(rhs[0]): # Or first_of_seq(rhs, END)?
+                for a in G.first_of_seq(rhs, EPSILON):
                     if a is EPSILON:
                         pass
                     elif a in table[lhs]:

@@ -150,8 +150,8 @@ m = 4
 # psr_lalr.interpret(inp)
 
 psr = psr_lalr
-psr = psr_glr
-psr = psr_ear
+# psr = psr_glr
+# psr = psr_ear
 
 tough_inp = '   ;\n'.join([inp for _ in range(100)])
 

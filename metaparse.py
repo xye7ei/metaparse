@@ -96,12 +96,14 @@ from collections import Iterable
 
 class GrammarError(Exception):
     """Specifies exceptions raised when constructing a grammar."""
-    pass
+
+
+class TokenizationError(Exception):
+    """Error for tokenization."""
 
 
 class ParserError(Exception):
     """Specifies exceptions raised when error occured during parsing."""
-    pass
 
 
 # Special lexical element and lexemes
@@ -212,16 +214,11 @@ class Rule(object):
 
     """
 
-    # def __init__(self, func):
-    def __init__(self, lhs, rhs, seman, early_seman=None):
+    def __init__(self, lhs, rhs):
         # Make use of annotations?
         # self.anno = func.__annotations__
         self.lhs = lhs
         self.rhs = rhs
-        self.seman = seman
-        self.early_seman = early_seman
-        if early_seman:
-            assert len(rhs) > 1, "Earley semantics only makes sense with length > 1."
 
     def __eq__(self, other):
         """Equality of Rule object relies only upon LHS and RHS, not
@@ -244,6 +241,7 @@ class Rule(object):
 
     @staticmethod
     def read(func, early=None):
+        'Construct a rule object from a function/method. '
         lhs = func.__name__
         rhs = []
         # Signature only works in Python 3
@@ -251,32 +249,18 @@ class Rule(object):
         for x in inspect.getargspec(func).args:
             # Tail digital subscript like xxx_4
             s = re.search(r'_(\d+)$', x)
-            # s = re.search(r'_?(\d+)$', x)
             if s:
                 x = x[:s.start()]
             rhs.append(x)
         # Make it immutable.
         rhs = tuple(rhs)
-        return Rule(lhs, rhs, func, early)
-
-    def eval_early(self, arg1):
-        """Eval the early semantics when the rule gets chosen. It is assumed
-        one symbol is recognized for the choice, meaning it should be
-        the argument of early semantics.
-
-        """
-        if self.early_seman:
-            return self.early_seman(arg1)
-        else:
-            pass
-
-    def eval(self, *args):
-        return self.seman(*args)
+        return Rule(lhs, rhs)
 
     @property
     def size(self):
         return len(self.rhs)
 
+    # FIXME: where to cache source info
     @property
     def src_info(self):
         """Retrieves source information of this rule's definition for helpful
@@ -362,9 +346,6 @@ class Item(object):
     def index_pair(s):
         return (s.r, s.pos)
 
-    def eval(self, *args):
-        return self.rule.seman(*args)
-
 
 # Component for graph structured stacks and prediction trees.
 Node = namedtuple('Node', 'value next')
@@ -402,7 +383,7 @@ class Grammar(object):
 
     """
 
-    def __init__(self, lexpats, rules, prece=None, lexhdls=None):
+    def __init__(self, lex2pats, rule2semans, prece=None, lexhdls=None):
         """
         Parameters:
 
@@ -423,28 +404,32 @@ class Grammar(object):
 
         # Cache terminals
         self.terminals = set()
-        self.lexers = []
-        for tmn, pat in lexpats:
+        self.lex2pats = []
+        for tmn, pat in lex2pats:
             # Name trailing with integer subscript indicating
             # the precedence.
             self.terminals.add(tmn)
-            self.lexers.append((tmn, re.compile(pat, re.MULTILINE)))
+            self.lex2pats.append((tmn, re.compile(pat, re.MULTILINE)))
 
-        # [<unrepeated-nonterminals>]
+        # Cache nonterminals
         self.nonterminals = []
-        for rl in rules:
-            if rl.lhs not in self.nonterminals:
-                self.nonterminals.append(rl.lhs)
+        self.rules = []
+        self.semans = []
+        for rule, seman in rule2semans:
+            if rule.lhs not in self.nonterminals:
+                self.nonterminals.append(rule.lhs)
+            self.rules.append(rule)
+            self.semans.append(seman)
 
         # Sort rules with consecutive grouping of LHS.
         # rules.sort(key=lambda r: self.nonterminals.index(r.lhs))
 
         # This block checks completion of given grammar.
         unused_t = set(self.terminals).difference([IGNORED, END, ERROR])
-        unused_nt = set(self.nonterminals).difference([rules[0].lhs])
+        unused_nt = set(self.nonterminals).difference([self.nonterminals[0]])
         # Raise grammar error in case any symbol is undeclared
         msg = ''
-        for r, rl in enumerate(rules):
+        for r, rl in enumerate(self.rules):
             for j, X in enumerate(rl.rhs):
                 unused_t.discard(X)
                 unused_nt.discard(X)
@@ -471,17 +456,14 @@ class Grammar(object):
 
         # Generate top rule as Augmented Grammar only if
         # the singleton top rule is not explicitly given.
-        fst_rl = rules[0]
+        fst_rl = self.rules[0]
         if len(fst_rl.rhs) != 1 or 1 < [rl.lhs for rl in rules].count(fst_rl.lhs):
             tp_lhs = "{}^".format(fst_rl.lhs)
-            tp_rl = Rule(tp_lhs, (fst_rl.lhs, ), id_func)
+            tp_rl = Rule(tp_lhs, (fst_rl.lhs,))
             self.nonterminals.insert(0, tp_lhs)
-            rules = [tp_rl] + rules
+            self.rules = [tp_rl] + self.rules
+            self.semans = [id_func] + self.semans
 
-        # Register other attributes/methods (should not be relied on).
-        # self.attrs = attrs
-
-        self.rules = rules
         self.symbols = self.nonterminals + [a for a in self.terminals if a != END]
 
         # Top rule of Augmented Grammar.
@@ -508,9 +490,7 @@ class Grammar(object):
             raise ValueError('No such LHS {} in grammar.'.format(repr(X)))
 
     def item(G, r, pos):
-        """Create a pair of integers indexing the rule and active position.
-
-        """
+        """Make a pair of integers indexing the rule and active position."""
         return Item(G.rules, r, pos)
 
     def pred_tree(G, ntml, bottom=None):
@@ -850,7 +830,18 @@ class Grammar(object):
             z += 1
         return C
 
-    def tokenize(G, inp, with_end):
+
+class Lexer(object):
+
+    def __init__(self, lex2pats, lexhdls):
+        self.lex2pats = lex2pats
+        self.lex_handlers = lexhdls
+
+    @staticmethod
+    def from_grammar(grammar):
+        return Lexer(grammar.lex2pats, grammar.lex_handlers)
+
+    def tokenize(self, inp, with_end):
         """Perform lexical analysis with given input string and yield matched
         tokens with defined lexical patterns.
 
@@ -868,7 +859,7 @@ class Grammar(object):
         pos = 0
         while pos < len(inp):
             m = None
-            for cat, rgx in G.lexers:
+            for cat, rgx in self.lex2pats:
                 m = rgx.match(inp, pos=pos)
                 # The first match with non-zero length is yielded.
                 if m and len(m.group()) > 0:
@@ -881,17 +872,17 @@ class Grammar(object):
                     # Call ERROR handler!
                     at, pos = m.span()
                     lxm = m.group()
-                    if ERROR in G.lex_handlers:
-                        h = G.lex_handlers[ERROR]
+                    if ERROR in self.lex_handlers:
+                        h = self.lex_handlers[ERROR]
                         yield Token(at, ERROR, lxm, h(lxm))
                     else:
                         yield Token(at, ERROR, lxm, lxm)
                 else:
                     at, pos = m.span()
                     lxm = m.group()
-                    if cat in G.lex_handlers:
+                    if cat in self.lex_handlers:
                         # Call normal token handler.
-                        h = G.lex_handlers[cat]
+                        h = self.lex_handlers[cat]
                         yield Token(at, cat, lxm, h(lxm))
                     else:
                         yield Token(at, cat, lxm, lxm)
@@ -961,6 +952,7 @@ class cfg(type):
         lexpats = []
         lexhdls = {}            # Handler for some specified lexical pattern.
         rules = []
+        semans = []
         prece = {}
         attrs = []
 
@@ -986,7 +978,9 @@ class cfg(type):
                     #     return lex
                     # '''
                     if v.__name__ in lexes:
-                        assert 'lex' in v.__annotations__, 'Must declare param `lex`.'
+                        # assert 'lex' in v.__annotations__, 'Must declare param `lex`.'
+                        assert inspect.getargs(v.__code__).args == ['lex'], \
+                            "Lexical handler must have singleton param list ['lex']"
                         lexhdls[v.__name__] = v
                     elif hasattr(v, '__annotations__') and 'lex' in v.__annotations__:
                         lx = v.__name__
@@ -1002,8 +996,9 @@ class cfg(type):
                     else:
                         r = Rule.read(v)
                         if r in rules:
-                            raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r, r.src_info))
+                            raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r))
                         rules.append(r)
+                        semans.append(v)
 
                 # Lexical declaration allows repeatition!!
                 # - String pattern without precedence
@@ -1047,7 +1042,7 @@ class cfg(type):
             lexes.append(ERROR)
             lexpats.append(ERROR_PATTERN_DEFAULT)
 
-        g = Grammar(zip(lexes, lexpats), rules, prece, lexhdls)
+        g = Grammar(zip(lexes, lexpats), zip(rules, semans), prece, lexhdls)
         if docstr:
             g.__doc__ = docstr
 
@@ -1136,15 +1131,36 @@ class cfg(type):
 
 grammar = cfg.v2
 
-"""
-The above parts are utitlies for grammar definition and extraction methods
-of grammar information.
+"""The above parts are utitlies for grammar definition and extraction
+methods of grammar information.
 
 The following parts supplies utilities for parsing.
+
 """
 
 # The object ParseLeaf is semantically indentical to the object Token.
 ParseLeaf = Token
+
+
+def meta(cls_parser):
+    """This decorator hangs a static attribute 'meta' to the decorated
+    parser class, which is itself a nested class for specifying a
+    grammar+parser declaration directly, such as:
+
+    class MyGrammarWithLALRParser(metaclass=LALR.meta):
+        # lexical rules
+        # syntactic rules with semantics
+
+    """
+
+    class meta(cfg):
+        def __new__(mcls, n, bs, kw):
+            grammar = cfg.__new__(mcls, n, bs, kw)
+            return cls_parser(grammar)
+
+    setattr(cls_parser, 'meta', meta)
+
+    return cls_parser
 
 
 class ParseTree(object):
@@ -1156,13 +1172,14 @@ class ParseTree(object):
 
     """
 
-    def __init__(self, rule, subs):
+    def __init__(self, rule, subs, seman):
         # Contracts
         assert isinstance(rule, Rule)
         for sub in subs:
             assert isinstance(sub, ParseTree) or isinstance(sub, ParseLeaf)
         self.rule = rule
         self.subs = subs
+        self.seman = seman
 
     def translate(tree, trans_tree=None, trans_leaf=None, as_tuple=False):
         """Postorder tree traversal with double-stack scheme.
@@ -1234,7 +1251,7 @@ class ParseTree(object):
                 elif trans_tree:
                     push(astk, trans_tree(t, args))
                 else:
-                    push(astk, t.rule.seman(*args))
+                    push(astk, t.seman(*args))
             elif isinstance(t, ParseLeaf):
                 # Apply semantics
                 if as_tuple:
@@ -1269,27 +1286,6 @@ class ParseTree(object):
         return pp.pformat(self.to_tuple())
 
 
-def meta(cls_parser):
-    """This decorator hangs a static attribute 'meta' to the decorated
-    parser class, which is itself a nested class for specifying a
-    grammar+parser declaration directly, such as:
-
-    class MyGrammarWithLALRParser(metaclass=LALR.meta):
-        # lexical rules
-        # syntactic rules with semantics
-
-    """
-
-    class meta(cfg):
-        def __new__(mcls, n, bs, kw):
-            grammar = cfg.__new__(mcls, n, bs, kw)
-            return cls_parser(grammar)
-
-    setattr(cls_parser, 'meta', meta)
-
-    return cls_parser
-
-
 class ParserBase(object):
 
     """Abstract class for both deterministic/non-deterministic parsers.
@@ -1301,13 +1297,7 @@ class ParserBase(object):
 
     def __init__(self, grammar):
         assert isinstance(grammar, Grammar)
-        self.grammar = grammar
-        # Share auxiliary methods declared in Grammar instance
-        # for k, v in grammar.attrs:
-        #     # assert k.startswith('_')
-        #     setattr(self, k, v)
-        # Delegation
-        self.tokenize = grammar.tokenize
+        self.lexer = Lexer.from_grammar(grammar)
 
     def __repr__(self):
         # Polymorphic representation without overriding
@@ -1342,6 +1332,7 @@ class ParserDeterm(ParserBase):
     directly.
 
     """
+    # def __init__(self, grammar):
 
     def parse_many(self, inp, interp=False):
         return [self.parse(inp, interp=interp)]
@@ -1381,15 +1372,17 @@ class Earley(ParserBase):
 
     def __init__(self, grammar):
         super(Earley, self).__init__(grammar)
+        self.grammar = grammar
 
     def recognize(self, inp):
         """Naive Earley's recognization algorithm. No parse produced.
 
         """
         G = self.grammar
+        L = self.lexer
         S = [[(0, G.item(0, 0))]]
 
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+        for k, tok in enumerate(L.tokenize(inp, with_end=True)):
 
             C = S[-1]
             C1 = []
@@ -1513,6 +1506,7 @@ class Earley(ParserBase):
 
         """
         G = self.grammar
+        L = Lexer.from_grammar(G)
         # state :: {<Item>: [<Stack>]}
         s0 = {(0, G.item(0, 0)): [()]}
         ss = self.forest = []
@@ -1520,7 +1514,7 @@ class Earley(ParserBase):
 
         # Tokenizer with END token to force the tailing completion
         # pass.
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+        for k, tok in enumerate(L.tokenize(inp, with_end=True)):
             # Components for the behavior of One-Pass transitive closure
             #
             # - The accumulated set of items/stacks as final closure.
@@ -1585,7 +1579,7 @@ class Earley(ParserBase):
                                         # Nullable completion and
                                         # prediction.
                                         new0 = (j, jtm.shifted)
-                                        j_tr = ParseTree(rule, [])
+                                        j_tr = ParseTree(rule, [], G.semans[r])
                                         for j_stk in j_stks:
                                             if new0 not in s_aug:
                                                 s_aug[new0] = [j_stk + (j_tr,)]
@@ -1600,7 +1594,7 @@ class Earley(ParserBase):
                     # COMPLETION
                     else:
                         for j_stk in j_stks:
-                            j_tr = ParseTree(jtm.rule, j_stk)
+                            j_tr = ParseTree(jtm.rule, j_stk, G.semans[jtm.r])
                             for (i, itm), i_stks in ss[j].items():
                                 if not itm.ended() and itm.actor == jtm.target:
                                     new = (i, itm.shifted)
@@ -1693,10 +1687,13 @@ class GLR(ParserBase):
     """
 
     def __init__(self, grammar):
-        super(GLR, self).__init__(grammar)
-        self._build_automaton()
+        # super(GLR, self).__init__(grammar)
+        self.lexer = Lexer.from_grammar(grammar)
+        self._build_automaton(grammar)
+        self.rules = grammar.rules[:]
+        self.semans = grammar.semans[:]
 
-    def _build_automaton(self):
+    def _build_automaton(self, G):
 
         """Calculate general LR(0)-Item-Sets with no respect to look-aheads.
         Each conflict is registered into the parsing table. For
@@ -1709,8 +1706,6 @@ class GLR(ParserBase):
         worse than the LALR(1) parser.
 
         """
-
-        G = self.grammar
 
         # Kernels
         self.Ks = Ks = [[G.item(0, 0)]]
@@ -1727,7 +1722,7 @@ class GLR(ParserBase):
 
             for itm in G.closure(I):
                 if itm.ended():
-                    iacts[REDUCE].append(itm)
+                    iacts[REDUCE].append(itm.r)
                 else:
                     X = itm.actor
                     jtm = itm.shifted
@@ -1751,132 +1746,18 @@ class GLR(ParserBase):
 
             k += 1
 
-    def parse_many_dfs(self, inp, interp=False):
-
-        """This function applies DFS scheme, which fetch the input ultimately
-        in order to find the first full-parse result. 
-
-        - SHIFT consumes a token, while REDUCE consumes no.
-
-        - The Overall-Stack-Set can be maintained as a
-          stack/queue. For each stack element in the
-          Overall-Stack-Set, keep a position index in the input token
-          sequence (or a cached stream iterator) associated with each
-          stack element. This allows virtual backtracking.
-
-            * As a result, the probes for each stack in
-              Overall-Stack-Set can be done in a DFS/BFS/Best-FS
-              manner.
-
-            * In case no lookahead information is incorperated, the
-              GLR parser can keep track of all viable Partial Parsing
-              all along the process.
-
-            * Panic-mode error ignorance does not fit good for GLR
-              parser, since ANY sub-sequence of the ordered input
-              tokens can be used to construct a parse tree. A overly
-              large amount of "partially correct" parse trees may be
-              delivered.
-
-        """
-
-        G = self.grammar
-        GOTO = self.GOTO
-        ACTION = self.ACTION
-
-        results = []
-
-        # Fetch input totally.
-        tokens = list(G.tokenize(inp, False))
-
-        # `forest` is a list of descriptors, where each descriptor is
-        # a tuple like:
-        # (stack<item-set-index>, list<subtree>, <input-token-index>)
-        forest = [([0], [], 0)]
-
-        while forest:
-
-            # DFS depends on the pop direction
-            stk, trs, i = forest.pop()
-
-            # State on the stack top
-            st = stk[-1]
-            reds = ACTION[st][REDUCE]
-            shif = ACTION[st][SHIFT]
-
-            # REDUCE: There may be multiple reduction options. Each
-            # option leads to a new fork of the parsing thread,
-            # represented as a descriptor.
-            for ritm in reds:
-                # Forking, copying State-Stack and trs
-                # Index of input remains unchanged.
-                frk = stk[:]
-                trs1 = trs[:]
-
-                subs = []
-                for _ in range(ritm.size):
-                    frk.pop()   # only serves amount
-                    subs.insert(0, trs1.pop())
-
-                # Deliver/Transit after reduction
-                if ritm.target == G.top_rule.lhs:
-                    # Full parse is reported, while partial parse is
-                    # discarded.
-                    if i == len(tokens):
-                        results.append(subs[0])
-                else:
-                    frk.append(GOTO[frk[-1]][ritm.target])
-                    trs1.append(ParseTree(ritm.rule, subs))
-                    forest.append([frk, trs1, i]) # index i stays
-
-            # SHIFT: There can be only 1 option of shifting according
-            # to the LR automaton handling active token.
-            if i < len(tokens):
-                tok = tokens[i]
-                if tok.symbol in shif:
-                    stk.append(GOTO[st][tok.symbol])
-                    trs.append(tok)
-                    forest.append([stk, trs, i+1]) # index i increases
-
-                # ERROR
-                elif not reds:
-                    # Under panic mode, some unwanted prediction rules
-                    # may be proceeded till the end while discarding
-                    # arbitrarily many tokens. In other words, every
-                    # substring of the input token sequence might be
-                    # used to make a parse. This comprises another
-                    # problem: Finding the "optimal" parse which
-                    # ignores least amount of tokens, or least
-                    # significant set of tokens w.R.t. some criterien.
-                    #
-                    # msg = '\n'.join([
-                    #     '',
-                    #     '=========================',
-                    #     'GLR - Ignoring syntax error by Token {}'.format(tok),
-                    #     ' Current left-derivation fork:\n{}'.format(
-                    #         pp.pformat([self.Ks[i] for i in stk])),
-                    #     '=========================',
-                    #     '',
-                    # ])
-                    # warnings.warn(msg)
-                    # Push back
-                    # forest.append([stk, trs, i+1])
-                    pass
-
-        if interp:
-            return [tree.translate() for tree in results]
-        else:
-            return results
-
     def parse_many(self, inp, interp=False):
         """Parse input with BFS scheme, where active forks all get reduced to
         synchronized states, so as to accept the active input token.
 
         """
 
-        G = self.grammar
+        # G = self.grammar
+        L = self.lexer
         GOTO = self.GOTO
         ACTION = self.ACTION
+        rules = self.rules
+        semans = self.semans
         
         # Agenda is a list of tuples. Each tuple is two parallel
         # GSS's, (gss-stack<state>, gss-stack<subtree>).
@@ -1885,7 +1766,7 @@ class GLR(ParserBase):
         results = []
 
         # BFS scheme with synchronization.
-        for k, tok in enumerate(G.tokenize(inp, True)):
+        for k, tok in enumerate(L.tokenize(inp, True)):
 
             agenda1 = []
 
@@ -1898,25 +1779,27 @@ class GLR(ParserBase):
 
                 # REDUCE: Note the (ended) items triggering reduction
                 # action may induce further reduction items.
-                for ritm in redus:
+                for r in redus:
+                    rule = rules[r]
+                    seman = semans[r]
                     ss1, ts1 = ss, ts
                     subs = deque()
-                    for _ in range(ritm.size):
+                    for _ in rule.rhs:
                         # Register the peeked element into subtrees.
                         subs.appendleft(ts1.value)
                         # 'Pop' from GSS.
                         ss1 = ss1.next
                         ts1 = ts1.next
-                    if ritm.target == G.top_symbol:
+                    if r == 0:
                         if tok.is_END():
                             # NOTE: Translation on-the-fly should not
                             # be supported due to possibly impure
                             # semantics.
                             results.append(subs[0])
                     else:
-                        tr = ParseTree(ritm.rule, subs)
+                        tr = ParseTree(rule, subs, seman)
                         # 'Push/Augment' GSS.
-                        ss1 = Node(GOTO[ss1.value][ritm.target], ss1)
+                        ss1 = Node(GOTO[ss1.value][rule.lhs], ss1)
                         ts1 = Node(tr, ts1)
                         agenda.append((ss1, ts1))
 
@@ -1952,12 +1835,17 @@ class LALR(ParserDeterm):
     """
 
     def __init__(self, grammar):
-        super(LALR, self).__init__(grammar)
-        self._build_automaton()
 
-    def _build_automaton(self):
+        self._build_automaton(grammar)
 
-        G = self.grammar
+        self.lexer = Lexer.from_grammar(grammar)
+        self.rules = grammar.rules[:]
+        self.semans = grammar.semans[:]
+
+    def __repr__(self):
+        return 'LALR-parser for {}'.format(pp.pformat(self.rules))
+
+    def _build_automaton(self, G):
 
         Ks = [[G.item(0, 0)]]   # Kernels
         GOTO = []
@@ -2055,7 +1943,7 @@ class LALR(ParserDeterm):
 
         self.Ks = Ks
         self.GOTO = GOTO
-        self.propa = propa
+        # self.propa = propa
         self.table = table
 
         # Now all goto and lookahead information is available.
@@ -2082,7 +1970,7 @@ class LALR(ParserDeterm):
                         # Try make a REDUCE action for ended item
                         # with lookahead `lk1`
                         if ctm.ended():
-                            new_redu = (REDUCE, ctm)
+                            new_redu = (REDUCE, ctm.r)
                             if lk1 in ACTION[i]:
                                 # If there is already an action on
                                 # `lk1`, test wether conflicts may
@@ -2118,13 +2006,13 @@ class LALR(ParserDeterm):
                                                 # Right wins.
                                                 continue
                                     # SHIFT/REDUCE conflict raised.
-                                    conflicts.append((i, lk1, (act, arg), (REDUCE, ctm)))
+                                    conflicts.append((i, lk1, (act, arg), (REDUCE, ctm.r)))
                             # If there is still no action on `lk1`.
                             else:
-                                ACTION[i][lk1] = (REDUCE, ctm)
+                                ACTION[i][lk1] = (REDUCE, ctm.r)
                 # Accept-Item
                 if itm.index_pair == (0, 1):
-                    ACTION[i][END] = (ACCEPT, itm)
+                    ACTION[i][END] = (ACCEPT, itm.r)
 
         # Report LALR-conflicts, if any.
         if conflicts:
@@ -2157,15 +2045,18 @@ class LALR(ParserDeterm):
 
         # Aliasing
         trees = []
+        L = self.lexer
         Ks = self.Ks
         GOTO = self.GOTO
         ACTION = self.ACTION
+        semans = self.semans
+        rules = self.rules
 
         # State stack: list more performant than deque.
         sstack = [0]
 
         # Lazy extraction of tokens
-        toker = self.grammar.tokenize(inp, with_end=True) # Use END to force finishing by ACCEPT
+        toker = L.tokenize(inp, with_end=True) # Use END to force finishing by ACCEPT
         tok = next(toker)
         warns = []
 
@@ -2210,30 +2101,32 @@ class LALR(ParserDeterm):
 
                     # REDUCE
                     elif act is REDUCE:
-                        assert isinstance(arg, Item)
-                        rtm = arg
+                        assert isinstance(arg, int)
+                        rl = rules[arg]
+                        seman = semans[arg]
                         subts = deque()
-                        for _ in range(rtm.size):
+                        for _ in range(rl.size):
                             subt = trees.pop()
                             subts.appendleft(subt)
                             sstack.pop()
                         if interp:
-                            tree = rtm.eval(*subts)
+                            tree = seman(*subts)
                         else:
-                            tree = ParseTree(rtm.rule, subts)
+                            tree = ParseTree(rl, subts, seman)
                         trees.append(tree)
                         # New symbol is used for shifting.
-                        sstack.append(GOTO[sstack[-1]][rtm.target])
+                        sstack.append(GOTO[sstack[-1]][rl.lhs])
 
                     # ACCEPT
                     elif act is ACCEPT:
                         # Reduce the top semantics.
-                        assert isinstance(arg, Item)
-                        ttm = arg
+                        assert isinstance(arg, int), arg
+                        rl = rules[arg]
+                        seman = semans[arg]
                         if interp:
-                            return ttm.eval(*trees)
+                            return seman(*trees)
                         else:
-                            return ParseTree(ttm.rule, trees)
+                            return ParseTree(rl, trees, seman)
                     else:
                         raise ParserError('Invalid action {} on {}'.format(act, arg))
 
@@ -2373,26 +2266,12 @@ class GLL(ParserBase):
     """
 
     def __init__(self, grammar):
-        super(GLL, self).__init__(grammar)
-        self._calc_gll1_table()
+        # super(GLL, self).__init__(grammar)
+        self.grammar = grammar
 
     def _find_hidden_left_rec(self):
         G = self.grammar
         raise NotImplementedError()
-
-    def _calc_gll1_table(self):
-        G = self.grammar
-        table = self.table = {}
-        for r, rule in enumerate(G.rules):
-            lhs, rhs = rule
-            if lhs not in table:
-                table[lhs] = defaultdict(list)
-            if rhs:
-                for a in G.first_of_seq(rhs, EPSILON):
-                    if a is not EPSILON:
-                        table[lhs][a].append(rule)
-            else:
-                table[lhs][EPSILON].append(rule)
 
     def recognize(self, inp, interp=False):
         """Discover a recursive automaton on-the-fly.

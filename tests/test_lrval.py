@@ -49,7 +49,15 @@ if __name__ == '__main__':
     p1 = LALR(G)
     p2 = GLR(G)
 
-    # result = p.interpret(inp)
+    s1 = p1.dumps()
+    p1 = LALR.loads(s1, globals()) 
+    # Repeated deserialization is problematic...
+    # - Getting source may fail.
+    s1 = p1.dumps()
+    p1 = LALR.loads(s1, globals()) 
+    s2 = p2.dumps()
+    p2 = GLR.loads(s2, globals())
+
     r1 = p1.interpret_many(inp)[0]
     r2 = p2.interpret_many(inp)[0]
 
@@ -61,8 +69,8 @@ if __name__ == '__main__':
     assert table == ['a', 'b', 'a', 'b'], table
     assert refs == 6
 
+    s = p1.lexer.to_json()
+    lexer = Lexer.from_json(s, globals())
+    pp.pprint([*lexer.tokenize(inp, True)])
 
-    pp.pprint(p1.__dict__)
-    # pp.pprint(p2.__dict__)
-    # pp.pprint(p1.parse(inp))
-    # pp.pprint(p2.parse_many(inp)[0].translate())
+    assert refs == 9

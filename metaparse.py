@@ -84,8 +84,11 @@ INFO:
 import re
 import warnings
 import inspect
+import textwrap
 import ast
 import pprint as pp
+import json
+import pickle
 
 from collections import OrderedDict
 from collections import defaultdict
@@ -98,7 +101,7 @@ class GrammarError(Exception):
     """Specifies exceptions raised when constructing a grammar."""
 
 
-class TokenizationError(Exception):
+class LexerError(Exception):
     """Error for tokenization."""
 
 
@@ -130,32 +133,19 @@ class Symbol(str):
         return self
 
 
-class Signal(object):
-
-    """Signal is used to denote parsing actions, like some sort of Enum. """
-
-    def __init__(self, name, repr=None):
-        self.name = name
-        self.repr = repr
-
-    def __repr__(self):
-        if self.repr:
-            return self.repr
-        else:
-            return self.name
-
-
 DUMMY   = Symbol('\0')
 EPSILON = Symbol('EPSILON')
 
-START   = Signal('START', 'START')
-PREDICT = Signal('PREDICT', 'PRD')
-SHIFT   = Signal('SHIFT', 'SFT')
-REDUCE  = Signal('REDUCE', 'RDU')
-ACCEPT  = Signal('ACCEPT', 'ACC')
+START   = Symbol('START')
+PREDICT = Symbol('PREDICT')
+SHIFT   = Symbol('SHIFT')
+REDUCE  = Symbol('REDUCE')
+ACCEPT  = Symbol('ACCEPT')
+
 
 def id_func(x):
     return x
+
 
 class Token(object):
 
@@ -358,7 +348,6 @@ ExpdNode = namedtuple('ExpdNode', 'value forks')
 ExpdNode.__repr__ \
     = lambda s: tuple.__repr__((Symbol(':{}'.format(s[0])),
                                 [Symbol(n) for n in s.forks]))
-    # = lambda s: tuple.__repr__((Symbol(':{}'.format(s[0])), s[1]))
 
 BOTTOM = ExpdNode(ACCEPT, [])
 
@@ -409,7 +398,8 @@ class Grammar(object):
             # Name trailing with integer subscript indicating
             # the precedence.
             self.terminals.add(tmn)
-            self.lex2pats.append((tmn, re.compile(pat, re.MULTILINE)))
+            # self.lex2pats.append((tmn, re.compile(pat, re.MULTILINE)))
+            self.lex2pats.append((tmn, pat))
 
         # Cache nonterminals
         self.nonterminals = []
@@ -831,12 +821,19 @@ class Grammar(object):
         return C
 
 
-class Lexer(object):
+class Lexer(list):
 
-    def __init__(self, lex2pats, lexhdls):
-        self.lex2pats = lex2pats
-        self.lex_handlers = lexhdls
-
+    def __init__(self, lex2pats, lex_handlers):
+        # Raw info
+        self.extend(lex2pats)
+        # Compiled to re object
+        self.lex2rgxs = [
+            (lex, re.compile(pat))
+            for lex, pat in lex2pats
+        ]
+        # Handlers
+        self.lex_handlers = lex_handlers
+        
     @staticmethod
     def from_grammar(grammar):
         return Lexer(grammar.lex2pats, grammar.lex_handlers)
@@ -859,7 +856,7 @@ class Lexer(object):
         pos = 0
         while pos < len(inp):
             m = None
-            for cat, rgx in self.lex2pats:
+            for cat, rgx in self.lex2rgxs:
                 m = rgx.match(inp, pos=pos)
                 # The first match with non-zero length is yielded.
                 if m and len(m.group()) > 0:
@@ -891,6 +888,30 @@ class Lexer(object):
                 raise GrammarError('No defined pattern for unrecognized symbol {}!'.format(inp[at]))
         if with_end:
             yield Token(pos, END, END_PATTERN_DEFAULT, None)
+
+    def to_json(self, indent=4, **kw):
+        lex2pats = self[:]
+        hdls = {}
+        for lex, hdl in self.lex_handlers.items():
+            # FIXME: inspect.getsource may fail for loaded object!
+            hdls[lex] = textwrap.dedent(inspect.getsource(hdl))
+        obj = {'lex2pats': lex2pats, 'lex_handlers': hdls}
+        return json.dumps(obj, indent=indent, **kw)
+
+    @staticmethod
+    def from_json(s, glb_ctx=None):
+        obj = json.loads(s)
+        lex2pats = obj['lex2pats']
+        lexhdls = {}
+        ctx = {}
+        for lex, src in obj['lex_handlers'].items():
+            co = compile(src, '<string>', 'exec')
+            if glb_ctx:
+                exec(co, glb_ctx, ctx)
+            else:
+                exec(co, {}, ctx)
+            lexhdls[lex] = ctx[lex]
+        return Lexer(lex2pats, lexhdls)
 
 
 class assoclist(list):
@@ -1686,12 +1707,14 @@ class GLR(ParserBase):
 
     """
 
-    def __init__(self, grammar):
+    def __init__(self, grammar=None, dict=None):
         # super(GLR, self).__init__(grammar)
-        self.lexer = Lexer.from_grammar(grammar)
-        self._build_automaton(grammar)
-        self.rules = grammar.rules[:]
-        self.semans = grammar.semans[:]
+        if grammar is not None:
+            self.lexer = Lexer.from_grammar(grammar)
+            self._build_automaton(grammar)
+        elif dict is not None:
+            for k, v in dict.items():
+                setattr(self, k, v)
 
     def _build_automaton(self, G):
 
@@ -1706,6 +1729,9 @@ class GLR(ParserBase):
         worse than the LALR(1) parser.
 
         """
+
+        self.rules = G.rules[:]
+        self.semans = G.semans[:]
 
         # Kernels
         self.Ks = Ks = [[G.item(0, 0)]]
@@ -1731,7 +1757,8 @@ class GLR(ParserBase):
                     if jtm not in igotoset[X]:
                         igotoset[X].append(jtm)
 
-            igoto = OrderedDict()
+            # igoto = OrderedDict()
+            igoto = {}
             for X, J in igotoset.items():
                 # J = sorted(J, key=lambda i: (i.r, i.pos))
                 J.sort()
@@ -1820,6 +1847,32 @@ class GLR(ParserBase):
         else:
             return results
 
+    def dumps(self):
+        obj = dict(
+            lexer = self.lexer.to_json(),
+            semans = [textwrap.dedent(inspect.getsource(seman))
+                      for seman in self.semans],
+            rules = self.rules,
+            Ks = self.Ks,
+            ACTION = self.ACTION,
+            GOTO = self.GOTO,
+        )
+        s = pickle.dumps(obj)
+        return s
+
+    @staticmethod
+    def loads(s, glb_ctx={}):
+        obj = pickle.loads(s)
+        obj['lexer'] = Lexer.from_json(obj['lexer'], glb_ctx)
+        semans = []
+        for sm_src in obj['semans']:
+            ctx = {}
+            co = compile(sm_src, '<string>', 'exec')
+            exec(co, glb_ctx, ctx)
+            k, sm = ctx.popitem()
+            semans.append(sm)
+        obj['semans'] = semans
+        return GLR(dict=obj)
 
 @meta
 class LALR(ParserDeterm):
@@ -1834,13 +1887,17 @@ class LALR(ParserDeterm):
 
     """
 
-    def __init__(self, grammar):
+    def __init__(self, grammar=None, dict=None):
 
-        self._build_automaton(grammar)
+        if grammar is not None:
+            self._build_automaton(grammar)
 
-        self.lexer = Lexer.from_grammar(grammar)
-        self.rules = grammar.rules[:]
-        self.semans = grammar.semans[:]
+            self.lexer = Lexer.from_grammar(grammar)
+            self.rules = grammar.rules[:]
+            self.semans = grammar.semans[:]
+        elif dict is not None:
+            for k, v in dict.items():
+                setattr(self, k, v)
 
     def __repr__(self):
         return 'LALR-parser for {}'.format(pp.pformat(self.rules))
@@ -1939,12 +1996,12 @@ class LALR(ParserDeterm):
             else:
                 b += 1
 
-        self._propa_passes = b
+        # self._propa_passes = b
 
         self.Ks = Ks
         self.GOTO = GOTO
         # self.propa = propa
-        self.table = table
+        # self.table = table
 
         # Now all goto and lookahead information is available.
 
@@ -2090,7 +2147,7 @@ class LALR(ParserDeterm):
                     act, arg = ACTION[s][tok.symbol]
 
                     # SHIFT
-                    if act is SHIFT:
+                    if act == SHIFT:
                         if interp:
                             trees.append(tok.value)
                         else:
@@ -2100,7 +2157,7 @@ class LALR(ParserDeterm):
                         tok = next(toker)
 
                     # REDUCE
-                    elif act is REDUCE:
+                    elif act == REDUCE:
                         assert isinstance(arg, int)
                         rl = rules[arg]
                         seman = semans[arg]
@@ -2118,7 +2175,7 @@ class LALR(ParserDeterm):
                         sstack.append(GOTO[sstack[-1]][rl.lhs])
 
                     # ACCEPT
-                    elif act is ACCEPT:
+                    elif act == ACCEPT:
                         # Reduce the top semantics.
                         assert isinstance(arg, int), arg
                         rl = rules[arg]
@@ -2135,6 +2192,33 @@ class LALR(ParserDeterm):
             # pass
 
         return
+
+    def dumps(self):
+        obj = dict(
+            lexer = self.lexer.to_json(),
+            semans = [textwrap.dedent(inspect.getsource(seman))
+                      for seman in self.semans],
+            rules = self.rules,
+            Ks = self.Ks,
+            ACTION = self.ACTION,
+            GOTO = self.GOTO,
+        )
+        s = pickle.dumps(obj)
+        return s
+
+    @staticmethod
+    def loads(s, glb_ctx={}):
+        obj = pickle.loads(s)
+        obj['lexer'] = Lexer.from_json(obj['lexer'], glb_ctx)
+        semans = []
+        for sm_src in obj['semans']:
+            ctx = {}
+            co = compile(sm_src, '<string>', 'exec')
+            exec(co, glb_ctx, ctx)
+            k, sm = ctx.popitem()
+            semans.append(sm)
+        obj['semans'] = semans
+        return LALR(dict=obj)
 
 
 @meta

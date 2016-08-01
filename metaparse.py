@@ -87,8 +87,8 @@ import inspect
 import textwrap
 import ast
 import pprint as pp
-import json
-import pickle
+import json, marshal, pickle
+import types
 
 from collections import OrderedDict
 from collections import defaultdict
@@ -823,7 +823,7 @@ class Grammar(object):
 
 class Lexer(list):
 
-    def __init__(self, lex2pats, lex_handlers):
+    def __init__(self, lex2pats, lex_handlers=None): # , lex_handler_codes=None):
         # Raw info
         self.extend(lex2pats)
         # Compiled to re object
@@ -832,8 +832,13 @@ class Lexer(list):
             for lex, pat in lex2pats
         ]
         # Handlers
-        self.lex_handlers = lex_handlers
-        
+        if lex_handlers:
+            self.lex_handlers = lex_handlers
+        # elif lex_handler_codes:
+        #     self.lex_handlers = {}
+        #     for n, ms_cd in self.lex_handler_codes.items():
+        #         self.lex_handlers[n] = func
+
     @staticmethod
     def from_grammar(grammar):
         return Lexer(grammar.lex2pats, grammar.lex_handlers)
@@ -889,28 +894,23 @@ class Lexer(list):
         if with_end:
             yield Token(pos, END, END_PATTERN_DEFAULT, None)
 
-    def to_json(self, indent=4, **kw):
+    def dumps(self):
         lex2pats = self[:]
         hdls = {}
         for lex, hdl in self.lex_handlers.items():
-            # FIXME: inspect.getsource may fail for loaded object!
-            hdls[lex] = textwrap.dedent(inspect.getsource(hdl))
-        obj = {'lex2pats': lex2pats, 'lex_handlers': hdls}
-        return json.dumps(obj, indent=indent, **kw)
+            hdls[lex] = marshal.dumps(hdl.__code__)
+        obj = {'lex2pats': lex2pats, 'lex_handler_codes': hdls}
+        return marshal.dumps(obj)
 
     @staticmethod
-    def from_json(s, glb_ctx=None):
-        obj = json.loads(s)
+    def loads(s, glb_ctx=None):
+        obj = marshal.loads(s)
         lex2pats = obj['lex2pats']
         lexhdls = {}
-        ctx = {}
-        for lex, src in obj['lex_handlers'].items():
-            co = compile(src, '<string>', 'exec')
-            if glb_ctx:
-                exec(co, glb_ctx, ctx)
-            else:
-                exec(co, {}, ctx)
-            lexhdls[lex] = ctx[lex]
+        for lex, ms_cd in obj['lex_handler_codes'].items():
+            code = marshal.loads(ms_cd)
+            func = types.FunctionType(code, glb_ctx, lex)
+            lexhdls[lex] = func
         return Lexer(lex2pats, lexhdls)
 
 
@@ -1849,8 +1849,8 @@ class GLR(ParserBase):
 
     def dumps(self):
         obj = dict(
-            lexer = self.lexer.to_json(),
-            semans = [textwrap.dedent(inspect.getsource(seman))
+            lexer = self.lexer.dumps(),
+            semans = [marshal.dumps(seman.__code__)
                       for seman in self.semans],
             rules = self.rules,
             Ks = self.Ks,
@@ -1863,16 +1863,15 @@ class GLR(ParserBase):
     @staticmethod
     def loads(s, glb_ctx={}):
         obj = pickle.loads(s)
-        obj['lexer'] = Lexer.from_json(obj['lexer'], glb_ctx)
+        obj['lexer'] = Lexer.loads(obj['lexer'], glb_ctx)
         semans = []
-        for sm_src in obj['semans']:
-            ctx = {}
-            co = compile(sm_src, '<string>', 'exec')
-            exec(co, glb_ctx, ctx)
-            k, sm = ctx.popitem()
-            semans.append(sm)
+        for ms_cd in obj['semans']:
+            co = marshal.loads(ms_cd)
+            func = types.FunctionType(co, glb_ctx, '_')
+            semans.append(func)
         obj['semans'] = semans
         return GLR(dict=obj)
+
 
 @meta
 class LALR(ParserDeterm):
@@ -2195,8 +2194,8 @@ class LALR(ParserDeterm):
 
     def dumps(self):
         obj = dict(
-            lexer = self.lexer.to_json(),
-            semans = [textwrap.dedent(inspect.getsource(seman))
+            lexer = self.lexer.dumps(),
+            semans = [marshal.dumps(seman.__code__)
                       for seman in self.semans],
             rules = self.rules,
             Ks = self.Ks,
@@ -2209,14 +2208,12 @@ class LALR(ParserDeterm):
     @staticmethod
     def loads(s, glb_ctx={}):
         obj = pickle.loads(s)
-        obj['lexer'] = Lexer.from_json(obj['lexer'], glb_ctx)
+        obj['lexer'] = Lexer.loads(obj['lexer'], glb_ctx)
         semans = []
-        for sm_src in obj['semans']:
-            ctx = {}
-            co = compile(sm_src, '<string>', 'exec')
-            exec(co, glb_ctx, ctx)
-            k, sm = ctx.popitem()
-            semans.append(sm)
+        for ms_cd in obj['semans']:
+            co = marshal.loads(ms_cd)
+            func = types.FunctionType(co, glb_ctx, '_')
+            semans.append(func)
         obj['semans'] = semans
         return LALR(dict=obj)
 

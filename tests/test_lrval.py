@@ -51,8 +51,6 @@ if __name__ == '__main__':
 
     s1 = p1.dumps()
     p1 = LALR.loads(s1, globals()) 
-    # Repeated deserialization is problematic...
-    # - Getting source may fail.
     s1 = p1.dumps()
     p1 = LALR.loads(s1, globals()) 
     s2 = p2.dumps()
@@ -69,8 +67,8 @@ if __name__ == '__main__':
     assert table == ['a', 'b', 'a', 'b'], table
     assert refs == 6
 
-    s = p1.lexer.to_json()
-    lexer = Lexer.from_json(s, globals())
+    s = p1.lexer.dumps()
+    lexer = Lexer.loads(s, globals())
     pp.pprint([*lexer.tokenize(inp, True)])
 
     assert refs == 9

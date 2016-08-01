@@ -5,7 +5,7 @@ from metaparse import *
 table = []
 refs = 0
 
-class Glrval(metaclass=LALR.meta):
+class G(metaclass=cfg):
 
     EQ   = r'='
 
@@ -46,12 +46,23 @@ if __name__ == '__main__':
 
     import pprint as pp
 
-    result = Glrval.interpret(inp)
-    assert result == \
+    p1 = LALR(G)
+    p2 = GLR(G)
+
+    # result = p.interpret(inp)
+    r1 = p1.interpret_many(inp)[0]
+    r2 = p2.interpret_many(inp)[0]
+
+    assert r1 == r2 == \
         ('assign',
          ('deref', 'a'),
          ('deref', ('deref', 'b')))
 
-    assert table == ['a', 'b'], table
-    assert refs == 3
+    assert table == ['a', 'b', 'a', 'b'], table
+    assert refs == 6
 
+
+    pp.pprint(p1.__dict__)
+    # pp.pprint(p2.__dict__)
+    # pp.pprint(p1.parse(inp))
+    # pp.pprint(p2.parse_many(inp)[0].translate())

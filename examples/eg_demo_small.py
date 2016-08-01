@@ -15,7 +15,9 @@ class G_Calc(metaclass=cfg):
     IGNORED = r'\s+'             # Special token.
 
     EQ  = r'='
-    NUM = r'[0-9]+'
+    # NUM = r'[0-9]+'
+    def NUM(lex: r'[1-9]\d*'):
+        return int(lex)
     ID  = r'[_a-zA-Z]\w*'
     POW = r'\*\*', 3            # Can specify precedence of token (mainly for LALR)
     MUL = r'\*'  , 2
@@ -26,8 +28,10 @@ class G_Calc(metaclass=cfg):
     def assign(ID, EQ, expr):        # May rely on side-effect...
         table[ID] = expr
 
-    def expr(NUM):                   # or return local results for purity
-        return int(NUM)
+    # def expr(NUM):                   # or return local results for purity
+    #     return int(NUM)
+    def expr(NUM):
+        return NUM
 
     def expr(ID):
         return table[ID]

@@ -50,7 +50,7 @@ ari_lalr = LALR(GArith)
 # Naive GLL still cannot handle left-recursion
 # ari_gll = GLR(GArith)
 ari_glr = GLR(GArith)
-ari_gll = GLL(GArith)
+# ari_gll = GLL(GArith)
 
 
 class TestArithParser(unittest.TestCase):

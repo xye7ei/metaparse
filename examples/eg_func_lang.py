@@ -27,9 +27,18 @@ TWN = r'[ \t\n]*'
 
 class Lam(metaclass=cfg):
 
+    "A haskell like grammar."
+
     # IGNORED = r'(^[ \t]*\n)| '
     # NEWLINE = r'\n'         # + TWN
     IGNORED = r'\s+'
+
+    # Examplar ERROR handling
+    ERROR = r'\#'
+    ERROR = r'\$'
+    ERROR = r'\!'
+    def ERROR(lex):
+        print('Found ERRORed lexeme:{} and ignored it.'.format(lex))
 
     EQ      = r'='          # + TW
     IN      = r'in'         # + TWN
@@ -59,10 +68,8 @@ class Lam(metaclass=cfg):
         return abst
     def exprx(appl):
         return appl
-    # def exprx(L1, exprx, R1):
-    #     return exprx
 
-    # Singleton expression
+    # Atomic expression
     def expr(VALUE):
         return float(VALUE)
     def expr(VAR):
@@ -88,7 +95,7 @@ class Lam(metaclass=cfg):
     def appl(expr_1, INFIX, expr_2):
         return Appl(INFIX, expr_1, expr_2)
 
-    # Lambda-Abstraction
+    # Lambda-Abstraction (also Curried)
     def abst(LAMBDA, parlist, ARROW, exprx):
         tar = exprx
         for par in reversed(parlist):
@@ -125,23 +132,23 @@ psr_lalr = LALR(Lam)
 
 
 inp = """
-let a = 3 ;
+k = let a = 3 ;
     P q = u v #
- in  #
+!in  $$
    map (\c, d -> f c d) xs ys
 """
 
-inp = """
+# inp = """
 
-k = let
-     a = 3 ;
-     P p q = u v
- in 
-   map (\c, d -> f c d) xs ys ;
+# k = let
+#      a = 3 ;
+#      P p q = u v
+#  in 
+#    map (\c, d -> f c d) xs ys ;
 
-l = 3 ;
-m = 4
-"""
+# l = 3 ;
+# m = 4
+# """
 
 
 # print(Lam)
@@ -153,7 +160,8 @@ psr = psr_lalr
 # psr = psr_glr
 # psr = psr_ear
 
-tough_inp = '   ;\n'.join([inp for _ in range(100)])
+tough_inp = '   ;\n'.join([inp for _ in range(10)])
+# tough_inp = '   ;\n'.join([inp for _ in range(100)])
 
 # pp.pprint(list(psr.grammar.tokenize(inp, False)))
 # pp.pprint(psr.interpret_many(inp))

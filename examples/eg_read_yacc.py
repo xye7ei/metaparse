@@ -38,7 +38,6 @@ class YACC(metaclass=cfg):
 
     def grammar(rules):
         terms = ['    {} = r{}'.format(tok, repr(pat[1:-1])) for pat, tok in Helper.terms.items()]
-        rules = ['    def {}{}:\n        r"""{}"""'.format(lhs, rhs, bdy) for lhs, rhs, bdy in rules]
         gen = '\n'.join([
             'from metaparse import LALR',
             '',
@@ -46,7 +45,8 @@ class YACC(metaclass=cfg):
             '',
             *terms,
             '',
-        ] + rules)
+            *rules,
+        ])
         return gen
 
     def rules(): return []
@@ -59,8 +59,15 @@ class YACC(metaclass=cfg):
         return Helper.get_term(TERM2)
 
     def rule(ID, DRV, alts, SEMI):
-        rs = [(Symbol(ID), seq, bdy) for seq, bdy in alts]
-        return rs
+        r_defs = []
+        for seq, bdy in alts:
+            r_def = '    def {}{}:\n        r"""{}"""'.format(
+                ID,
+                seq,
+                repr(bdy),
+            )
+            r_defs.append(r_def)
+        return r_defs
 
     def alts(alts, ALT, alt):
         alts.append(alt)
@@ -113,5 +120,6 @@ res = yacc.interpret(eg)
 
 # pprint(yacc.grammar.lexers)
 # pprint(yacc)
-pprint(tr)
-pprint(res)
+# pprint(tr)
+print()
+print(res)

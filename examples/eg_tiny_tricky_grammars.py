@@ -1,3 +1,4 @@
+import preamble
 import pprint as pp
 
 from metaparse import *
@@ -108,7 +109,7 @@ class S(metaclass=cfg):
 p_S = GLL(S)                    # Incompleted...
 # res = p_S.parse('u')
 pp.pprint(p_S.parse_many('u'))
-assert 0
+# assert 0
 
 
 # class aSa(metaclass=cfg):

@@ -110,7 +110,7 @@ class ParserError(Exception):
 
 # Special lexical element and lexemes
 END = 'END'
-END_PATTERN_DEFAULT = r'$'
+END_PATTERN_DEFAULT = r'\Z'
 
 IGNORED = 'IGNORED'
 IGNORED_PATTERN_DEFAULT = r'[ \t\n]'
@@ -284,6 +284,7 @@ class Item(object):
 
     def __eq__(self, x):
         "Only compare the indices."
+        assert isinstance(x, Item), x
         return self.r == x.r and self.pos == x.pos
 
     def __hash__(self):
@@ -397,7 +398,6 @@ class Grammar(object):
             # Name trailing with integer subscript indicating
             # the precedence.
             terminals.add(tmn)
-            # self.lex2pats.append((tmn, re.compile(pat, re.MULTILINE)))
             self.lex2pats.append((tmn, pat))
 
         # Cache nonterminals
@@ -417,26 +417,23 @@ class Grammar(object):
         unused_t = set(terminals).difference([IGNORED, END, ERROR])
         unused_nt = set(nonterminals).difference([nonterminals[0]])
         # Raise grammar error in case any symbol is undeclared
-        msg = ''
+
         for r, rl in enumerate(rules):
             for j, X in enumerate(rl.rhs):
                 unused_t.discard(X)
                 unused_nt.discard(X)
                 if X not in terminals and X not in nonterminals:
-                    msg += '\n'.join([
+                    msg = '\n'.join([
                         '',
                         '====================',
                         'Undeclared symbol:',
-                        " * in {}`th rule {}.".format(r, rl),
-                        " * {}`th RHS symbol `{}`.".format(j, X),
-                        # "@{}`th symbol '{}' in {}`th rule {}. Source info:".format(j, X, r, rl),
-                        # semans[r].__code_
+                        " * in {}`th rule {};".format(r + 1, rl),
+                        " * {}`th RHS symbol `{}`.".format(j + 1, X),
                         '====================',
                         '',
                     ])
                     raise GrammarError(msg)
-        # if msg:
-        #     msg += '\n...Failed to construct the grammar.'
+
         # Raise warnings in case any symbol is unused.
         for t in unused_t:
             # warnings.warn('Warning: referred terminal symbol {}'.format(t))
@@ -453,7 +450,7 @@ class Grammar(object):
             tp_rl = Rule(tp_lhs, (fst_rl.lhs,))
             nonterminals.insert(0, tp_lhs)
             rules.insert(0, tp_rl)
-            semans.insert(0, id_fucn)
+            semans.insert(0, id_func)
 
         self.symbols = nonterminals + [a for a in terminals if a != END]
 
@@ -837,10 +834,6 @@ class Lexer(list):
             self.lex_handlers = lex_handlers
         else:
             self.lex_handlers = {}
-        # elif lex_handler_codes:
-        #     self.lex_handlers = {}
-        #     for n, ms_cd in self.lex_handler_codes.items():
-        #         self.lex_handlers[n] = func
 
     @staticmethod
     def from_grammar(grammar):
@@ -878,9 +871,12 @@ class Lexer(list):
                     at, pos = m.span()
                     lxm = m.group()
                     if ERROR in self.lex_handlers:
+                        # Suppress error token and call handler.
                         h = self.lex_handlers[ERROR]
-                        yield Token(at, ERROR, lxm, h(lxm))
+                        h(lxm)
+                        # yield Token(at, ERROR, lxm, h(lxm))
                     else:
+                        # Yield error token when no handler available.
                         yield Token(at, ERROR, lxm, lxm)
                 else:
                     at, pos = m.span()
@@ -893,7 +889,17 @@ class Lexer(list):
                         yield Token(at, cat, lxm, lxm)
             else:
                 # Report unrecognized Token here!
-                raise GrammarError('No defined pattern for unrecognized symbol {}!'.format(inp[at]))
+                msg = '\n'.join([
+                    '',
+                    '=========================',
+                    'No defined pattern starts with char `{}` @{}'.format(inp[pos], pos),
+                    '',
+                    '* Consumed input: ',
+                    repr(inp[:pos]),
+                    '=========================',
+                    '',
+                ])
+                raise GrammarError(msg)
         if with_end:
             yield Token(pos, END, END_PATTERN_DEFAULT, None)
 
@@ -982,6 +988,11 @@ class cfg(type):
         prece = {}
         attrs = []
 
+        lexes_ign = []
+        lexpats_ign = []
+        lexes_err = []
+        lexpats_err = []
+
         for lst in lsts:
             for k, v in lst:
 
@@ -997,26 +1008,24 @@ class cfg(type):
                 elif callable(v):
 
                     # For lexical pattern rule handlers
-
-                    # Scheme 1:
-                    # '''
-                    # def ID(lex: r'\w\w') -> 3:
-                    #     return lex
-                    # '''
-                    if v.__name__ in lexes:
-                        # assert 'lex' in v.__annotations__, 'Must declare param `lex`.'
+                    # - Associated handler for declared pattern
+                    if k == ERROR:
+                        lexhdls[ERROR] = v
+                    elif k in lexes:
                         assert inspect.getargs(v.__code__).args == ['lex'], \
                             "Lexical handler must have singleton param list ['lex']"
-                        lexhdls[v.__name__] = v
+                        assert k not in lexhdls, 'Repeated handler declaration!'
+                        lexhdls[k] = v
+                    # - Pattern and handler together
                     elif hasattr(v, '__annotations__') and 'lex' in v.__annotations__:
-                        lx = v.__name__
                         ann = v.__annotations__
                         assert v.__code__.co_argcount == 1, 'Single argument handler required.'
-                        lexes.append(lx)
+                        assert k not in lexhdls, 'Repeated handler declaration!'
+                        lexes.append(k)
                         lexpats.append(ann['lex'])
-                        lexhdls[lx] = v
+                        lexhdls[k] = v
                         if 'return' in ann:
-                            prece[lx] = ann['return']
+                            prece[k] = ann['return']
 
                     # For rule declarations
                     else:
@@ -1029,16 +1038,26 @@ class cfg(type):
                 # Lexical declaration allows repeatition!!
                 # - String pattern without precedence
                 elif isinstance(v, str):
-                    lexes.append(k)
-                    lexpats.append(v)
+                    if k == ERROR:
+                        lexes_err.append(k)
+                        lexpats_err.append(v)
+                    elif k == IGNORED:
+                        lexes_ign.append(k)
+                        lexpats_ign.append(v)
+                    else:
+                        lexes.append(k)
+                        lexpats.append(v)
                 # - String pattern with precedence
                 elif isinstance(v, tuple):
                     assert len(v) == 2, 'Lexical pattern as tuple should be of length 2.'
-                    assert isinstance(v[0], str) and isinstance(v[1], int), \
+                    pat, prc = v
+                    assert isinstance(pat, str) and isinstance(prc, int), \
                         'Lexical pattern as tuple should be of type (str, int)'
+                    assert pat not in [IGNORED, ERROR, END], \
+                        'Special tokens allow no precedence.'
                     lexes.append(k)
-                    lexpats.append(v[0])
-                    prece[k] = v[1]
+                    lexpats.append(pat)
+                    prece[k] = prc
 
                 # Handle normal private attributes/methods.
                 else:
@@ -1046,25 +1065,29 @@ class cfg(type):
 
         # Default matching order of special patterns:
 
-        # Always match IGNORED secondly after END, if it is not specified;
-        if IGNORED not in lexes:
-            # lexes.move_to_end(IGNORED, last=False)
+        # # Always match END first
+        # if END not in lexes:
+        #     lexes.insert(0, END)
+        #     lexpats.insert(0, END_PATTERN_DEFAULT)
+        # else:
+        #     # Move END to first.
+        #     i_e = lexes.index(END)
+        #     lexes.insert(0, lexes.pop(i_e))
+        #     lexpats.insert(0, lexpats.pop(i_e))
+
+        # Always match IGNORED patterns when all normal pattern fail.
+        if lexes_ign:
+            lexes.extend(lexes_ign)
+            lexpats.extend(lexpats_ign)
+        else:
             lexes.append(IGNORED)
             lexpats.append(IGNORED_PATTERN_DEFAULT)
 
-        # Always match END first
-        if END not in lexes:
-            lexes.insert(0, END)
-            lexpats.insert(0, END_PATTERN_DEFAULT)
+        # Always match ERROR patterns at last.
+        if lexes_err:
+            lexes.extend(lexes_err)
+            lexpats.extend(lexpats_err)
         else:
-            i_e = lexes.index(END)
-            lexes.insert(0, lexes.pop(i_e))
-            lexpats.insert(0, lexpats.pop(i_e))
-
-        # Always match ERROR at last
-        # It may be overriden by the user.
-        if ERROR not in lexes:
-            # lexes[ERROR] = ERROR_PATTERN_DEFAULT
             lexes.append(ERROR)
             lexpats.append(ERROR_PATTERN_DEFAULT)
 
@@ -1357,7 +1380,6 @@ class ParserDeterm(ParserBase):
     directly.
 
     """
-    # def __init__(self, grammar):
 
     def parse_many(self, inp, interp=False):
         return [self.parse(inp, interp=interp)]
@@ -1366,7 +1388,7 @@ class ParserDeterm(ParserBase):
         return [self.interpret(inp)]
 
     def parse(self, inp, interp):
-        raise NotImplementedError('Deterministic parser should have parse1 method.')
+        raise NotImplementedError('Deterministic parser should have `parse` method.')
 
     def interpret(self, inp):
         return self.parse(inp, interp=True)
@@ -1444,12 +1466,19 @@ class Earley(ParserBase):
                 z_j += 1
             if not C1:
                 if not tok.is_END():
-                    msg = '\n===================='
-                    msg += '\nUnrecognized {}'.format(tok)
-                    msg += '\nChoked active ItemSet: \n{}\n'.format(pp.pformat(C))
-                    msg += '====================\n'
-                    msg += '\nStates:'
-                    msg += '\n{}\n'.format(pp.pformat(S))
+                    msg = '\n'.join([
+                        '',
+                        '=========================',
+                        'Unrecognized {}'.format(tok),
+                        'Choked active ItemSet: ',
+                        pp.pformat(C),
+                        '',
+                        'States:',
+                        '',
+                        pp.pformat(S),
+                        '',
+                        '=========================',
+                    ])
                     raise ParserError(msg)
             else:
                 # Commit proceeded items (by Scanning) as item set.
@@ -2049,9 +2078,9 @@ class LALR(LR, ParserDeterm):
                                 # if the action is REDUCE
                                 if act is REDUCE:
                                     # which reduces a different item `arg`
-                                    if arg != ctm:
+                                    if arg != ctm.r:
                                         # then REDUCE/REDUCE conflict is raised.
-                                        conflicts.append((i, lk1, (act, arg), new_redu))
+                                        conflicts.append((i, lk1, (act, self.rules[r]), new_redu))
                                         continue
                                 # If the action is SHIFT
                                 else:
@@ -2329,14 +2358,15 @@ class WLL1(ParserDeterm):
 @meta
 class GLL(ParserBase):
     """This implemenation of GLL parser can handle left-recursion,
-    left-sharing problem and loops properly. However, *hidden left
-    recursion* must be handled with special caution and is currently
-    not supported.
+    left-sharing problem and simple loops properly. However, *hidden
+    left recursion* must be handled with special caution and is
+    currently not supported.
 
     """
 
     def __init__(self, grammar):
-        # super(GLL, self).__init__(grammar)
+        super(GLL, self).__init__(grammar)
+        assert hasattr(self, 'lexer')
         self.grammar = grammar
 
     def _find_hidden_left_rec(self):
@@ -2416,6 +2446,7 @@ class GLL(ParserBase):
         global START, PREDICT, REDUCE, ACCEPT
 
         G = self.grammar
+        L = self.lexer
 
         stk_btm = START
         # `bottom` comes after the reduction of top-symbol
@@ -2429,7 +2460,7 @@ class GLL(ParserBase):
                   for n in G.pred_tree(G.top_symbol, bottom)]
         results = []
 
-        for k, tok in enumerate(G.tokenize(inp, with_end=True)):
+        for k, tok in enumerate(L.tokenize(inp, with_end=True)):
 
             toplst1 = []
             # Start from current node in top list and search the

@@ -96,3 +96,6 @@ if __name__ == '__main__':
     # t = TestArithParser()
     # t.test_normal()
 
+
+    # with open('C:/Users/Shellay/Desktop/ari.psr', 'wb') as o:
+    #     o.write(ari_lalr.dumps())

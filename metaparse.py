@@ -66,7 +66,6 @@ Usage:
 
 
 TODO:
-    - Support GSS structure for non-deterministic parsing.
     - Online-parsing
 
 
@@ -136,11 +135,11 @@ class Symbol(str):
 DUMMY   = Symbol('\0')
 EPSILON = Symbol('EPSILON')
 
-START   = Symbol('START')
-PREDICT = Symbol('PREDICT')
-SHIFT   = Symbol('SHIFT')
-REDUCE  = Symbol('REDUCE')
-ACCEPT  = Symbol('ACCEPT')
+START   = ('START')
+PREDICT = ('PREDICT')
+SHIFT   = ('SHIFT')
+REDUCE  = ('REDUCE')
+ACCEPT  = ('ACCEPT')
 
 
 def id_func(x):
@@ -392,50 +391,52 @@ class Grammar(object):
         self.lex_handlers = dict(lexhdls) if lexhdls else {}
 
         # Cache terminals
-        self.terminals = set()
+        self.terminals = terminals = set()
         self.lex2pats = []
         for tmn, pat in lex2pats:
             # Name trailing with integer subscript indicating
             # the precedence.
-            self.terminals.add(tmn)
+            terminals.add(tmn)
             # self.lex2pats.append((tmn, re.compile(pat, re.MULTILINE)))
             self.lex2pats.append((tmn, pat))
 
         # Cache nonterminals
-        self.nonterminals = []
-        self.rules = []
-        self.semans = []
+        self.nonterminals = nonterminals = []
+        self.rules = rules = []
+        self.semans = semans = []
         for rule, seman in rule2semans:
-            if rule.lhs not in self.nonterminals:
-                self.nonterminals.append(rule.lhs)
-            self.rules.append(rule)
-            self.semans.append(seman)
+            if rule.lhs not in nonterminals:
+                nonterminals.append(rule.lhs)
+            rules.append(rule)
+            semans.append(seman)
 
         # Sort rules with consecutive grouping of LHS.
         # rules.sort(key=lambda r: self.nonterminals.index(r.lhs))
 
         # This block checks completion of given grammar.
-        unused_t = set(self.terminals).difference([IGNORED, END, ERROR])
-        unused_nt = set(self.nonterminals).difference([self.nonterminals[0]])
+        unused_t = set(terminals).difference([IGNORED, END, ERROR])
+        unused_nt = set(nonterminals).difference([nonterminals[0]])
         # Raise grammar error in case any symbol is undeclared
         msg = ''
-        for r, rl in enumerate(self.rules):
+        for r, rl in enumerate(rules):
             for j, X in enumerate(rl.rhs):
                 unused_t.discard(X)
                 unused_nt.discard(X)
-                if X not in self.terminals and X not in self.nonterminals:
+                if X not in terminals and X not in nonterminals:
                     msg += '\n'.join([
                         '',
                         '====================',
                         'Undeclared symbol:',
-                        "@{}`th symbol '{}' in {}`th rule {}. Source info:".format(j, X, r, rl),
-                        rl.src_info,
+                        " * in {}`th rule {}.".format(r, rl),
+                        " * {}`th RHS symbol `{}`.".format(j, X),
+                        # "@{}`th symbol '{}' in {}`th rule {}. Source info:".format(j, X, r, rl),
+                        # semans[r].__code_
                         '====================',
                         '',
                     ])
-        if msg:
-            msg += '\n...Failed to construct the grammar.'
-            raise GrammarError(msg)
+                    raise GrammarError(msg)
+        # if msg:
+        #     msg += '\n...Failed to construct the grammar.'
         # Raise warnings in case any symbol is unused.
         for t in unused_t:
             # warnings.warn('Warning: referred terminal symbol {}'.format(t))
@@ -446,19 +447,19 @@ class Grammar(object):
 
         # Generate top rule as Augmented Grammar only if
         # the singleton top rule is not explicitly given.
-        fst_rl = self.rules[0]
+        fst_rl = rules[0]
         if len(fst_rl.rhs) != 1 or 1 < [rl.lhs for rl in rules].count(fst_rl.lhs):
             tp_lhs = "{}^".format(fst_rl.lhs)
             tp_rl = Rule(tp_lhs, (fst_rl.lhs,))
-            self.nonterminals.insert(0, tp_lhs)
-            self.rules = [tp_rl] + self.rules
-            self.semans = [id_func] + self.semans
+            nonterminals.insert(0, tp_lhs)
+            rules.insert(0, tp_rl)
+            semans.insert(0, id_fucn)
 
-        self.symbols = self.nonterminals + [a for a in self.terminals if a != END]
+        self.symbols = nonterminals + [a for a in terminals if a != END]
 
         # Top rule of Augmented Grammar.
-        self.top_rule = self.rules[0]
-        self.top_symbol = self.top_rule.lhs
+        self.top_rule = rules[0]
+        self.top_symbol = nonterminals[0]
 
         # Helper for fast accessing with Trie like structure.
         self._ngraph = defaultdict(list)
@@ -823,7 +824,7 @@ class Grammar(object):
 
 class Lexer(list):
 
-    def __init__(self, lex2pats, lex_handlers=None): # , lex_handler_codes=None):
+    def __init__(self, lex2pats, lex_handlers=None):
         # Raw info
         self.extend(lex2pats)
         # Compiled to re object
@@ -834,6 +835,8 @@ class Lexer(list):
         # Handlers
         if lex_handlers:
             self.lex_handlers = lex_handlers
+        else:
+            self.lex_handlers = {}
         # elif lex_handler_codes:
         #     self.lex_handlers = {}
         #     for n, ms_cd in self.lex_handler_codes.items():
@@ -895,6 +898,7 @@ class Lexer(list):
             yield Token(pos, END, END_PATTERN_DEFAULT, None)
 
     def dumps(self):
+        "Dump into byte source."
         lex2pats = self[:]
         hdls = {}
         for lex, hdl in self.lex_handlers.items():
@@ -903,7 +907,8 @@ class Lexer(list):
         return marshal.dumps(obj)
 
     @staticmethod
-    def loads(s, glb_ctx=None):
+    def loads(s, glb_ctx):
+        "Load from source. Should be done given some global context!"
         obj = marshal.loads(s)
         lex2pats = obj['lex2pats']
         lexhdls = {}
@@ -1317,7 +1322,6 @@ class ParserBase(object):
     """
 
     def __init__(self, grammar):
-        assert isinstance(grammar, Grammar)
         self.lexer = Lexer.from_grammar(grammar)
 
     def __repr__(self):
@@ -1663,6 +1667,56 @@ class Earley(ParserBase):
         return fin
 
 
+class LR(ParserBase):
+    """Abstract class for LR parsers supporting dumps/loads methods."""
+
+    def __init__(self, grammar=None, dict=None):
+        if grammar is not None:
+            super(LR, self).__init__(grammar)
+            self.lexer = Lexer.from_grammar(grammar)
+            self._build_automaton(grammar)
+        elif dict is not None:
+            for k, v in dict.items():
+                setattr(self, k, v)
+
+    def __repr__(self):
+        return '{}-Parser-for-Grammar\n{}'.format(
+            self.__class__.__name__,
+            pp.pformat(self.rules))
+
+    def _build_automaton(self, G):
+        raise NotImplementedError()
+
+    def dumps(self):
+        obj = dict(
+            lexer = self.lexer.dumps(),
+            semans = [marshal.dumps(seman.__code__)
+                      for seman in self.semans],
+            rules = self.rules,
+            Ks = self.Ks,
+            ACTION = self.ACTION,
+            GOTO = self.GOTO,
+        )
+        s = pickle.dumps(obj)
+        return s
+
+    @classmethod
+    def loads(cls, s, glb_ctx={}):
+        """Polymorphic class method with `cls` referring to the belonged class
+        of callee.
+
+        """
+        obj = pickle.loads(s)
+        obj['lexer'] = Lexer.loads(obj['lexer'], glb_ctx)
+        semans = []
+        for ms_cd in obj['semans']:
+            co = marshal.loads(ms_cd)
+            func = types.FunctionType(co, glb_ctx, '_')
+            semans.append(func)
+        obj['semans'] = semans
+        return cls(dict=obj)
+
+
 # TODO:
 # 
 # LR parsers can indeed corporate pre-order semantics. Each ItemSet
@@ -1671,7 +1725,7 @@ class Earley(ParserBase):
 # (though at most ONE token gets consumed already).
 # 
 @meta
-class GLR(ParserBase):
+class GLR(LR):
 
     """GLR parser is a type of non-deterministic parsers which produces
     parse forest rather than exactly one parse tree. The traversal
@@ -1707,14 +1761,8 @@ class GLR(ParserBase):
 
     """
 
-    def __init__(self, grammar=None, dict=None):
-        # super(GLR, self).__init__(grammar)
-        if grammar is not None:
-            self.lexer = Lexer.from_grammar(grammar)
-            self._build_automaton(grammar)
-        elif dict is not None:
-            for k, v in dict.items():
-                setattr(self, k, v)
+    def __init__(self, *a, **kw):
+        super(GLR, self).__init__(*a, **kw)
 
     def _build_automaton(self, G):
 
@@ -1847,34 +1895,9 @@ class GLR(ParserBase):
         else:
             return results
 
-    def dumps(self):
-        obj = dict(
-            lexer = self.lexer.dumps(),
-            semans = [marshal.dumps(seman.__code__)
-                      for seman in self.semans],
-            rules = self.rules,
-            Ks = self.Ks,
-            ACTION = self.ACTION,
-            GOTO = self.GOTO,
-        )
-        s = pickle.dumps(obj)
-        return s
-
-    @staticmethod
-    def loads(s, glb_ctx={}):
-        obj = pickle.loads(s)
-        obj['lexer'] = Lexer.loads(obj['lexer'], glb_ctx)
-        semans = []
-        for ms_cd in obj['semans']:
-            co = marshal.loads(ms_cd)
-            func = types.FunctionType(co, glb_ctx, '_')
-            semans.append(func)
-        obj['semans'] = semans
-        return GLR(dict=obj)
-
 
 @meta
-class LALR(ParserDeterm):
+class LALR(LR, ParserDeterm):
 
     """Look-Ahead Leftmost-reading Rightmost-derivation (LALR) parser may
     be the most widely used parser variant. It has almost the same
@@ -1886,22 +1909,13 @@ class LALR(ParserDeterm):
 
     """
 
-    def __init__(self, grammar=None, dict=None):
-
-        if grammar is not None:
-            self._build_automaton(grammar)
-
-            self.lexer = Lexer.from_grammar(grammar)
-            self.rules = grammar.rules[:]
-            self.semans = grammar.semans[:]
-        elif dict is not None:
-            for k, v in dict.items():
-                setattr(self, k, v)
-
-    def __repr__(self):
-        return 'LALR-parser for {}'.format(pp.pformat(self.rules))
+    def __init__(self, *a, **kw):
+        super(LALR, self).__init__(*a, **kw)
 
     def _build_automaton(self, G):
+
+        self.rules = G.rules[:]
+        self.semans = G.semans[:]
 
         Ks = [[G.item(0, 0)]]   # Kernels
         GOTO = []
@@ -2191,31 +2205,6 @@ class LALR(ParserDeterm):
             # pass
 
         return
-
-    def dumps(self):
-        obj = dict(
-            lexer = self.lexer.dumps(),
-            semans = [marshal.dumps(seman.__code__)
-                      for seman in self.semans],
-            rules = self.rules,
-            Ks = self.Ks,
-            ACTION = self.ACTION,
-            GOTO = self.GOTO,
-        )
-        s = pickle.dumps(obj)
-        return s
-
-    @staticmethod
-    def loads(s, glb_ctx={}):
-        obj = pickle.loads(s)
-        obj['lexer'] = Lexer.loads(obj['lexer'], glb_ctx)
-        semans = []
-        for ms_cd in obj['semans']:
-            co = marshal.loads(ms_cd)
-            func = types.FunctionType(co, glb_ctx, '_')
-            semans.append(func)
-        obj['semans'] = semans
-        return LALR(dict=obj)
 
 
 @meta

@@ -118,8 +118,8 @@ class Lam(metaclass=cfg):
 
 # Test whether the grammar is LALR to exclude potential ambiguity
 # and prepare for better performance
-psr_ear = Earley(Lam)
-psr_gll = GLL(Lam)
+# psr_ear = Earley(Lam)
+# psr_gll = GLL(Lam)
 psr_glr = GLR(Lam)
 psr_lalr = LALR(Lam)
 
@@ -160,4 +160,14 @@ tough_inp = '   ;\n'.join([inp for _ in range(100)])
 # print(len(psr.ACTION))
 # pp.pprint(psr.ACTION)
 
-pp.pprint(psr_lalr.interpret(tough_inp))
+pp.pprint(psr.interpret(tough_inp))
+
+s = psr.dumps()
+psr1 = psr.loads(s, globals())
+# timeit psr.loads(s, globals())
+# timeit LALR(Lam)
+
+pp.pprint(psr1.interpret(tough_inp))
+
+
+assert psr.interpret(tough_inp) == psr1.interpret(tough_inp)

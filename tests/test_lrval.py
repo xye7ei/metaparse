@@ -72,3 +72,4 @@ if __name__ == '__main__':
     pp.pprint([*lexer.tokenize(inp, True)])
 
     assert refs == 9
+    pp.pprint(p1)

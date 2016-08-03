@@ -12,6 +12,7 @@ class WGLL(ParserBase):
 
     def __init__(self, grammar):
         super(WGLL, self).__init__(grammar)
+        self.grammar = grammar
         self._calc_gll1_table()
 
     def _calc_gll1_table(self):
@@ -24,19 +25,22 @@ class WGLL(ParserBase):
             if rhs:
                 for a in G.first_of_seq(rhs, EPSILON):
                     if a is not EPSILON:
-                        table[lhs][a].append(rule)
+                        table[lhs][a].append(r)
             else:
-                table[lhs][EPSILON].append(rule)
+                table[lhs][EPSILON].append(r)
 
     def parse_many(self, inp):
+
         G = self.grammar
+        L = self.lexer
+
         table = self.table
         agenda = [(Node((PREDICT, G.top_symbol), None), None)]
 
         pop = lambda x: x
         push = Node
 
-        for k, tok in enumerate(G.tokenize(inp, True)):
+        for k, tok in enumerate(L.tokenize(inp, True)):
 
             agenda1 = []
 
@@ -44,30 +48,31 @@ class WGLL(ParserBase):
                 sstk, tstk = agenda.pop()
                 # Pop from GSS.
                 (act, arg), sstk = pop(sstk)
-                if act is PREDICT:
+                if act == PREDICT:
                     X = arg
                     if X in G.nonterminals:
                         if tok.symbol in table[X]:
-                            for rl in table[X][tok.symbol]:
+                            for r in table[X][tok.symbol]:
                                 sstk1 = sstk
-                                sstk1 = push((REDUCE, rl), sstk1)
-                                for Y in reversed(rl.rhs):
+                                sstk1 = push((REDUCE, r), sstk1)
+                                for Y in reversed(G.rules[r].rhs):
                                     sstk1 = push((PREDICT, Y), sstk1)
                                 agenda.append((sstk1, tstk))
                         if EPSILON in table[X]:
-                            rl = table[X][EPSILON][0]
-                            sstk = push((REDUCE, rl), sstk)
+                            r, = table[X][EPSILON]
+                            sstk = push((REDUCE, r), sstk)
                             agenda.append((sstk, tstk))
                     else:
                         if tok.symbol == X:
                             agenda1.append((sstk, push(tok, tstk)))
                 else:
-                    rl = arg
+                    r = arg
+                    rl = G.rules[r]
                     subs = deque()
                     for _ in rl.rhs:
                         sub, tstk = pop(tstk)
                         subs.appendleft(sub)
-                    t = ParseTree(rl, subs)
+                    t = ParseTree(rl, subs, G.semans[r])
                     if rl.lhs is G.top_symbol:
                         if tok.is_END():
                             yield t
@@ -90,13 +95,14 @@ def IF():
 
 
 g = WGLL(IF)
+glr = GLR(IF)
 
-# pprint([*g.parse_many('if 1 then a')])
-# pprint([*g.parse_many('if 1 then a else b')])
 pprint([*g.parse_many('if 1 then if 2 then a else b')])
 
+# timeit [*g.parse_many('if 1 then if 2 then a else b')]
+# timeit [*glr.parse_many('if 1 then if 2 then a else b')]
 
-@WGLL
+
 @grammar
 def sexp():
     SYM = r'[^\[\]\(\)\{\}\s\t\v\n]+'
@@ -108,4 +114,11 @@ def sexp():
     def slist(): pass
     def slist(sexp, slist): pass
 
-pprint([*sexp.parse_many('(a (b))')])
+s = WGLL(sexp)
+slr = GLR(sexp)
+
+pprint([*s.parse_many('(a (b))')])
+
+# [*s.parse_many('(a (b c) ((((((d)))))) ((e) f (g h)))')]
+# timeit [*s.parse_many('(a (b c) ((((((d)))))) ((e) f (g h)))')]
+# timeit [*slr.parse_many('(a (b c) ((((((d)))))) ((e) f (g h)))')]

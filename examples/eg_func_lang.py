@@ -38,7 +38,8 @@ class Lam(metaclass=cfg):
     ERROR = r'\$'
     ERROR = r'\!'
     def ERROR(lex):
-        print('Found ERRORed lexeme:{} and ignored it.'.format(lex))
+        # print('Found ERRORed lexeme: `{}` and ignored it.'.format(lex))
+        pass
 
     EQ      = r'='          # + TW
     IN      = r'in'         # + TWN
@@ -126,10 +127,28 @@ class Lam(metaclass=cfg):
 # Test whether the grammar is LALR to exclude potential ambiguity
 # and prepare for better performance
 # psr_ear = Earley(Lam)
-# psr_gll = GLL(Lam)
+psr_gll = GLL(Lam)
 psr_glr = GLR(Lam)
 psr_lalr = LALR(Lam)
 
+
+inp = """
+
+k = let
+     a = 3 ;
+     P p q = u v
+ in 
+   map (\c, d -> f c d) xs ys ;
+
+l = 3 ;
+m = 4
+"""
+
+# r = psr_gll.parse_many(inp)
+# r = psr_glr.parse_many(inp)
+# print(r)
+
+# assert 0
 
 inp = """
 k = let a = 3 ;
@@ -137,18 +156,6 @@ k = let a = 3 ;
 !in  $$
    map (\c, d -> f c d) xs ys
 """
-
-# inp = """
-
-# k = let
-#      a = 3 ;
-#      P p q = u v
-#  in 
-#    map (\c, d -> f c d) xs ys ;
-
-# l = 3 ;
-# m = 4
-# """
 
 
 # print(Lam)
@@ -178,4 +185,5 @@ psr1 = psr.loads(s, globals())
 pp.pprint(psr1.interpret(tough_inp))
 
 
+assert psr_glr.interpret_many(tough_inp)[0] == psr1.interpret(tough_inp)
 assert psr.interpret(tough_inp) == psr1.interpret(tough_inp)

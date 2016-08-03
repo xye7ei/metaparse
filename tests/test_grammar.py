@@ -24,11 +24,12 @@ class G(metaclass=cfg):
 
 class TestGrammar(unittest.TestCase):
 
-    def test_first(self):
-        self.assertEqual(G.FIRST['S'], {'a', 'd', EPSILON})
+    def test_first0(self):
+        self.assertEqual(G.FIRST0['S'], {'a', 'd', EPSILON})
+        self.assertEqual(G.FIRST0['E'], {'d', EPSILON})
 
-    def test_first_many(self):
-        self.assertEqual(G.first_of_seq(['A', 'B', 'C'], '#'), {'a', 'd', 'c', 'd', '#'})
+    def test_first_all(self):
+        self.assertEqual(G.first_of_seq(['A', 'B', 'C'], '#'), {'a', 'b', 'c', 'd', '#'})
 
     def test_nullalbe(self):
         self.assertEqual(set(G.NULLABLE), {'S^', 'S', 'A', 'B', 'C', 'D', 'E'})

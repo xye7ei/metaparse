@@ -73,3 +73,4 @@ if __name__ == '__main__':
 
     assert refs == 9
     pp.pprint(p1)
+    pp.pprint(p1.__dict__)

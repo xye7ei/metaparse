@@ -301,6 +301,7 @@ class Item(object):
     def ended(s):
         return s.pos == len(s.rules[s.r].rhs)
 
+    @property
     def rest(s):
         return s.rules[s.r].rhs[s.pos:]
 
@@ -466,6 +467,7 @@ class Grammar(object):
         # Prepare useful information for parsing.
         self._calc_nullable()
         self._calc_pred_trees()
+        self._calc_first()
 
     def __repr__(self):
         return 'Grammar\n{}\n'.format(pp.pformat(self.rules))
@@ -580,18 +582,18 @@ class Grammar(object):
             # node, should be added to top list.
             elif act is REDUCE:
                 # rl = arg
-                # assert G.is_nullable_seq(rl.rhs)
+                # assert G.is_nullable_seq(rl.rhs), rl
                 # assert isinstance(nxt, ExpdNode)
                 # #
                 # for fk in nxt.forks:
                 #     # `fk` maybe the bottom.
                 #     if fk is not bottom:
                 #         (act1, arg), _ = fk
-                #         if act1 is PREDICT:
+                #         if act1 == PREDICT:
                 #             toplst.append(fk)
-                #         elif act1 is REDUCE:
-                #             if fk not in toplst:
-                #                 toplst.append(fk)
+                #         elif act1 == REDUCE:
+                #             # if fk not in toplst:
+                #             toplst.append(fk)
                 #         else:
                 #             assert False, ('Invaid node following ExpdNode.')
                 z += 1
@@ -714,15 +716,18 @@ class Grammar(object):
                     paths.append(path + [nxt])
 
     def _calc_pred_trees(G):
-        G.FIRST = {}
+        G.FIRST0 = {}
         for nt in reversed(G.nonterminals):
-            pt = G.pred_tree(nt)
-            G.FIRST[nt] = f = set()
-            for nd in pt:
+            tl = G.pred_tree(nt)
+            G.FIRST0[nt] = f = set()
+            # for nd in tl:
+            z = 0
+            while z < len(tl):
+                nd = tl[z]
                 if isinstance(nd, Node):
                     act, x = nd.value
                     if act is PREDICT:
-                        assert x in G.terminals
+                        assert x in G.terminals, x
                         f.add(x)
                     elif act is REDUCE:
                         assert x in G.rules
@@ -730,7 +735,8 @@ class Grammar(object):
                     else:
                         raise ValueError('Not valid action in toplist.')
                 else:
-                    raise ValueError('Not valid node in toplist.')
+                    assert False, nd
+                z += 1
 
     def first_of_seq(G, seq, tail=DUMMY):
         """Find the FIRST set of a sequence of symbols. This relies on the
@@ -753,6 +759,24 @@ class Grammar(object):
         # Note :tail: can also be EPSILON
         fs.add(tail)
         return fs
+
+    def _calc_first(G):
+        """Construct canonical FIRST set by iteratively augmenting FIRST0[X]
+        with first_of_seq(x) for alternatives (X = x).
+
+        """
+        G.FIRST = {a: set(f) for a, f in G.FIRST0.items()}
+        while 1:
+            has_new = False
+            for lhs, rhs in G.rules:
+                f_l = G.FIRST[lhs]
+                f_r = G.first_of_seq(rhs, EPSILON)
+                for a in f_r:
+                    if a not in f_l:
+                        f_l.add(a)
+                        has_new = True
+            if not has_new:
+                break
 
     def is_nullable_seq(G, seq):
         return all(X in G.NULLABLE for X in seq)
@@ -2131,6 +2155,11 @@ class LALR(LR, ParserDeterm):
 
         self.ACTION = ACTION
 
+        # Eliminate dependencies?
+        # self.Ks = [[(k.target, k.rest) for k in K]
+        #            for K in self.Ks]
+        # self.rules = [(lhs, rhs) for lhs, rhs in self.rules]
+
     def parse(self, inp, interp=False, n_warns=5):
 
         """Perform table-driven deterministic parsing process. Only one parse
@@ -2201,20 +2230,20 @@ class LALR(LR, ParserDeterm):
                     # REDUCE
                     elif act == REDUCE:
                         assert isinstance(arg, int)
-                        rl = rules[arg]
+                        rule = lhs, rhs = rules[arg]
                         seman = semans[arg]
                         subts = deque()
-                        for _ in range(rl.size):
+                        for _ in rhs:
                             subt = trees.pop()
                             subts.appendleft(subt)
                             sstack.pop()
                         if interp:
                             tree = seman(*subts)
                         else:
-                            tree = ParseTree(rl, subts, seman)
+                            tree = ParseTree(rule, subts, seman)
                         trees.append(tree)
                         # New symbol is used for shifting.
-                        sstack.append(GOTO[sstack[-1]][rl.lhs])
+                        sstack.append(GOTO[sstack[-1]][lhs])
 
                     # ACCEPT
                     elif act == ACCEPT:
@@ -2460,7 +2489,10 @@ class GLL(ParserBase):
                   for n in G.pred_tree(G.top_symbol, bottom)]
         results = []
 
+        toks = []
+
         for k, tok in enumerate(L.tokenize(inp, with_end=True)):
+            toks.append(tok)
 
             toplst1 = []
             # Start from current node in top list and search the
@@ -2502,8 +2534,8 @@ class GLL(ParserBase):
                         assert isinstance(nxt, ExpdNode), nxt
                         m, fks = nxt
                         # FIXME:
-                        # if m not in expdd:
-                        if 1:
+                        if m not in expdd:
+                        # if 1:
                             # expdd[m] = nxt
                             for fk in fks:
                                 # srchs.append((fk, stk + [x, nxt.value]))
@@ -2511,6 +2543,12 @@ class GLL(ParserBase):
                                 # - ExpdNode redundant in stack, thus not pushed.
                                 srchs.append((fk, {**expdd, m: nxt}, push(rl, stk)))
 
-            toplst = toplst1
+            if not toplst1:
+                if not tok.is_END():
+                    raise ParserError('Failed after reading \n{}.'.format(
+                        pp.pformat(toks)
+                    ))
+            else:
+                toplst = toplst1
 
         return results

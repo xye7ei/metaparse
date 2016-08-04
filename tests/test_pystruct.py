@@ -55,7 +55,7 @@ target2 = lambda inp: gPyStructReader.interpret_many(inp)[0]
 class TestPyStructParser(unittest.TestCase):
 
     def test_first(self):
-        self.assertEqual(PyStructReader.grammar.FIRST['Obj'], {'l1', 'id', 'l2', 'l3'})
+        self.assertEqual(G_PyStruct.FIRST['Obj'], {'l1', 'id', 'l2', 'l3'})
 
     def test_empty_list(self):
         self.assertEqual(target('[]'), ('Lst', []))

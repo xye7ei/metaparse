@@ -2,7 +2,7 @@
 import preamble
 
 import pprint as pp
-from metaparse import LALR, cfg
+from metaparse import LALR, cfg, GLR
 
 # Global stuff
 table = {}
@@ -92,7 +92,12 @@ import ast
 import inspect
 
 pCalc = LALR(G_Calc)
-pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
+t = pCalc.parse("x = 1 + 4 * 3 ** 2 + 5")
+print(t)
+print(t.translate())
+print(table)
+assert table == {'x': 42}
+# pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
 pCalc.interpret("y = 5 + x * 2")
 pCalc.interpret("z = 99")
 print(table)

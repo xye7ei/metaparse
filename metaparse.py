@@ -850,7 +850,7 @@ class Lexer(list):
         self.extend(lex2pats)
         # Compiled to re object
         self.lex2rgxs = [
-            (lex, re.compile(pat))
+            (lex, re.compile(pat) if pat else None)
             for lex, pat in lex2pats
         ]
         # Handlers
@@ -880,24 +880,40 @@ class Lexer(list):
 
         pos = 0
         while pos < len(inp):
+            # raw string match
+            raw_match = False
+            # re match
+            n = None
             m = None
             for cat, rgx in self.lex2rgxs:
-                m = rgx.match(inp, pos=pos)
-                # The first match with non-zero length is yielded.
-                if m and len(m.group()) > 0:
-                    break
-            if m:
-                if cat == IGNORED:
+                # raw
+                if rgx is None:
+                    if inp.startswith(cat, pos):
+                        yield Token(pos, cat, cat, cat)
+                        pos += len(cat)
+                        raw_match = True
+                        break
+                # re
+                else:
+                    m = rgx.match(inp, pos=pos)
+                    # The first match with non-zero length is yielded.
+                    if m and len(m.group()) > 0:
+                        n = cat
+                        break
+            if raw_match:
+                continue
+            elif m:
+                assert isinstance(n, str)
+                if n == IGNORED:
                     # Need IGNORED handler?
                     at, pos = m.span()
-                elif cat == ERROR:
+                elif n == ERROR:
                     # Call ERROR handler!
                     at, pos = m.span()
                     lxm = m.group()
                     if ERROR in self.lex_handlers:
                         # Suppress error token and call handler.
-                        h = self.lex_handlers[ERROR]
-                        h(lxm)
+                        self.lex_handlers[ERROR](lxm)
                         # yield Token(at, ERROR, lxm, h(lxm))
                     else:
                         # Yield error token when no handler available.
@@ -905,12 +921,13 @@ class Lexer(list):
                 else:
                     at, pos = m.span()
                     lxm = m.group()
-                    if cat in self.lex_handlers:
+                    if n in self.lex_handlers:
                         # Call normal token handler.
-                        h = self.lex_handlers[cat]
-                        yield Token(at, cat, lxm, h(lxm))
+                        h = self.lex_handlers[n]
+                        # Bind semantic value.
+                        yield Token(at, n, lxm, h(lxm))
                     else:
-                        yield Token(at, cat, lxm, lxm)
+                        yield Token(at, n, lxm, lxm)
             else:
                 # Report unrecognized Token here!
                 msg = '\n'.join([
@@ -1257,54 +1274,6 @@ class ParseTree(object):
     def translate(tree, trans_tree=None, trans_leaf=None, as_tuple=False):
         """Postorder tree traversal with double-stack scheme.
         """
-
-        # Example:
-        # - prediction stack
-        # - processed argument stack
-
-        # i-  [T]$
-        # a- $[]
-
-        # =(T -> AB)=>>
-
-        # i-  [A B (->T)]$
-        # a- $[]
-
-        # =(A -> a1 a2)=>>
-
-        # i-  [a1 a2 (->A) B (->T)]$
-        # a- $[]
-
-        # =a1, a2=>>
-
-        # i-  [(->A) B (->T)]$
-        # a- $[a1 a2]
-
-        # =(a1 a2 ->A)=>>
-
-        # i-  [B (->T)]$
-        # a- $[A]
-
-        # =(B -> b)=>>
-
-        # i-  [b (->B) (->T)]$
-        # a- $[A]
-
-        # =b=>>
-
-        # i-  [(->B) (->T)]$
-        # a- $[A b]
-
-        # =(b ->B)=>>
-
-        # i-  [(->T)]$
-        # a- $[A B]
-
-        # =(A B ->T)=>>
-
-        # i-  []$
-        # a- $[T]
-
         # Direct translation
         # Aliasing push/pop, simulating stack behavior
         push, pop = list.append, list.pop
@@ -2036,9 +2005,9 @@ class LALR(LR, ParserDeterm):
                         if a != DUMMY:
                             spont[j][ctm.shifted].add(a)
                         else:
-                            # Propagation from KERNEL item :ktm: to
-                            # its belonging non-kernel item :ctm:,
-                            # which is shifted into :j:'th item set
+                            # Propagation from KERNEL item `ktm` to
+                            # its belonging non-kernel item `ctm`,
+                            # which is shifted into `j`'th item set
                             # (by its actor). See ALGO 4.62 in Dragon
                             # book.
                             propa[i].append((ktm, j, ctm.shifted))
@@ -2046,7 +2015,7 @@ class LALR(LR, ParserDeterm):
         table = spont
 
         # MORE-PASS propagation
-        b = 1
+        prop_passes = 1
         while True:
             brk = True
             for i, _ in enumerate(Ks):
@@ -2060,14 +2029,10 @@ class LALR(LR, ParserDeterm):
             if brk:
                 break
             else:
-                b += 1
-
-        # self._propa_passes = b
+                prop_passes += 1
 
         self.Ks = Ks
         self.GOTO = GOTO
-        # self.propa = propa
-        # self.table = table
 
         # Now all goto and lookahead information is available.
 
@@ -2075,6 +2040,7 @@ class LALR(LR, ParserDeterm):
         ACTION = [{} for _ in table]
 
         # SHIFT for non-ended items
+        # - The argument of SHIFT is the target item set index.
         # Since no SHIFT/SHIFT conflict exists, register
         # all SHIFT information firstly.
         for i, xto in enumerate(GOTO):
@@ -2083,6 +2049,7 @@ class LALR(LR, ParserDeterm):
                     ACTION[i][X] = (SHIFT, j)
 
         # REDUCE for ended items
+        # - The argument of REDUCE is the index of the rule to be reduced. 
         # SHIFT/REDUCE and REDUCE/REDUCE conflicts are
         # to be found.
         conflicts = []
@@ -2104,7 +2071,7 @@ class LALR(LR, ParserDeterm):
                                     # which reduces a different item `arg`
                                     if arg != ctm.r:
                                         # then REDUCE/REDUCE conflict is raised.
-                                        conflicts.append((i, lk1, (act, self.rules[r]), new_redu))
+                                        conflicts.append((i, lk1, (act, self.rules[arg]), new_redu))
                                         continue
                                 # If the action is SHIFT
                                 else:
@@ -2249,12 +2216,15 @@ class LALR(LR, ParserDeterm):
                     elif act == ACCEPT:
                         # Reduce the top semantics.
                         assert isinstance(arg, int), arg
-                        rl = rules[arg]
+                        rule = rules[arg]
                         seman = semans[arg]
                         if interp:
                             return seman(*trees)
                         else:
-                            return ParseTree(rl, trees, seman)
+                            assert len(trees) == 1
+                            # Augmented top tree or naive top tree?
+                            # return ParseTree(rule, trees, seman)
+                            return trees[0]
                     else:
                         raise ParserError('Invalid action {} on {}'.format(act, arg))
 
@@ -2541,7 +2511,9 @@ class GLL(ParserBase):
                                 # srchs.append((fk, stk + [x, nxt.value]))
                                 # Mind the push order!
                                 # - ExpdNode redundant in stack, thus not pushed.
-                                srchs.append((fk, {**expdd, m: nxt}, push(rl, stk)))
+                                expdd1 = dict(expdd)
+                                expdd1[m] = nxt
+                                srchs.append((fk, expdd1, push(rl, stk)))
 
             if not toplst1:
                 if not tok.is_END():

@@ -373,20 +373,26 @@ class Grammar(object):
 
     """
 
-    def __init__(self, lex2pats, rule2semans, prece=None, lexhdls=None):
+    def __init__(self, lexes, lexpats, rules, semans=None, prece=None, lexhdls=None):
         """
-        Parameters:
-
-        :lexes:  : list<(<terminal-name> : <terminal-pattern>)>
-            A ordered dict representing lexical rules.
-
-        :rules:  : [Rule]
-            A list of grammar rules.
-
-        :prece:  : {<token>: <int-precedence>}
-            A dict of operator's precedence numbers.
+        lex     : A list of lexical element names
+        lexpats : A list of lexical patterns
+        rules   : A list of grammar rules.
+        semans  : A list of rule semantics
+        prece   : A dict for operator's precedence ordinals.
+        lexhdls : A dict for lexical handlers
 
         """
+
+        # Always match IGNORED patterns when all normal pattern fail.
+        if IGNORED not in lexes:
+            lexes.append(IGNORED)
+            lexpats.append(IGNORED_PATTERN_DEFAULT)
+
+        # Always match ERROR patterns at last. 
+        if ERROR not in lexes:
+            lexes.append(ERROR)
+            lexpats.append(ERROR_PATTERN_DEFAULT)
 
         # Operator precedence table may be useful.
         self.OP_PRE = dict(prece) if prece else {}
@@ -395,7 +401,7 @@ class Grammar(object):
         # Cache terminals
         self.terminals = terminals = set()
         self.lex2pats = []
-        for tmn, pat in lex2pats:
+        for tmn, pat in zip(lexes, lexpats):
             # Name trailing with integer subscript indicating
             # the precedence.
             terminals.add(tmn)
@@ -403,13 +409,14 @@ class Grammar(object):
 
         # Cache nonterminals
         self.nonterminals = nonterminals = []
-        self.rules = rules = []
-        self.semans = semans = []
-        for rule, seman in rule2semans:
+        self.rules = rules
+        if semans:
+            self.semans = semans
+        else:
+            self.semans = semans = [None for _ in rules]
+        for rule in rules:
             if rule.lhs not in nonterminals:
                 nonterminals.append(rule.lhs)
-            rules.append(rule)
-            semans.append(seman)
 
         # Sort rules with consecutive grouping of LHS.
         # rules.sort(key=lambda r: self.nonterminals.index(r.lhs))
@@ -451,7 +458,8 @@ class Grammar(object):
             tp_rl = Rule(tp_lhs, (fst_rl.lhs,))
             nonterminals.insert(0, tp_lhs)
             rules.insert(0, tp_rl)
-            semans.insert(0, id_func)
+            if semans is not None:
+                semans.insert(0, id_func)
 
         self.symbols = nonterminals + [a for a in terminals if a != END]
 
@@ -845,7 +853,7 @@ class Grammar(object):
 
 class Lexer(list):
 
-    def __init__(self, lex2pats, lex_handlers=None):
+    def __init__(self, lex2pats, lex_handlers=None, lex_handler_sources=False):
         # Raw info
         self.extend(lex2pats)
         # Compiled to re object
@@ -858,6 +866,17 @@ class Lexer(list):
             self.lex_handlers = lex_handlers
         else:
             self.lex_handlers = {}
+        # Source for tokenizer
+        if lex_handler_sources:
+            self.lex_handler_sources = lex_handler_sources
+        else:
+            try:
+                hdl_src = {}
+                for lex, hdl in lex_handlers.items():
+                    hdl_src[lex] = textwrap.dedent(inspect.getsource(hdl))
+                self.lex_handler_sources = hdl_src
+            except OSError:
+                pass
 
     @staticmethod
     def from_grammar(grammar):
@@ -945,26 +964,32 @@ class Lexer(list):
             yield Token(pos, END, END_PATTERN_DEFAULT, None)
 
     def dumps(self):
-        "Dump into byte source."
-        lex2pats = self[:]
-        hdls = {}
-        for lex, hdl in self.lex_handlers.items():
-            hdls[lex] = marshal.dumps(hdl.__code__)
-        obj = {'lex2pats': lex2pats, 'lex_handler_codes': hdls}
-        return marshal.dumps(obj)
+        fl = '\n'.join([
+            '## This file is generated. Do not modify.',
+            '',
+            '## Lexer$BEGIN',
+            '',
+            'lex2pats = \\',
+            textwrap.indent(pp.pformat(list(self)), '    '),
+            'lex_handler_sources = \\',
+            textwrap.indent(pp.pformat(self.lex_handler_sources), '    '),
+            '',
+            '## Lexer$END',
+            '',
+        ])
+        return fl
 
-    @staticmethod
-    def loads(s, glb_ctx):
-        "Load from source. Should be done given some global context!"
-        obj = marshal.loads(s)
-        lex2pats = obj['lex2pats']
-        lexhdls = {}
-        for lex, ms_cd in obj['lex_handler_codes'].items():
-            code = marshal.loads(ms_cd)
-            func = types.FunctionType(code, glb_ctx, lex)
-            lexhdls[lex] = func
-        return Lexer(lex2pats, lexhdls)
-
+    @classmethod
+    def loads(cls, src, glb):
+        ctx = {}
+        ctx1 = {}
+        exec(src, glb, ctx)
+        lex_handlers = {}
+        for k, lxsrc in ctx['lex_handler_sources'].items():
+            exec(lxsrc, glb, ctx1)
+            lex_handlers[k] = ctx1.pop(k)
+        ctx['lex_handlers'] = lex_handlers
+        return Lexer(**ctx)
 
 class assoclist(list):
 
@@ -1106,33 +1131,7 @@ class cfg(type):
 
         # Default matching order of special patterns:
 
-        # # Always match END first
-        # if END not in lexes:
-        #     lexes.insert(0, END)
-        #     lexpats.insert(0, END_PATTERN_DEFAULT)
-        # else:
-        #     # Move END to first.
-        #     i_e = lexes.index(END)
-        #     lexes.insert(0, lexes.pop(i_e))
-        #     lexpats.insert(0, lexpats.pop(i_e))
-
-        # Always match IGNORED patterns when all normal pattern fail.
-        if lexes_ign:
-            lexes.extend(lexes_ign)
-            lexpats.extend(lexpats_ign)
-        else:
-            lexes.append(IGNORED)
-            lexpats.append(IGNORED_PATTERN_DEFAULT)
-
-        # Always match ERROR patterns at last.
-        if lexes_err:
-            lexes.extend(lexes_err)
-            lexpats.extend(lexpats_err)
-        else:
-            lexes.append(ERROR)
-            lexpats.append(ERROR_PATTERN_DEFAULT)
-
-        g = Grammar(zip(lexes, lexpats), zip(rules, semans), prece, lexhdls)
+        g = Grammar(lexes, lexpats, rules, semans, prece, lexhdls)
         if docstr:
             g.__doc__ = docstr
 
@@ -1350,19 +1349,16 @@ class ParserBase(object):
         raise NotImplementedError('Any parser should have a parse method.')
 
     def interpret_many(self, inp):
+        # if not self.semans:
+        #     raise ParserError('Semantics not specified. Only `parse` is supported.')
+        # else:
         return self.parse_many(inp, interp=True)
 
     def parse(self, inp, interp=False):
-        # res = self.parse_many(inp, interp)
-        # if res:
-        #     return res[0]
-        # else:
-        #     raise ParserError("No parse.")
-        raise NotImplementedError('For non-deterministic parsers use :parse_many: instead.')
+        raise NotImplementedError('For non-deterministic parsers use `parse_many` instead.')
 
     def interpret(self, inp):
-        # return self.parse(inp, interp=True)
-        raise NotImplementedError('For non-deterministic parsers use :interpret_many: instead.')
+        raise NotImplementedError('For non-deterministic parsers use `interpret_many` instead.')
 
 
 class ParserDeterm(ParserBase):
@@ -1384,7 +1380,10 @@ class ParserDeterm(ParserBase):
         raise NotImplementedError('Deterministic parser should have `parse` method.')
 
     def interpret(self, inp):
-        return self.parse(inp, interp=True)
+        if not self.semans:
+            raise ParserError('Semantics not specified. Only `parse` is supported.')
+        else:
+            return self.parse(inp, interp=True)
 
 
 @meta
@@ -1697,6 +1696,17 @@ class LR(ParserBase):
             super(LR, self).__init__(grammar)
             self.lexer = Lexer.from_grammar(grammar)
             self._build_automaton(grammar)
+            try:
+                seman_sources = []
+                for f in self.semans:
+                    if f:
+                        seman_sources.append(
+                            textwrap.dedent(inspect.getsource(f)))
+                    else:
+                        seman_sources.append(None)
+                self.seman_sources = seman_sources
+            except OSError:
+                pass
         elif dict is not None:
             for k, v in dict.items():
                 setattr(self, k, v)
@@ -1710,34 +1720,68 @@ class LR(ParserBase):
         raise NotImplementedError()
 
     def dumps(self):
-        obj = dict(
-            lexer = self.lexer.dumps(),
-            semans = [marshal.dumps(seman.__code__)
-                      for seman in self.semans],
-            rules = self.rules,
-            Ks = self.Ks,
-            ACTION = self.ACTION,
-            GOTO = self.GOTO,
-        )
-        s = pickle.dumps(obj)
-        return s
+        fl = self.lexer.dumps()
+        fl += '\n\n## Parser$BEGIN\n'
+
+        for k in 'rules seman_sources Ks ACTION GOTO'.split():
+            if k == 'rules':
+                v = pp.pformat([tuple(rl) for rl in self.rules])
+            elif k == 'Ks':
+                v = pp.pformat([[tm.index_pair for tm in K]
+                     for K in self.Ks])
+            else:
+                v = pp.pformat(getattr(self, k))
+            fl += '\n{} = \\\n{}\n'.format(k, textwrap.indent(v , '    '))
+        fl += '\n## Parser$END\n'
+        return fl
 
     @classmethod
-    def loads(cls, s, glb_ctx={}):
-        """Polymorphic class method with `cls` referring to the belonged class
-        of callee.
+    def loads(cls, s, glb):
+        """Specify global context for the lexer and parser to be read."""
+        ctx = {}
+        ctx1 = {}
+        exec(s, glb, ctx)
 
-        """
-        obj = pickle.loads(s)
-        obj['lexer'] = Lexer.loads(obj['lexer'], glb_ctx)
+        # Read lexer
+        lex2pats = ctx.pop('lex2pats')
+        lxsrcs = ctx.pop('lex_handler_sources')
+        lex_handlers = {}
+        for k, src in lxsrcs.items():
+            exec(src, glb, ctx1)
+            lex_handlers[k] = ctx1.pop(k)
+        lexer = Lexer(lex2pats, lex_handlers, lxsrcs)
+        ctx['lexer'] = lexer
+
+        # Read LR-tables
         semans = []
-        for ms_cd in obj['semans']:
-            co = marshal.loads(ms_cd)
-            func = types.FunctionType(co, glb_ctx, '_')
-            semans.append(func)
-        obj['semans'] = semans
-        return cls(dict=obj)
+        for sm_src in ctx['seman_sources']:
+            if sm_src:
+                exec(sm_src, glb, ctx1)
+                semans.append(ctx1.popitem()[-1])
+            else:
+                semans.append(None)
+        ctx['semans'] = semans
+        rules = []
+        for lhs, rhs in ctx['rules']:
+            rules.append(Rule(lhs, rhs))
+        ctx['rules'] = rules
+        Ks = []
+        for Kp in ctx['Ks']:
+            K = []
+            for r, pos in Kp:
+                K.append(Item(rules, r, pos))
+            Ks.append(K)
+        ctx['Ks'] = Ks
+        return cls(dict=ctx)
 
+    def dump(self, filename):
+        with open(filename, 'w') as f:
+            f.write(self.dumps())
+
+    @classmethod
+    def load(cls, filename, glb):
+        with open(filename, 'r') as f:
+            return cls.loads(f.read(), glb)
 
 # TODO:
 # 
@@ -1936,8 +1980,8 @@ class LALR(LR, ParserDeterm):
 
     def _build_automaton(self, G):
 
-        self.rules = G.rules[:]
-        self.semans = G.semans[:]
+        self.rules = G.rules
+        self.semans = G.semans
 
         Ks = [[G.item(0, 0)]]   # Kernels
         GOTO = []

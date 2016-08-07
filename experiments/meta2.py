@@ -4,21 +4,26 @@ from pprint import pprint
 
 class read(type):
 
-    class gs(list):
+    class gs(object):
         def __init__(self):
-            super(read.gs, self).__init__()
-            self.lex2pats = []
+            self.lexes = []
+            self.pats = []
             self.rules = []
             self.prece = {}
         def __setitem__(self, k, v):
             if not k.startswith('__'):
+                # lexical tuple
                 if isinstance(v, tuple):
                     assert len(v) == 2
                     l, p = v
-                    self.lex2pats.append((k, l))
+                    self.lexes.append(k)
+                    self.pats.append(l)
                     self.prece[k] = p
+                # lexical str
                 elif isinstance(v, str):
-                    self.lex2pats.append((k, v))
+                    self.lexes.append(k)
+                    self.pats.append(v)
+                # alternatives
                 elif isinstance(v, (list, set)):
                     for alt in v:
                         if not isinstance(alt, (list, tuple)):
@@ -28,9 +33,13 @@ class read(type):
                             if isinstance(x, Symbol):
                                 rhs.append(str(x))
                             elif isinstance(x, str):
-                                self.lex2pats.append((x, None))
+                                self.lexes.append(x)
+                                self.pats.append(None)
                                 rhs.append(x)
                         self.rules.append(Rule(k, rhs))
+                # 
+                elif callable(v):
+                    pass
         def __getitem__(self, k0):
             return Symbol(k0)
 
@@ -38,20 +47,18 @@ class read(type):
     def __prepare__(mcls, n, bs, **kw):
         return read.gs()
     def __new__(mcls, n, bs, gs):
-        return gs.lex2pats, [(rl, None) for rl in gs.rules], gs.prece
+        return Grammar(gs.lexes, gs.pats, gs.rules, prece=gs.prece)
 
 
 class E(metaclass=read): 
 
-    IGNORED = r'\s+'
+    # IGNORED = r'\s+'
 
     NEG = r'!'   , 5
     CON = r'&'   , 4
     DIS = r'\|'  , 3
     IMP = r'->'  , 2
     IFF = r'<=>' , 1
-
-    # L, R = r'\(', '\)'
 
     W   = r'[A-Z]\w*'
 
@@ -79,10 +86,17 @@ class E(metaclass=read):
 
 # pprint(E)
 
-g = Grammar(*E)
+# g = Grammar(*E)
 # pprint(g)
-pprint(g.lex2pats)
-p = LALR(g)
+pprint(E.lex2pats)
+p = LALR(E)
 
 # pprint([*p.lexer.tokenize('True & False', True)])
-pprint(p.parse('P & Q | R & !S'))
+# pprint(p.parse('P & Q | R & !S'))
+
+s = p.dump('meta2_dumps.py')
+p1 = LALR.load('meta2_dumps.py', globals())
+
+# print(s)
+
+pprint(p1.parse('P & Q | R & !S'))

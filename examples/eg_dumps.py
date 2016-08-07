@@ -3,13 +3,17 @@ import ast
 
 from metaparse import *
 
-class G_Calc(metaclass=cfg):
+# class G_Calc(metaclass=cfg):
+# @cfg.v2
+def G_Calc():
 
     IGNORED = r'\s+'
 
     EQ  = r'='
-    def NUM(lex: r'[1-9]\d*'):
+    NUM = r'[1-9]\d*'
+    def NUM(lex):
         return float(lex)
+
     ID  = r'[_a-zA-Z]\w*'
     POW = r'\*\*', 3
     MUL = r'\*'  , 2
@@ -33,6 +37,9 @@ class G_Calc(metaclass=cfg):
     def expr(expr, POW, expr_1):
         return expr ** expr_1
 
+# assert 0
+
+G_Calc = grammar(G_Calc)
 
 from pprint import pprint
 

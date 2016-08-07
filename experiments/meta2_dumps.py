@@ -17,6 +17,7 @@ lex2pats = \
      (']', None),
      ('IGNORED', '[ \\t\\n]'),
      ('ERROR', '.')]
+
 lex_handler_sources = \
     {}
 
@@ -41,7 +42,11 @@ rules = \
      ('Complex', ['Sentence', 'IFF', 'Sentence'])]
 
 seman_sources = \
-    ['def id_func(x):\n    return x\n',
+    [b'\xe3\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00'
+     b'\x00C\x00\x00\x00s\x04\x00\x00\x00|\x00\x00S)\x01N\xa9\x00)\x01\xda\x01x'
+     b'r\x01\x00\x00\x00r\x01\x00\x00\x00\xfa8c:\\users\\shellay\\documents\\githu'
+     b'b\\metaparse\\metaparse.py\xda\x07id_func\x91\x00\x00\x00s\x02\x00'
+     b'\x00\x00\x00\x01',
      None,
      None,
      None,

@@ -195,7 +195,7 @@ class Rule(object):
 
     The equality is needed mainly for detecting rule duplication
     during declaring grammar objects.
-    
+
     Note: a rule is associated with some semantics. More advancedly,
     pre-order semantics and post-order semantics may be prepared, with
     the former executed when the rule is chosen by the parser
@@ -389,7 +389,7 @@ class Grammar(object):
             lexes.append(IGNORED)
             lexpats.append(IGNORED_PATTERN_DEFAULT)
 
-        # Always match ERROR patterns at last. 
+        # Always match ERROR patterns at last.
         if ERROR not in lexes:
             lexes.append(ERROR)
             lexpats.append(ERROR_PATTERN_DEFAULT)
@@ -870,13 +870,11 @@ class Lexer(list):
         if lex_handler_sources:
             self.lex_handler_sources = lex_handler_sources
         else:
-            try:
-                hdl_src = {}
-                for lex, hdl in lex_handlers.items():
-                    hdl_src[lex] = textwrap.dedent(inspect.getsource(hdl))
-                self.lex_handler_sources = hdl_src
-            except OSError:
-                pass
+            hdl_src = {}
+            for lex, hdl in lex_handlers.items():
+                # hdl_src[lex] = textwrap.dedent(inspect.getsource(hdl))
+                hdl_src[lex] = marshal.dumps(hdl.__code__)
+            self.lex_handler_sources = hdl_src
 
     @staticmethod
     def from_grammar(grammar):
@@ -971,6 +969,7 @@ class Lexer(list):
             '',
             'lex2pats = \\',
             textwrap.indent(pp.pformat(list(self)), '    '),
+            '',
             'lex_handler_sources = \\',
             textwrap.indent(pp.pformat(self.lex_handler_sources), '    '),
             '',
@@ -986,8 +985,11 @@ class Lexer(list):
         exec(src, glb, ctx)
         lex_handlers = {}
         for k, lxsrc in ctx['lex_handler_sources'].items():
-            exec(lxsrc, glb, ctx1)
-            lex_handlers[k] = ctx1.pop(k)
+            # exec(lxsrc, glb, ctx1)
+            # lex_handlers[k] = ctx1.pop(k)
+            co = marshal.loads(lxsrc)
+            hdl = types.FunctionType(co, glb)
+            lex_handlers[k] = hdl
         ctx['lex_handlers'] = lex_handlers
         return Lexer(**ctx)
 
@@ -1054,11 +1056,6 @@ class cfg(type):
         prece = {}
         attrs = []
 
-        lexes_ign = []
-        lexpats_ign = []
-        lexes_err = []
-        lexpats_err = []
-
         for lst in lsts:
             for k, v in lst:
 
@@ -1104,15 +1101,8 @@ class cfg(type):
                 # Lexical declaration allows repeatition!!
                 # - String pattern without precedence
                 elif isinstance(v, str):
-                    if k == ERROR:
-                        lexes_err.append(k)
-                        lexpats_err.append(v)
-                    elif k == IGNORED:
-                        lexes_ign.append(k)
-                        lexpats_ign.append(v)
-                    else:
-                        lexes.append(k)
-                        lexpats.append(v)
+                    lexes.append(k)
+                    lexpats.append(v)
                 # - String pattern with precedence
                 elif isinstance(v, tuple):
                     assert len(v) == 2, 'Lexical pattern as tuple should be of length 2.'
@@ -1148,7 +1138,7 @@ class cfg(type):
         return cfg.read_from_raw_lists(accu)
 
     @staticmethod
-    def extract_list(decl): 
+    def extract_list(decl):
         """Retrieve structural information of the function `decl` (i.e. the
         body and its components IN ORDER). Then transform these
         information into a list of lexical elements and rules as well
@@ -1700,8 +1690,8 @@ class LR(ParserBase):
                 seman_sources = []
                 for f in self.semans:
                     if f:
-                        seman_sources.append(
-                            textwrap.dedent(inspect.getsource(f)))
+                        # seman_sources.append(textwrap.dedent(inspect.getsource(f)))
+                        seman_sources.append(marshal.dumps(f.__code__))
                     else:
                         seman_sources.append(None)
                 self.seman_sources = seman_sources
@@ -1747,8 +1737,11 @@ class LR(ParserBase):
         lxsrcs = ctx.pop('lex_handler_sources')
         lex_handlers = {}
         for k, src in lxsrcs.items():
-            exec(src, glb, ctx1)
-            lex_handlers[k] = ctx1.pop(k)
+            # exec(src, glb, ctx1)
+            # lex_handlers[k] = ctx1.pop(k)
+            co = marshal.loads(src)
+            hdl = types.FunctionType(co, glb)
+            lex_handlers[k] = hdl
         lexer = Lexer(lex2pats, lex_handlers, lxsrcs)
         ctx['lexer'] = lexer
 
@@ -1756,8 +1749,11 @@ class LR(ParserBase):
         semans = []
         for sm_src in ctx['seman_sources']:
             if sm_src:
-                exec(sm_src, glb, ctx1)
-                semans.append(ctx1.popitem()[-1])
+                # exec(sm_src, glb, ctx1)
+                # semans.append(ctx1.popitem()[-1])
+                co = marshal.loads(sm_src)
+                sm = types.FunctionType(co, glb)
+                semans.append(sm)
             else:
                 semans.append(None)
         ctx['semans'] = semans
@@ -1784,12 +1780,12 @@ class LR(ParserBase):
             return cls.loads(f.read(), glb)
 
 # TODO:
-# 
+#
 # LR parsers can indeed corporate pre-order semantics. Each ItemSet
 # has prepared a set of prediction paths, while each GOTO action
 # confirms which path to go and triggers the corresponding semantics
 # (though at most ONE token gets consumed already).
-# 
+#
 @meta
 class GLR(LR):
 
@@ -1899,7 +1895,7 @@ class GLR(LR):
         ACTION = self.ACTION
         rules = self.rules
         semans = self.semans
-        
+
         # Agenda is a list of tuples. Each tuple is two parallel
         # GSS's, (gss-stack<state>, gss-stack<subtree>).
         agenda = [(Node(0, START), START)]
@@ -2093,7 +2089,7 @@ class LALR(LR, ParserDeterm):
                     ACTION[i][X] = (SHIFT, j)
 
         # REDUCE for ended items
-        # - The argument of REDUCE is the index of the rule to be reduced. 
+        # - The argument of REDUCE is the index of the rule to be reduced.
         # SHIFT/REDUCE and REDUCE/REDUCE conflicts are
         # to be found.
         conflicts = []

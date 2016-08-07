@@ -47,7 +47,7 @@ class EBNF(metaclass=LALR.meta):
         return (expr,)
 
     def expr(ID): return Symbol(ID)
-    def expr(term): return Symbol(term)
+    def expr(term): return term[1:-1]
     def expr(opt): return opt
     def expr(rep): return rep
     def expr(grp): return grp

@@ -30,31 +30,38 @@ class PropLogic(metaclass=LALR.meta):
         return Complex
 
     def Atomic(T):
-        return T
+        return True
     def Atomic(F):
-        return F
+        return False
     def Atomic(W):
-        return W
+        return table[W]
 
     def Complex(L, Sentence, R):
         return Sentence
     def Complex(LL, Sentence, RR):
         return Sentence
     def Complex(NEG, Sentence):
-        return (NOT, Sentence)
+        return not Sentence
     def Complex(Sentence, CON, Sentence_1):
-        return (AND, Sentence, Sentence_1)
+        return Sentence and Sentence_1
     def Complex(Sentence, DIS, Sentence_1):
-        return (OR, Sentence, Sentence_1)
+        return Sentence or Sentence_1
     def Complex(Sentence, IMP, Sentence_1):
-        return (IMP, Sentence, Sentence_1)
+        return not Sentence or Sentence_1
     def Complex(Sentence, IFF, Sentence_1):
-        return (IFF, Sentence, Sentence_1)
+        return Sentence == Sentence_1
 
 
 inp = """
 (P & Q | R & !S)
 """
+
+table = dict(
+    P=True,
+    Q=False,
+    R=True,
+    S=False,
+)
 
 t = PropLogic.parse(inp)
 r = t.translate()

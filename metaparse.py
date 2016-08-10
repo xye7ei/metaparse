@@ -1092,10 +1092,11 @@ class cfg(type):
 
                     # For rule declarations
                     else:
-                        r = Rule.read(v)
-                        if r in rules:
-                            raise GrammarError('Repeated declaration of Rule {}.\n{}'.format(r))
-                        rules.append(r)
+                        rule = Rule.read(v)
+                        if rule in rules:
+                            raise GrammarError('{}`th rule {}: Repeated declaration!\n'.format(
+                                len(rules), rule))
+                        rules.append(rule)
                         semans.append(v)
 
                 # Lexical declaration allows repeatition!!

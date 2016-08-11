@@ -74,13 +74,13 @@ class E(metaclass=read):
     ]
 
     Complex = [
-        ['(', Sentence, ')'],
-        ['[', Sentence, ']'],
-        [NEG, Sentence],
-        [Sentence, CON, Sentence],
-        [Sentence, DIS, Sentence],
-        [Sentence, IMP, Sentence],
-        [Sentence, IFF, Sentence],
+        ('(', Sentence, ')'),
+        ('[', Sentence, ']'),
+        (NEG, Sentence),
+        (Sentence, CON, Sentence),
+        (Sentence, DIS, Sentence),
+        (Sentence, IMP, Sentence),
+        (Sentence, IFF, Sentence),
     ]
 
 

@@ -67,6 +67,7 @@ class G_Calc(metaclass=cfg):
 
     def assign(ID, EQ, expr):        # May rely on side-effect...
         table[ID] = expr
+        return expr
 
     def expr(NUM):                   # or return local results for purity
         return int(NUM)

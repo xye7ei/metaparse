@@ -1,6 +1,12 @@
 import preamble
-from metaparse import *
+from metaparse import Symbol, LALR
+from collections import namedtuple
 from pprint import pprint
+
+Seq = namedtuple('Seq', 'exprs')
+Rep = namedtuple('Rep', 'expr')
+Opt = namedtuple('Opt', 'expr')
+Alts = namedtuple('Alts', 'exprs')
 
 
 class EBNF(metaclass=LALR.meta):
@@ -32,14 +38,15 @@ class EBNF(metaclass=LALR.meta):
 
     def lhs(ID):
         return ID
+
     def rhs(alts):
-        return alts
+        return Alts(alts)
 
     def alts(alts, ALT, seq):
-        alts.append(seq)
+        alts.append(Seq(seq))
         return alts
     def alts(seq):
-        return [seq]
+        return [Seq(seq)]
 
     def seq(seq, CON, expr):
         return seq + (expr,)
@@ -48,16 +55,16 @@ class EBNF(metaclass=LALR.meta):
 
     def expr(ID): return Symbol(ID)
     def expr(term): return term[1:-1]
-    def expr(opt): return opt
-    def expr(rep): return rep
+    def expr(opt): return Opt(opt)
+    def expr(rep): return Rep(rep)
     def expr(grp): return grp
 
     def term(TERM1): return TERM1
     def term(TERM2): return TERM2
 
-    def grp(L, alts, R): return alts
-    def opt(Lb, alts, Rb): return (Symbol('?'), alts)
-    def rep(LB, alts, RB): return (Symbol('*'), alts)
+    def grp(L, alts, R): return (alts)
+    def opt(Lb, alts, Rb): return (alts)
+    def rep(LB, alts, RB): return (alts)
 
 
 inp = """

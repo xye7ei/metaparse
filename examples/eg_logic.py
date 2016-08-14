@@ -18,11 +18,11 @@ class PropLogic(metaclass=LALR.meta):
     L = r'\(' ; R = r'\)'
     LL = r'\['; RR = r'\]'
 
-    NEG = r'!', 5
-    CON = r'&', 4
-    DIS = r'\|', 3
-    IMP = r'->', 2
-    IFF = r'<=>', 1
+    NEG = r'!'   , 5
+    CON = r'&'   , 4
+    DIS = r'\|'  , 3
+    IMP = r'->'  , 2
+    IFF = r'<=>' , 1
 
     def Sentence(Atomic):
         return Atomic

@@ -233,10 +233,14 @@ class Rule(object):
         'Construct a rule object from a function/method. '
         lhs = func.__name__
         rhs = []
-        # Signature only works in Python 3
+        # `inspect.Signature` only works in Python 3
         # for x in inspect.signature(func).parameters:
-        for x in inspect.getargspec(func).args:
-            # Tail digital subscript like xxx_4
+        # for x in inspect.getargspec(func).args:
+        # Or without using `inspect`
+        ac = func.__code__.co_argcount
+        vs = func.__code__.co_varnames
+        for x in vs[:ac]:
+            # Cut tailing digital subscript like xxx_4.
             s = re.search(r'_(\d+)$', x)
             if s:
                 x = x[:s.start()]
@@ -395,7 +399,7 @@ class Grammar(object):
             lexpats.append(ERROR_PATTERN_DEFAULT)
 
         # Operator precedence table may be useful.
-        self.OP_PRE = dict(prece) if prece else {}
+        self.precedence = dict(prece) if prece else {}
         self.lex_handlers = dict(lexhdls) if lexhdls else {}
 
         # Cache terminals
@@ -435,8 +439,8 @@ class Grammar(object):
                         '',
                         '====================',
                         'Undeclared symbol:',
-                        " * in {}`th rule {};".format(r + 1, rl),
-                        " * {}`th RHS symbol `{}`.".format(j + 1, X),
+                        "* in {}`th rule {};".format(r + 1, rl),
+                        "* {}`th RHS symbol `{}`.".format(j + 1, X),
                         '====================',
                         '',
                     ])
@@ -786,6 +790,12 @@ class Grammar(object):
             if not has_new:
                 break
 
+    def first(G, X):
+        if X in G.nonterminals:
+            return G.FIRST[X]
+        else:
+            return {X}
+
     def is_nullable_seq(G, seq):
         return all(X in G.NULLABLE for X in seq)
 
@@ -872,7 +882,9 @@ class Lexer(list):
         else:
             hdl_src = {}
             for lex, hdl in lex_handlers.items():
-                # hdl_src[lex] = textwrap.dedent(inspect.getsource(hdl))
+                # src = textwrap.dedent(inspect.getsource(hdl))
+                # src = src[src.index('def'):]
+                # hdl_src[lex] = src
                 hdl_src[lex] = marshal.dumps(hdl.__code__)
             self.lex_handler_sources = hdl_src
 
@@ -968,10 +980,12 @@ class Lexer(list):
             '## Lexer$BEGIN',
             '',
             'lex2pats = \\',
-            textwrap.indent(pp.pformat(list(self)), '    '),
+            # textwrap.indent(pp.pformat(list(self)), '    '),
+            '    ' + pp.pformat(list(self)).replace('\n', '\n    '),
             '',
             'lex_handler_sources = \\',
-            textwrap.indent(pp.pformat(self.lex_handler_sources), '    '),
+            # textwrap.indent(pp.pformat(self.lex_handler_sources), '    '),
+            '    ' + pp.pformat(self.lex_handler_sources).replace('\n', '\n    '),
             '',
             '## Lexer$END',
             '',
@@ -992,6 +1006,7 @@ class Lexer(list):
             lex_handlers[k] = hdl
         ctx['lex_handlers'] = lex_handlers
         return Lexer(**ctx)
+
 
 class assoclist(list):
 
@@ -1075,20 +1090,26 @@ class cfg(type):
                     if k == ERROR:
                         lexhdls[ERROR] = v
                     elif k in lexes:
-                        assert inspect.getargs(v.__code__).args == ['lex'], \
-                            "Lexical handler must have singleton param list ['lex']"
-                        assert k not in lexhdls, 'Repeated handler declaration!'
+                        par = v.__code__.co_varnames[:v.__code__.co_argcount]
+                        assert len(par) == 1, \
+                            "Lexical handler must have only one parameter.".format(par)
+                        assert k not in lexhdls, \
+                            "Repeated handler declaration for {}!".format(k)
                         lexhdls[k] = v
+
                     # - Pattern and handler together
-                    elif hasattr(v, '__annotations__') and 'lex' in v.__annotations__:
-                        ann = v.__annotations__
-                        assert v.__code__.co_argcount == 1, 'Single argument handler required.'
-                        assert k not in lexhdls, 'Repeated handler declaration!'
-                        lexes.append(k)
-                        lexpats.append(ann['lex'])
-                        lexhdls[k] = v
-                        if 'return' in ann:
-                            prece[k] = ann['return']
+                    # # - This scheme may be too much tweaked.
+                    # elif hasattr(v, '__annotations__') and 'lex' in v.__annotations__:
+                    #     ann = v.__annotations__
+                    #     assert v.__code__.co_argcount == 1, \
+                    #         'Single argument handler required for {}.'.format(repr(k))
+                    #     assert k not in lexhdls, \
+                    #         'Repeated handler declaration for {}!'.format(repr(k))
+                    #     lexes.append(k)
+                    #     lexpats.append(ann['lex'])
+                    #     lexhdls[k] = v
+                    #     if 'return' in ann:
+                    #         prece[k] = ann['return']
 
                     # For rule declarations
                     else:
@@ -1104,21 +1125,33 @@ class cfg(type):
                 elif isinstance(v, str):
                     lexes.append(k)
                     lexpats.append(v)
+
                 # - String pattern with precedence
                 elif isinstance(v, tuple):
                     assert len(v) == 2, 'Lexical pattern as tuple should be of length 2.'
                     pat, prc = v
                     assert isinstance(pat, str) and isinstance(prc, int), \
                         'Lexical pattern as tuple should be of type (str, int)'
-                    assert pat not in [IGNORED, ERROR, END], \
-                        'Special tokens allow no precedence.'
+                    assert k not in [IGNORED, ERROR, END], \
+                        'Special token {} allow no precedence.'.format(repr(k))
                     lexes.append(k)
                     lexpats.append(pat)
+                    if k in prece:
+                        assert prece[k] == prc, \
+                            ('Specifying conflicting precedence for '
+                             '{}: {} and {}.'
+                             .format(repr(k), prece[k], prc))
                     prece[k] = prc
 
                 # Handle normal private attributes/methods.
                 else:
                     attrs.append((k, v))
+
+        # Need to give default precedence values?
+        # FIXME: leads to non-reporting of conflicts??
+        for lex in lexes:
+            if lex not in prece:
+                prece[lex] = 0
 
         # Default matching order of special patterns:
 
@@ -1185,8 +1218,7 @@ class cfg(type):
                 name = obj.name
                 # Conventional fix
                 ast.fix_missing_locations(obj)
-                # :ast.Module: is the unit of program codes.
-                # FIXME: Is :md: necessary??
+                # `ast.Module` is the unit of program codes.
                 md = ast.Module(body=[obj])
                 # Compile a module into ast with '<ast>' mode
                 # targeting 'exec'.
@@ -1691,7 +1723,9 @@ class LR(ParserBase):
                 seman_sources = []
                 for f in self.semans:
                     if f:
-                        # seman_sources.append(textwrap.dedent(inspect.getsource(f)))
+                        # src = textwrap.dedent(inspect.getsource(f))
+                        # src = src[src.index('def'):]
+                        # seman_sources.append(src)
                         seman_sources.append(marshal.dumps(f.__code__))
                     else:
                         seman_sources.append(None)
@@ -1708,27 +1742,41 @@ class LR(ParserBase):
             pp.pformat(self.rules))
 
     def _build_automaton(self, G):
+        """Initiate attributes and build automaton."""
         raise NotImplementedError()
 
     def dumps(self):
+        """Dump the parser automaton into a Python file string."""
         fl = self.lexer.dumps()
         fl += '\n\n## Parser$BEGIN\n'
 
-        for k in 'rules seman_sources Ks ACTION GOTO'.split():
+        for k in 'precedence rules seman_sources Ks ACTION GOTO'.split():
             if k == 'rules':
-                v = pp.pformat([tuple(rl) for rl in self.rules])
+                v = pp.pformat(
+                    [tuple(rl) for rl in self.rules])
             elif k == 'Ks':
-                v = pp.pformat([[tm.index_pair for tm in K]
+                v = pp.pformat(
+                    [[tm.index_pair for tm in K]
                      for K in self.Ks])
             else:
-                v = pp.pformat(getattr(self, k))
-            fl += '\n{} = \\\n{}\n'.format(k, textwrap.indent(v , '    '))
+                v = pp.pformat(
+                    getattr(self, k))
+            fl += '\n'.join([
+                '',
+                '{} = \\'.format(k),
+                '    ' + v.replace('\n', '\n    '),
+                '',
+            ])
         fl += '\n## Parser$END\n'
         return fl
 
     @classmethod
     def loads(cls, s, glb):
-        """Specify global context for the lexer and parser to be read."""
+        """Specify global context `glb` explicitly for the lexer and parser to
+        be read (normally `globals()`) if the semantics are not pure
+        (rely on global variables).
+
+        """
         ctx = {}
         ctx1 = {}
         exec(s, glb, ctx)
@@ -1769,6 +1817,8 @@ class LR(ParserBase):
                 K.append(Item(rules, r, pos))
             Ks.append(K)
         ctx['Ks'] = Ks
+
+        # Just use the context as arguments.
         return cls(dict=ctx)
 
     def dump(self, filename):
@@ -1779,6 +1829,7 @@ class LR(ParserBase):
     def load(cls, filename, glb):
         with open(filename, 'r') as f:
             return cls.loads(f.read(), glb)
+
 
 # TODO:
 #
@@ -1841,8 +1892,10 @@ class GLR(LR):
 
         """
 
-        self.rules = G.rules[:]
-        self.semans = G.semans[:]
+        self.rules = G.rules
+        self.semans = G.semans
+
+        self.precedence = G.precedence
 
         # Kernels
         self.Ks = Ks = [[G.item(0, 0)]]
@@ -1850,10 +1903,11 @@ class GLR(LR):
         self.ACTION = ACTION = []
 
         # Construct LR(0)-DFA
-        k = 0
-        while k < len(Ks):
+        i = 0
+        while i < len(Ks):
 
-            I = Ks[k]
+            I = Ks[i]
+
             iacts = {REDUCE: [], SHIFT: {}}
             igotoset = OrderedDict()
 
@@ -1868,21 +1922,19 @@ class GLR(LR):
                     if jtm not in igotoset[X]:
                         igotoset[X].append(jtm)
 
-            # igoto = OrderedDict()
             igoto = {}
             for X, J in igotoset.items():
-                # J = sorted(J, key=lambda i: (i.r, i.pos))
                 J.sort()
                 if J not in Ks:
                     Ks.append(J)
                 j = Ks.index(J)
-                iacts[SHIFT][X] = j
                 igoto[X] = j
+                iacts[SHIFT][X] = j
 
             ACTION.append(iacts)
             GOTO.append(igoto)
 
-            k += 1
+            i += 1
 
     def parse_many(self, inp, interp=False):
         """Parse input with BFS scheme, where active forks all get reduced to
@@ -1980,6 +2032,8 @@ class LALR(LR, ParserDeterm):
         self.rules = G.rules
         self.semans = G.semans
 
+        self.precedence = G.precedence
+
         Ks = [[G.item(0, 0)]]   # Kernels
         GOTO = []
 
@@ -1990,21 +2044,21 @@ class LALR(LR, ParserDeterm):
             K = Ks[i]
 
             # Use OrderedDict to preserve order of found goto's.
-            igoto = OrderedDict()
+            igotoset = OrderedDict()
 
             # SetOfItems algorithm
             for itm in G.closure(K):
                 # If item (A -> α.Xβ) has a goto.
                 if not itm.ended():
                     X, jtm = itm.actor, itm.shifted
-                    if X not in igoto:
-                        igoto[X] = []
-                    if jtm not in igoto[X]:
-                        igoto[X].append(jtm)
+                    if X not in igotoset:
+                        igotoset[X] = []
+                    if jtm not in igotoset[X]:
+                        igotoset[X].append(jtm)
 
-            # Register `igoto` into global goto.
-            GOTO.append({})
-            for X, J in igoto.items():
+            # Register `igotoset` into global goto.
+            igoto = {}
+            for X, J in igotoset.items():
                 # The Item-Sets should be treated as UNORDERED! So
                 # sort J to identify the Lists with same items.
                 # J = sorted(J, key=lambda i: (i.r, i.pos))
@@ -2012,7 +2066,9 @@ class LALR(LR, ParserDeterm):
                 if J not in Ks:
                     Ks.append(J)
                 j = Ks.index(J)
-                GOTO[i][X] = j
+                igoto[X] = j
+
+            GOTO.append(igoto)
 
             i += 1
 
@@ -2093,7 +2149,18 @@ class LALR(LR, ParserDeterm):
         # - The argument of REDUCE is the index of the rule to be reduced.
         # SHIFT/REDUCE and REDUCE/REDUCE conflicts are
         # to be found.
-        conflicts = []
+ 
+        def intermediate_info():
+            return '\n'.join([
+                '- {}'.format(G),
+                '',
+                '- States:',
+                pp.pformat(list(enumerate(Ks))),
+                '',
+                '- ACTION sofar:',
+                pp.pformat(list(enumerate(ACTION))),
+            ])
+
         for i, itm_lks in enumerate(table):
             for itm, lks in itm_lks.items():
                 for lk in lks:
@@ -2104,62 +2171,154 @@ class LALR(LR, ParserDeterm):
                             new_redu = (REDUCE, ctm.r)
                             if lk1 in ACTION[i]:
                                 # If there is already an action on
-                                # `lk1`, test wether conflicts may
-                                # raise for it.
+                                # `lk1`, test whether conflicts may
+                                # raise against it.
                                 act, arg = ACTION[i][lk1]
                                 # if the action is REDUCE
                                 if act is REDUCE:
                                     # which reduces a different item `arg`
                                     if arg != ctm.r:
                                         # then REDUCE/REDUCE conflict is raised.
-                                        conflicts.append((i, lk1, (act, self.rules[arg]), new_redu))
-                                        continue
+                                        msg = '\n'.join([
+                                            '',
+                                            "============================",
+                                            '! REDUCE/REDUCE conflict detected',
+                                            '- in state {}: '.format(i),
+                                            pp.pformat(Ks[i]),
+                                            "  on lookahead {}: ".format(repr(lk1)),
+                                            '- when creating',
+                                            '  {} '.format({lk1: (REDUCE, G.rules[ctm.r])}),
+                                            '- against existing',
+                                            '  {}'.format({lk1: (REDUCE, G.rules[arg])}),
+                                            '',
+                                            '- You may need redesign the grammar to avoid proceeding rules',
+                                            '  {} and {} into the same state {} and end there.'
+                                            .format(G.rules[arg], G.rules[ctm.r], Ks[i]),
+                                            '',
+                                            intermediate_info(),
+                                            "============================",
+                                        ])
+                                        raise ParserError(msg)
                                 # If the action is SHIFT
                                 else:
                                     # `ctm` is the item prepared for
-                                    # shifting on `lk`
+                                    # shifting on `lk1`
                                     #
                                     # if the left operator
                                     # ctm.rule.rhs[-2] has
                                     # non-strictly higher precedence,
                                     # then revert the SHIFT into
-                                    # REDUCE, else preserve the SHIFT
-                                    if lk1 in G.OP_PRE:
-                                        if ctm.size > 1 and ctm.rule.rhs[-2] in G.OP_PRE:
-                                            op_lft = ctm.rule.rhs[-2]
-                                            op_rgt = lk1
-                                            # Trivially, maybe `op_lft` == `op_rgt`
-                                            if G.OP_PRE[op_lft] >= G.OP_PRE[op_rgt]:
-                                                # Left wins.
-                                                ACTION[i][lk1] = new_redu
-                                                continue
-                                            else:
-                                                # Right wins.
-                                                continue
-                                    # SHIFT/REDUCE conflict raised.
-                                    conflicts.append((i, lk1, (act, arg), (REDUCE, ctm.r)))
+                                    # REDUCE, otherwise preserve the
+                                    # SHIFT.
+
+                                    if ctm.size > 1 and ctm.rule.rhs[-2] in G.terminals:
+                                        op_lft = ctm.rule.rhs[-2]
+                                        op_rgt = lk1
+                                        # identical token: left(REDUCE) wins
+                                        if op_lft == op_rgt:
+                                            ACTION[i][lk1] = new_redu
+                                        # different tokens: compare prece
+                                        elif G.precedence[op_lft] > G.precedence[op_rgt]:
+                                            # left/REDUCE wins
+                                            ACTION[i][lk1] = new_redu
+                                        elif G.precedence[op_lft] < G.precedence[op_rgt]:
+                                            # right/SHIFT wins
+                                            pass
+                                        else:
+                                            # No resolution possible!
+                                            # Report confict instantly!
+                                            msg = '\n'.join([
+                                                '',
+                                                "============================",
+                                                '! SHIFT/REDUCE conflict detected',
+                                                '- in state {}: '.format(i),
+                                                pp.pformat(Ks[i]),
+                                                "  on lookahead {}: ".format(repr(lk1)),
+                                                '- when creating',
+                                                '  {} '.format({lk1: (REDUCE, G.rules[ctm.r])}),
+                                                '- against existing',
+                                                '  {}'.format({lk1: (act, arg)}),
+                                                '',
+                                                ('- You may need specify different precedence values for'
+                                                 ' {} and {}.'.format(repr(op_lft), repr(op_rgt))),
+                                                '',
+                                                intermediate_info(),
+                                                "============================",
+                                            ])
+                                            raise ParserError(msg)
+                                    else:
+
+                                        # FIXME: how to find the cause of conflict?
+                                        # - Propagation path introducing a conflict?
+
+                                        X = ctm.target
+                                        problem_rules = []
+                                        for rule in G.rules:
+                                            if X in rule.rhs:
+                                                ix = rule.rhs.index(X)
+                                                if -1 < ix < len(rule.rhs) - 1:
+                                                    if lk1 in G.first(rule.rhs[ix+1]):
+                                                        problem_rules.append(rule)
+
+                                        # propa_chain = [ctm]
+                                        # while 1:
+                                        #     has_new = False
+                                        #     for i, p in enumerate(propa):
+                                        #         for (itm, j, jtm) in p:
+                                        #             if jtm == propa_chain[0]:
+                                        #                 if itm not in propa_chain:
+                                        #                     propa_chain.insert(0, itm)
+                                        #                     has_new = True
+                                        #     if not has_new:
+                                        #         break
+
+                                        msg = '\n'.join([
+                                            '',
+                                            "============================",
+                                            '! SHIFT/REDUCE conflict not resolvable by precedence',
+                                            '- in state: ',
+                                            '  {}'.format(pp.pformat((i, Ks[i]))),
+                                            '- when creating',
+                                            '  {}'.format({lk1: (REDUCE, ctm)}),
+                                            '- against existing',
+                                            '  {}'.format({lk1: (act, arg)}),
+                                            '',
+                                            # '- lookahead table',
+                                            # pp.pformat([dict(s) for s in table]),
+                                            ('- You may need some redesign to avoid nonterminal {} followed by '
+                                             '{} in problematic rules such like:'.format(repr(X), repr(lk1))),
+                                            pp.pformat(problem_rules),
+                                            # ('- You may redesign the grammar to avoid propagation chain:'),
+                                            # pp.pformat(propa_chain),
+                                            '',
+                                            intermediate_info(),
+                                            "============================",
+                                        ])
+                                        raise ParserError(msg)
+
                             # If there is still no action on `lk1`.
                             else:
                                 ACTION[i][lk1] = (REDUCE, ctm.r)
+
                 # Accept-Item
                 if itm.index_pair == (0, 1):
                     ACTION[i][END] = (ACCEPT, itm.r)
 
-        # Report LALR-conflicts, if any.
-        if conflicts:
-            msg = "\n============================"
-            for i, lk, act0, act1 in conflicts:
-                msg += '\n'.join([
-                    '',
-                    '! LALR-Conflict raised:',
-                    '  * in state [{}]: '.format(i),
-                    pp.pformat(Ks[i]),
-                    "  * on lookahead {}: ".format(repr(lk)),
-                    pp.pformat({lk: [act0, act1]}),
-                    '',
-                ])
-            msg += "============================"
-            raise ParserError(msg)
+        # # Report LALR-conflicts, if any.
+        # if conflicts:
+        #     msg = "\n============================"
+        #     for i, lk, act0, act1 in conflicts:
+        #         msg += '\n'.join([
+        #             '',
+        #             '! LALR-Conflict raised:',
+        #             '  * in state [{}]: '.format(i),
+        #             pp.pformat(Ks[i]),
+        #             "  * on lookahead {}: ".format(repr(lk)),
+        #             pp.pformat({lk: [act0, act1]}),
+        #             '',
+        #         ])
+        #     msg += "============================"
+        #     raise ParserError(msg)
 
         self.ACTION = ACTION
 

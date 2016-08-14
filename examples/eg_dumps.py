@@ -3,8 +3,6 @@ import ast
 
 from metaparse import *
 
-# class G_Calc(metaclass=cfg):
-# @cfg.v2
 def G_Calc():
 
     IGNORED = r'\s+'

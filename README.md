@@ -41,7 +41,7 @@ def expr(expr_1, MUL, expr_2): ...
 def expr(expr_1, POW, expr_2): ...
 ```
 
-and finally write down the semantics, where [SDT][]-style is applied (cf. [Yacc][]).
+and finally write down the semantics with [SDT][]-style (cf. [Yacc][]).
 
 ``` python
 from metaparse import cfg, LALR
@@ -59,7 +59,7 @@ class G_Calc(metaclass=cfg):
     EQ  = r'='
     NUM = r'[1-9][0-9]*'
     ID  = r'[_a-zA-Z]\w*'
-    POW = r'\*\*', 3            # Can specify precedence of token (mainly for LALR)
+    POW = r'\*\*', 3             # Can specify precedence of token (mainly for LALR)
     MUL = r'\*'  , 2
     ADD = r'\+'  , 1
 
@@ -87,7 +87,7 @@ class G_Calc(metaclass=cfg):
 
 Then we get a `Grammar` object and build parser with it:
 
-```
+``` python
 >>> type(G_Calc)
 <class 'metaparse.Grammar'>
 >>> pCalc = LALR(G_Calc)
@@ -110,7 +110,7 @@ Now we are done and it's quite easy to try it out.
 
 IMO, tools in state-of-the-art could hardly get more handy than this.
 
-Note `metaclass=cfg` only works in Python 3. There is an [alternative](#python-2-compatibility)form which also works in Python 2 but seems trickier and is arguably less recommended<sup>[3]</sup> .
+Note `metaclass=cfg` only works in Python 3. There is an [alternative](#python-2-compatibility) form which also works in Python 2 but seems trickier and is arguably less recommended<sup>[3]</sup> .
 
 <sub>[3]. although more interesting.</sub>
 
@@ -141,7 +141,7 @@ If merely the parse tree is needed rather than the semantic result, use method `
 
 The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as ```(<token-name>: '<lexeme>')@[<position-in-input>]```.
 
-Having this tree, calling ```tr.translate()``` returns the same result as `interpret`. With LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse trees explicitly.
+Having this tree, calling ```tr.translate()``` returns the same result as `interpret`. With LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse tree explicitly.
 
 
 # Design
@@ -176,7 +176,7 @@ The design of this module targets "native parsing" (like [instaparse][] and [Par
 
 <sub>[4]. may be untrue.</sub>
 
-Though this slim module does not intend to replace more extensive tools like [GNU Bison][] and [ANTLR][], it is extremely handy and its integration in Python projects can be seamless.
+Though this slim module does not intend to replace more extensive tools like [Bison][] and [ANTLR][], it is extremely handy and its integration in Python projects can be seamless.
 
 
 # A Tiny Documentation
@@ -404,6 +404,7 @@ def Calc_v2():
 
     def assign(ID, EQ, expr):
         table[ID] = expr
+        return expr
 
     def expr(NUM):
         return int(NUM)

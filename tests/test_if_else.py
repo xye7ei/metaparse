@@ -112,13 +112,13 @@ class TestLRGrammar(unittest.TestCase):
 
 if __name__ == '__main__':
 
-    # unittest.main()
+    unittest.main()
 
     # g = GLR(Gif)
-    l = LALR(Gif)
-    pp.pprint(l.ACTION)
+    # l = LALR(Gif)
+    # pp.pprint(l.ACTION)
 
-l.parse('if e then if e then if e then s else s else s')
+# l.parse('if e then if e then if e then s else s else s')
 # g.parse_many_gss('if e then if e then if e then s else s else s')
 # pprint(len([*g.parse_many_gss('if e then if e then if e then s else s else s')]))
 # pprint([*g.parse_many_gss('if e then if e then if e then s else s else s')])

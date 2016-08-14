@@ -4,7 +4,7 @@ class E(metaclass=cfg):
 
     num = r'\d+'
 
-    sup = r'\*\*', 3            # r'\*\*' is matched before r'\*'
+    pow = r'\*\*', 3            # r'\*\*' is matched before r'\*'
 
     mul = r'\*', 2
     div = r'\/', 2
@@ -23,7 +23,7 @@ class E(metaclass=cfg):
         return '({} * {})'.format(E, E_1)
     def E(E, div, E_1):
         return '({} / {})'.format(E, E_1)
-    def E(E, sup, E_1):
+    def E(E, pow, E_1):
         return '({} ** {})'.format(E, E_1)
     def E(num):
         return num
@@ -38,7 +38,7 @@ import pprint as pp
 # pp.pprint(E.interpret_many('3 + 2 * 7 + 1'))
 
 print(E)
-pp.pprint(E.OP_PRE)
+pp.pprint(E.precedence)
 psr = LALR(E)
 # print(psr.table.__len__())
 # pp.pprint([*zip(psr.Ks, psr.ACTION)])

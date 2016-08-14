@@ -1147,11 +1147,7 @@ class cfg(type):
                 else:
                     attrs.append((k, v))
 
-        # Need to give default precedence values?
-        # FIXME: leads to non-reporting of conflicts??
-        for lex in lexes:
-            if lex not in prece:
-                prece[lex] = 0
+        # Precedence values should be restricted by dedicated operators.
 
         # Default matching order of special patterns:
 
@@ -2174,7 +2170,7 @@ class LALR(LR, ParserDeterm):
                                 # `lk1`, test whether conflicts may
                                 # raise against it.
                                 act, arg = ACTION[i][lk1]
-                                # if the action is REDUCE
+                                # if the existing action is REDUCE
                                 if act is REDUCE:
                                     # which reduces a different item `arg`
                                     if arg != ctm.r:
@@ -2199,7 +2195,7 @@ class LALR(LR, ParserDeterm):
                                             "============================",
                                         ])
                                         raise ParserError(msg)
-                                # If the action is SHIFT
+                                # If the existing action is SHIFT
                                 else:
                                     # `ctm` is the item prepared for
                                     # shifting on `lk1`
@@ -2214,19 +2210,14 @@ class LALR(LR, ParserDeterm):
                                     if ctm.size > 1 and ctm.rule.rhs[-2] in G.terminals:
                                         op_lft = ctm.rule.rhs[-2]
                                         op_rgt = lk1
-                                        # identical token: left(REDUCE) wins
-                                        if op_lft == op_rgt:
-                                            ACTION[i][lk1] = new_redu
-                                        # different tokens: compare prece
-                                        elif G.precedence[op_lft] > G.precedence[op_rgt]:
-                                            # left/REDUCE wins
-                                            ACTION[i][lk1] = new_redu
-                                        elif G.precedence[op_lft] < G.precedence[op_rgt]:
-                                            # right/SHIFT wins
-                                            pass
+                                        if op_lft in G.precedence and op_rgt in G.precedence:
+                                            if G.precedence[op_lft] >= G.precedence[op_rgt]:
+                                                # left/REDUCE wins
+                                                ACTION[i][lk1] = new_redu
+                                            else: # elif G.precedence[op_lft] < G.precedence[op_rgt]:
+                                                # right/SHIFT wins
+                                                pass
                                         else:
-                                            # No resolution possible!
-                                            # Report confict instantly!
                                             msg = '\n'.join([
                                                 '',
                                                 "============================",
@@ -2239,8 +2230,9 @@ class LALR(LR, ParserDeterm):
                                                 '- against existing',
                                                 '  {}'.format({lk1: (act, arg)}),
                                                 '',
-                                                ('- You may need specify different precedence values for'
-                                                 ' {} and {}.'.format(repr(op_lft), repr(op_rgt))),
+                                                ('- You may need specify precedence values for'
+                                                ' both {} and {} if they are designed to be operators.'
+                                                 .format(repr(op_lft), repr(op_rgt))),
                                                 '',
                                                 intermediate_info(),
                                                 "============================",

@@ -24,10 +24,17 @@ p = Earley(S)
 
 # pprint([*p.lexer.tokenize('abbbc', True)])
 
-# r = S.parse('abbbc')
-r = p.interpret_many('abbbbc')
+from unittest import main, TestCase
 
-assert r == [('a', 'b', 'b', 'b', 'b', 'c')]
-pprint(r)
+class Test(TestCase):
+    def test(self):
+        # r = S.parse('abbbc')
+        r = p.interpret_many('abbbbc')
+
+        assert r == [('a', 'b', 'b', 'b', 'b', 'c')]
+        pprint(r)
 
 # pprint(p.__dict__)
+
+if __name__ == '__main__':
+    main()

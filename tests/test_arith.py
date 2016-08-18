@@ -18,8 +18,8 @@ class GArith(metaclass=cfg):
 
     plus   = r'\+'
     times  = r'\*'
-    # number = r'\d+'
-    def number(lex: r'\d+'):
+    number = r'\d+'
+    def number(lex):
         return int(lex)
 
     left   = r'\('

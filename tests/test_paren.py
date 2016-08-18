@@ -2,7 +2,7 @@ import preamble
 
 from metaparse import *
 
-class Gparen(metaclass=Earley.meta):
+class Gparen(metaclass=LALR.meta):
 
     """
     Grammar for matching arbitrary paired parenthesises.
@@ -25,10 +25,16 @@ class Gparen(metaclass=Earley.meta):
         return ''
 
 
+from unittest import main, TestCase
+
+class Test(TestCase):
+    def test_paren(self):
+        assert Gparen.interpret('()') == '<>'
+        assert Gparen.interpret('( ( ) )') == '<<>>'
+        assert Gparen.interpret('( ( ) ) ( )') == '<<>><>'
+
 if __name__ == '__main__':
     # import pprint as pp
     # s = Gparen.parse('( ( ) ) ( )')
     # pp.pprint(s)
-    assert Gparen.interpret1('()') == '<>'
-    assert Gparen.interpret1('( ( ) )') == '<<>>'
-    assert Gparen.interpret1('( ( ) ) ( )') == '<<>><>'
+    main()

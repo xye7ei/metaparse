@@ -2170,6 +2170,7 @@ class LALR(LR, ParserDeterm):
                                 # `lk1`, test whether conflicts may
                                 # raise against it.
                                 act, arg = ACTION[i][lk1]
+
                                 # if the existing action is REDUCE
                                 if act is REDUCE:
                                     # which reduces a different item `arg`
@@ -2195,6 +2196,7 @@ class LALR(LR, ParserDeterm):
                                             "============================",
                                         ])
                                         raise ParserError(msg)
+
                                 # If the existing action is SHIFT
                                 else:
                                     # `ctm` is the item prepared for
@@ -2296,28 +2298,7 @@ class LALR(LR, ParserDeterm):
                 if itm.index_pair == (0, 1):
                     ACTION[i][END] = (ACCEPT, itm.r)
 
-        # # Report LALR-conflicts, if any.
-        # if conflicts:
-        #     msg = "\n============================"
-        #     for i, lk, act0, act1 in conflicts:
-        #         msg += '\n'.join([
-        #             '',
-        #             '! LALR-Conflict raised:',
-        #             '  * in state [{}]: '.format(i),
-        #             pp.pformat(Ks[i]),
-        #             "  * on lookahead {}: ".format(repr(lk)),
-        #             pp.pformat({lk: [act0, act1]}),
-        #             '',
-        #         ])
-        #     msg += "============================"
-        #     raise ParserError(msg)
-
         self.ACTION = ACTION
-
-        # Eliminate dependencies?
-        # self.Ks = [[(k.target, k.rest) for k in K]
-        #            for K in self.Ks]
-        # self.rules = [(lhs, rhs) for lhs, rhs in self.rules]
 
     def parse(self, inp, interp=False, n_warns=5):
 

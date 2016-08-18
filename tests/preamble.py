@@ -8,3 +8,11 @@ sys.path.append(
             os.path.dirname(__file__),
             os.pardir
         )))
+
+class Hint(object):
+    def __init__(self, info):
+        self.info = info
+    def __enter__(self):
+        print('+++++++++++{}++++++++++++++'.format(self.info))
+    def __exit__(self):
+        print('-----------{}--------------'.format(self.info))

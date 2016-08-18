@@ -1,1 +1,1 @@
-for %%f in ("test_*.py") do python "%%~nxf"
+python -m unittest discover . -v

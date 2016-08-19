@@ -6,6 +6,10 @@ from pprint import pprint
 def idfunc(x):
     return x
 
+def idseq(*x):
+    return x
+
+
 def token(tk, hdl=idfunc):
     if not tk:
         assert False, 'Empty token'
@@ -28,21 +32,9 @@ x, y, z = map(token, 'xyz')
 res = list(a('abc'))
 assert res == [('a', 'bc')]
 
-cons = lambda x, xs: (x,) + tuple(xs)
-car = lambda x: x[0]
-cdr = lambda x: x[1:]
 
-
-def seq(*psrs, hdl=idfunc):
+def seq(*psrs, hdl=idseq):
     def _s(inp):
-        # # rec version
-        # if not psrs:
-        #     yield (), inp
-        # else:
-        #     for r, inp1 in car(psrs)(inp):
-        #         for rs, inp2 in seq(cdr(psrs))(inp1):
-        #             yield cons(r, rs), inp2
-        # iter version
         agd = [((), inp)]
         for psr in psrs:
             agd1 = []
@@ -52,7 +44,7 @@ def seq(*psrs, hdl=idfunc):
                     agd1.append((rs + (r,), inp1))
             agd = agd1
         for sq, inp1 in agd:
-            yield hdl(sq), inp1
+            yield hdl(*sq), inp1
     return _s
 
 abc = seq(a, b, c)
@@ -123,6 +115,7 @@ def opt(psr):
 # res = list(opt(alt([a, b]))('c'))
 # pprint(res)
 
+
 white = many(alt([token(' '), token('\t'), token('\n'), token('\v')]))
 def word(lit):
     def _w(inp):
@@ -145,7 +138,14 @@ def p_int(inp):
 ints = many(p_int)
 pprint(list(ints('1 23 456 ')))
 
-def stmt(inp):
+
+def parser(func):
+    def _p(inp):
+        return func()(inp)
+    return _p
+
+@parser
+def stmt():
     i = word('if')
     t = word('then')
     e = word('else')
@@ -155,38 +155,45 @@ def stmt(inp):
         s,
         seq(i, x, t, stmt, e, stmt),
         seq(i, x, t, stmt),
-    ])(inp)
+    ])
 
 pprint(list(stmt('s')))
 pprint(list(stmt('if 0  then s else     s')))
 pprint(list(stmt('if  0 then  s')))
 
-
-def sexp(inp):
+@parser
+def sexp():
     return alt([
         rword('\w+'),
         seq(word('('), many(sexp), word(')'),
-            hdl=lambda tp: tp[1])
-    ])(inp)
+            hdl=lambda *tp: tp[1])
+    ])
 
+sexp = parser(
+    lambda: alt([
+        rword('\w+'),
+        seq(word('('), many(sexp), word(')'),
+            hdl=lambda *tp: tp[1])
+    ]))
 
 pprint(list(sexp('abc de')))
 pprint(list(sexp('( abc de  )')))
 pprint(list(sexp('( abc de (f (g)) )')))
 
 
-def p_expr(inp):
+@parser
+def p_expr():
 
-    num = rword('\d+', hdl=float)
+    num = rword('\d+', hdl=int)
     plus = word('+')
     times = word('*')
     left = word('(')
     right = word(')')
 
     def expr(inp):
-        return seq(term, many(seq(plus, term, hdl=lambda s:s[1]),
+        return seq(term, many(seq(plus, term, hdl=lambda p, t: t),
                               hdl=sum),
-                   hdl=lambda t: t[0] + t[1])(inp)
+                   hdl=lambda t, ts: t + ts)(inp)
 
     def term(inp):
         def product(xs):
@@ -194,26 +201,22 @@ def p_expr(inp):
             for x in xs: p *= x
             return p
 
-        return seq(factor, many(seq(times, factor, hdl=lambda s:s[1]), hdl=product),
-                   hdl=lambda t: t[0] * t[1])(inp)
+        return seq(factor, many(seq(times, factor, hdl=lambda t, f: f),
+                                hdl=product),
+                   hdl=lambda f, r: f * r)(inp)
 
     factor = alt([
         num,
         seq(word('('), expr, word(')'), hdl=lambda s:s[1])
     ])
 
-    return expr(inp)
+    return expr
 
 
 print()
 pprint([*p_expr('3 + 1 + 9')])
 pprint([*p_expr('3 + 2 * 9 + 1')])
 
-
-def parser(func):
-    def _p(inp):
-        return func()(inp)
-    return _p
 
 def p_json(inp):
 
@@ -222,28 +225,37 @@ def p_json(inp):
     @parser
     def object():
         return alt([
-            seq(word('{'), word('}'), hdl=lambda s: {}),
-            seq(word('{'), members, word('}'), hdl=lambda s: dict(s[1]))
+            seq(word('{'), word('}'), hdl=lambda l, r: {}),
+            seq(word('{'), members, word('}'), hdl=lambda l, ms, r: dict(ms))
         ])
 
     @parser
     def members():
-        return seq(pair, many(seq(word(','), pair,
-                                  hdl=lambda s: s[1])),
-                   hdl=lambda s: [s[0]] + s[1])
+        return seq(pair, many(seq(word(','), pair, hdl=lambda w, p: p)),
+                   hdl=lambda p, m: [p] + m)
 
-    string = seq(word("\""), rword('\w*'), word("\""),
-                 hdl=lambda s: s[1])
-    pair = lambda inp: seq(string, word(':'), value,
-                           hdl=lambda s: (s[0], s[2]))(inp)
+    @parser
+    def string():
+        return seq(word("\""), rword('\w*'), word("\""),
+                   hdl=lambda l, w, r: w)
 
-    array = lambda inp: alt([
-        seq(word('['), many(elements), word(']'), hdl=lambda s: s[1])
-    ])(inp)
+    @parser
+    def pair():
+        return seq(string, word(':'), value,
+                   hdl=lambda s, w, v: (s, v))
 
-    elements = lambda inp: \
-               seq(value, many(seq(word(','), value, hdl=lambda s: s[-1])),
-                   hdl=lambda s: [s[0]] + s[1])(inp)
+    @parser
+    def array():
+        return alt([
+            seq(word('['), many(elements), word(']'),
+                hdl=lambda l, m, r: m)
+        ])
+
+    @parser
+    def elements():
+        return seq(value,
+                   many(seq(word(','), value, hdl=lambda c, v: v)),
+                   hdl=lambda v, m: [v] + m)
 
     value = alt([
         string,

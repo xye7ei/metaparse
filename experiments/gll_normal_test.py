@@ -1,4 +1,4 @@
-from metaparse import cfg, grammar, GLL, GLR, Earley
+from gll_tree import *
 from pprint import pprint
 
 @grammar

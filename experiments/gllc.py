@@ -1,19 +1,18 @@
 class PExpr(object):
-    def __init__(self, *ops, hdl=None):
-        self.ops, self._hdl = ops, hdl
+    def __init__(self, *ops):
+        self.ops = ops
     def __and__(self, other):
         return And(self, other)
     def __or__(self, other):
         return Or(self, other)
-    def trans(self, args):
-        return self._hdl(args) if self._hdl else args
+    def __rshift__(self, func):
+        return Seman(self, func)
 
 class Token(PExpr):
-    def __init__(self, lit, hdl=None):
-        self.lit, self._hdl = lit, hdl
     def __call__(self, inp):
-        if inp.startswith(self.lit):
-            yield self.trans(self.lit), inp[len(self.lit):]
+        lit, = self.ops
+        if inp.startswith(lit):
+            yield lit, inp[len(lit):]
 
 class And(PExpr):
     def __call__(self, inp):
@@ -49,6 +48,12 @@ class Opt(PExpr):
         if not got:
             yield ([], inp)
 
+class Seman(PExpr):
+    def __call__(self, inp):
+        psr, func = self.ops
+        for r, inp1 in psr(inp):
+            yield func(*r), inp1
+
 # 
 class Many1(PExpr):
     def __call__(self, inp):
@@ -78,41 +83,36 @@ class Many1(PExpr):
 import re
 
 from pprint import pprint
-print()
 
 a = Token('a')
 b = Token('b')
+
+assert(list(a('abc'))) == [('a', 'bc')]
+assert(list(b('abc'))) == []
+assert(list(b('bbc'))) == [('b', 'bc')]
+
 c = Token('c')
-
-print(list(a('abc')))
-print(list(b('abc')))
-print(list(b('bbc')))
-
-print()
 ab = a & b
 abc = a & b & c
 
-print(list(ab('abc')))
-print(list(abc('abc')))
-print(list(abc('abd')))
+assert(list(ab('abc')))  == [(('a', 'b'), 'c')]
+assert(list(abc('abc'))) == [(('a', 'b', 'c'), '')]
+assert(list(abc('abd'))) == []
 
-print()
 a_b = a | b
-print(list(a_b('abc')))
-print(list(a_b('bbc')))
-print(list(a_b('cbc')))
+assert(list(a_b('abc'))) == [('a', 'bc')] 
+assert(list(a_b('bbc'))) == [('b', 'bc')]
+assert(list(a_b('cbc'))) == []
 
-print()
-print(list(Many(a)('b')))
-print(list(Many(a)('aaaab')))
+assert(list(Many(a)('b'))) == [([], 'b')]
+assert(list(Many(a_b)('aaaab'))) == [(['a', 'a', 'a', 'a', 'b'], '')]
 
 
 # Application
 
 White = Many(Token(' ') | Token('\t') | Token('\n') | Token('\v'))
 
-print()
-print(list(White('   \n  \v b')))
+assert(list(White('   \n  \v b'))) == [([' ', ' ', ' ', '\n', ' ', ' ', '\v', ' '], 'b')]
 
 class Word(PExpr):
     def __init__(self, lit):
@@ -122,8 +122,7 @@ class Word(PExpr):
             yield w, inp1
 
 
-print(list(Word('abc')('abc   de')))
-
+assert(list(Word('abc')('abc   de'))) == [('abc', 'de')]
 
 
 # =========================
@@ -141,12 +140,29 @@ def run(func):
 def A():
     a = Word('a')
     S = rule(lambda:
-            a & a |
-            a & S & a)
+             a & a |
+             a & S & (a >> str.upper))
     return S
 
 pprint([*A('a a a   a a    a ')])
 
+
+@run
+def sexp():
+    # sexp = rule(
+    #     lambda:
+    #     (Word('a') | Word('b')) |
+    #     Word('(') & Many(sexp) & Word(')')
+    # )
+    sexp = rule(lambda:
+                (Many1(Token('a') | Token('b')) & White) >> (lambda lst, w: ''.join(lst)) |
+                (Word('(') & Many(sexp) & Word(')')) >> (lambda l, e, r: e)
+    )
+    return sexp
+
+pprint([*sexp('(  (a)  b (bb a) ab)')])
+
+assert 0
 
 
 class LazExpr(PExpr):
@@ -184,17 +200,5 @@ def sexp(n):
     n.sexp = (Word('a') | Word('b')) |\
              Word('(') & Many(n.sexp) & Word(')')
     return n.sexp
-
-@run
-def sexp():
-    sexp = rule(lambda:
-               (Word('a') | Word('b')) |
-               Word('(') & Many(sexp) & Word(')')
-    )
-    # sexp = rule(lambda:
-    #            (Word('a') | Word('b')) >> Func(f1) |
-    #            (Word('(') & Many(sexp) & Word(')')) >> Func(f2)
-    # )
-    return sexp
 
 pprint([*sexp('(  (a)  b (b a) b)')])

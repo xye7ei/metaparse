@@ -26,6 +26,9 @@ lex_handler_sources = \
 
 ## Parser$BEGIN
 
+precedence = \
+    {'CON': 4, 'DIS': 3, 'IFF': 1, 'IMP': 2, 'NEG': 5}
+
 rules = \
     [('Sentence^', ('Sentence',)),
      ('Sentence', ['Atomic']),
@@ -45,7 +48,7 @@ seman_sources = \
     [b'\xe3\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00'
      b'\x00C\x00\x00\x00s\x04\x00\x00\x00|\x00\x00S)\x01N\xa9\x00)\x01\xda\x01x'
      b'r\x01\x00\x00\x00r\x01\x00\x00\x00\xfa8c:\\users\\shellay\\documents\\githu'
-     b'b\\metaparse\\metaparse.py\xda\x07id_func\x91\x00\x00\x00s\x02\x00'
+     b'b\\metaparse\\metaparse.py\xda\x07id_func\x90\x00\x00\x00s\x02\x00'
      b'\x00\x00\x00\x01',
      None,
      None,

@@ -2,12 +2,6 @@
 with Python style (iterative) implementations.
 
 """
-
-import warnings
-import io
-
-reader = io.StringIO
-
 from collections import namedtuple
 
 

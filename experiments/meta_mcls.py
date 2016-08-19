@@ -94,8 +94,8 @@ p = LALR(E)
 # pprint([*p.lexer.tokenize('True & False', True)])
 # pprint(p.parse('P & Q | R & !S'))
 
-s = p.dump('meta2_dumps.py')
-p1 = LALR.load('meta2_dumps.py', globals())
+s = p.dump('meta_dumps.py')
+p1 = LALR.load('meta_dumps.py', globals())
 
 # print(s)
 

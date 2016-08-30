@@ -37,7 +37,9 @@ class YACC(metaclass=cfg):
     TERM2 = r'\"[^\"]*\"'
 
     def grammar(rules):
-        terms = ['    {} = r{}'.format(tok, repr(pat[1:-1])) for pat, tok in Helper.terms.items()]
+        terms = ['    {} = r{}'.format(
+            tok,
+            repr(pat[1:-1])) for pat, tok in Helper.terms.items()]
         gen = '\n'.join([
             'from metaparse import LALR',
             '',

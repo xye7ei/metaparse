@@ -98,6 +98,8 @@ rule = lhs , "=" , rhs , ";" ;
 grammar = { rule } ;
 """
 
+pprint(EBNF)
+
 tr = EBNF.parse(inp)
 e = EBNF.interpret(inp)
 

@@ -54,7 +54,7 @@ p = LALR(G_Calc)
 p.dump('eg_dumps_file.py')
 p.load('eg_dumps_file.py', globals())
 
-pprint(p.__dict__)
+# pprint(p.__dict__)
 # pprint(ctx)
 
 # timeit LALR.loads(s, globals())

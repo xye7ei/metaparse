@@ -362,7 +362,7 @@ class Grammar(object):
     associating rule semantics.
 
 
-    Notes:
+    Missions of this class:
 
     * Auto-augmentation: add a singleton top rule if not explicitly
       given.
@@ -386,6 +386,10 @@ class Grammar(object):
         lexhdls : A dict for lexical handlers
 
         """
+        if len(lexes) < 1:
+            raise GrammarError('No lexical rules defined.')
+        if len(rules) < 1:
+            raise GrammarError('No grammar rules defined.')
 
         # Always match IGNORED patterns when all normal pattern fail.
         if IGNORED not in lexes:
@@ -481,7 +485,9 @@ class Grammar(object):
         self._calc_first()
 
     def __repr__(self):
-        return 'Grammar\n{}\n'.format(pp.pformat(self.rules))
+        return 'Grammar{{\n{}\n{}\n}}'.format(
+            pp.pformat(self.lex2pats),
+            pp.pformat(self.rules))
 
     def __getitem__(self, X):
         """Note retrieved rules are enumerated with original indices."""
@@ -905,6 +911,8 @@ class Lexer(list):
         expresiveness may be harmed by this restriction.
 
         """
+        lex2rgxs = self.lex2rgxs
+        lex_handlers = self.lex_handlers
 
         pos = 0
         while pos < len(inp):
@@ -913,7 +921,7 @@ class Lexer(list):
             # re match
             n = None
             m = None
-            for cat, rgx in self.lex2rgxs:
+            for cat, rgx in lex2rgxs:
                 # raw
                 if rgx is None:
                     if inp.startswith(cat, pos):
@@ -939,9 +947,9 @@ class Lexer(list):
                     # Call ERROR handler!
                     at, pos = m.span()
                     lxm = m.group()
-                    if ERROR in self.lex_handlers:
+                    if ERROR in lex_handlers:
                         # Suppress error token and call handler.
-                        self.lex_handlers[ERROR](lxm)
+                        lex_handlers[ERROR](lxm)
                         # yield Token(at, ERROR, lxm, h(lxm))
                     else:
                         # Yield error token when no handler available.
@@ -949,9 +957,9 @@ class Lexer(list):
                 else:
                     at, pos = m.span()
                     lxm = m.group()
-                    if n in self.lex_handlers:
+                    if n in lex_handlers:
                         # Call normal token handler.
-                        h = self.lex_handlers[n]
+                        h = lex_handlers[n]
                         # Bind semantic value.
                         yield Token(at, n, lxm, h(lxm))
                     else:
@@ -1711,7 +1719,7 @@ class LR(ParserBase):
 
     def __init__(self, grammar=None, dict=None):
         if grammar is not None:
-            super(LR, self).__init__(grammar)
+            # super(LR, self).__init__(grammar)
             self.lexer = Lexer.from_grammar(grammar)
             self._build_automaton(grammar)
             try:
@@ -2311,13 +2319,15 @@ class LALR(LR, ParserDeterm):
         """
 
         # Aliasing
-        trees = []
         L = self.lexer
         Ks = self.Ks
         GOTO = self.GOTO
         ACTION = self.ACTION
         semans = self.semans
         rules = self.rules
+
+        # Tree stack: list of produced subtrees.
+        trees = []
 
         # State stack: list more performant than deque.
         sstack = [0]

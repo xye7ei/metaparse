@@ -110,7 +110,7 @@ Now we are done and it's quite easy to try it out.
 
 IMO, tools in state-of-the-art could hardly get more handy than this.
 
-Note `metaclass=cfg` only works in Python 3. There is an [alternative](#python-2-compatibility) form which also works in Python 2 but seems trickier and is arguably less recommended<sup>[3]</sup> .
+Note `metaclass=cfg` only works in Python 3. There is an [alternative](#verbose-style) form which also works in Python 2 but seems trickier and is arguably less recommended<sup>[3]</sup> .
 
 <sub>[3]. although more interesting.</sub>
 
@@ -382,50 +382,65 @@ Though this module provides advantageous features, there are also limitations:
 * Support *left-recursion* by GLL parser.
 
 
-# Python 2 compatibility
+# Verbose style
 
-The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, relying on the single decorators `cfg.v2`:
+The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, with more verbose but more straightforward style.
 
 ``` python
-from metaparse import cfg, LALR
+from metaparse import verbose, LALR
 
-@LALR
-@cfg.v2
-def Calc_v2():
+@verbose
+def Calc(lex, rule):
 
-    IGNORED = r'\s+'
+    lex(IGNORED = r'\s+')
 
-    EQ  = r'='
-    NUM = r'[0-9]+'
-    ID  = r'[_a-zA-Z]\w*'
-    POW = r'\*\*', 3
-    MUL = r'\*'  , 2
-    ADD = r'\+'  , 1
+    @lex(NUM = r'[0-9]+')
+    def NUM(val):
+        return int(val)
 
+    lex(EQ  = r'=')
+    lex(ID  = r'[_a-zA-Z]\w*')
+
+    lex(POW = r'\*\*', p=3)
+    lex(MUL = r'\*'  , p=2)
+    lex(ADD = r'\+'  , p=1)
+    lex(SUB = r'\-'  , p=1)
+
+    @rule
     def assign(ID, EQ, expr):
         table[ID] = expr
         return expr
 
+    @rule
+    def expr(ID):
+        return table[ID]
+
+    @rule
     def expr(NUM):
         return int(NUM)
 
+    @rule
     def expr(expr_1, ADD, expr_2):
         return expr_1 + expr_2
 
+    @rule
+    def expr(expr_1, SUB, expr_2):
+        return expr_1 - expr_2
+
+    @rule
     def expr(expr, MUL, expr_1):
         return expr * expr_1
 
+    @rule
     def expr(expr, POW, expr_1):
         return expr ** expr_1
 
-    return
+
+pCalc = LALR(Calc)
 ```
 
-The problem is that `type.__prepare__` creating a method collector is not supported in Python 2. Altough `__metaclass__` is also available, it suffers from the restriction that we can *not* collect lexcial rule (Python assignment statements) in original declaration order.
+Such style would be preferred by explicity lovers, although typing the decorators `lex` and `rule` repeatedly may be sort of nuisance. The underlying mechanism is quite easy: the decorator `verbose` prepares a lex-collector and a rule-collector to be arguments passed to function `Calc`, after calling of which the lexical and syntactic rules collected are then used to construct a `Grammar` object, which gets returned with name `Calc`.
 
-Generally, unlike `class` structure, `def` structure allows deeper access into the source code through `inspect`. After some tricks with module `ast` traversing the parsed function's body, the assignments can then get collected in order and methods get registered with supposedly correct specification of global/local contexts. Finally all stuff for constructing a `Grammar` object gets prepared.
-
-Although this alternative form with merely decorators seems less verbose, it is much less explicit for understanding. Some working mechanisms may not be clear enough (especially the contexts for inner `def`s).
 
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"
 [Interpreting]: https://en.wikipedia.org/wiki/Interpreter_(computing) "Interpreter"

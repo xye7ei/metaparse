@@ -1,12 +1,10 @@
 import preamble
 from metaparse import verbose, LALR
 
-
 @verbose
 def Calc(lex, rule):
 
-    lex(IGNORED = r' ')
-    lex(IGNORED = r'\t')
+    lex(IGNORED = r'\s+')
 
     @lex(NUM = r'[0-9]+')
     def NUM(val):

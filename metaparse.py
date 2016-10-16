@@ -1293,7 +1293,10 @@ def verbose(func):
     ll = VerboseReader.LexLogger()
     rl = VerboseReader.RuleLogger()
     func(ll, rl)
-    g = Grammar(**ll.__dict__, **rl.__dict__)
+    args = {}
+    args.update(ll.__dict__)
+    args.update(rl.__dict__)
+    g = Grammar(**args)
     return g
 
 

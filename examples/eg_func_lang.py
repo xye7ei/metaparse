@@ -127,7 +127,7 @@ class Lam(metaclass=cfg):
 # Test whether the grammar is LALR to exclude potential ambiguity
 # and prepare for better performance
 # psr_ear = Earley(Lam)
-psr_gll = GLL(Lam)
+# psr_gll = GLL(Lam)
 psr_glr = GLR(Lam)
 psr_lalr = LALR(Lam)
 

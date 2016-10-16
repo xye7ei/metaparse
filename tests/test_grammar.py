@@ -1,25 +1,34 @@
+"""This file tests the fundamental checking mechanism of the class
+grammar."""
+
 import preamble
+import warnings
 import unittest
 
 from metaparse import *
 
+w = []
 
-class G(metaclass=cfg):
+with warnings.catch_warnings(record=True) as ws:
 
-    a, b, c, d = r'abcd'
+    class G(metaclass=cfg):
 
-    def S(A, B, C): pass
-    def S(D): pass
-    def A(a, A): pass
-    def A(): pass
-    def B(B, b): pass
-    def B(): pass
-    def C(c): pass
-    def C(D): pass
-    def D(d, D): pass
-    def D(E): pass
-    def E(D): pass
-    def E(B): pass
+        a, b, c, d = r'abcd'
+
+        def S(A, B, C): pass
+        def S(D): pass
+        def A(a, A): pass
+        def A(): pass
+        def B(B, b): pass
+        def B(): pass
+        def C(c): pass
+        def C(D): pass
+        def D(d, D): pass
+        def D(E): pass
+        def E(D): pass
+        def E(B): pass
+
+    assert len(ws) == 1
 
 
 class TestGrammar(unittest.TestCase):
@@ -34,6 +43,28 @@ class TestGrammar(unittest.TestCase):
     def test_nullalbe(self):
         self.assertEqual(set(G.NULLABLE), {'S^', 'S', 'A', 'B', 'C', 'D', 'E'})
 
+    def test_warn_loop(self):
+        with warnings.catch_warnings(record=True) as ws:
+            # Same as `G` above.
+            class F(metaclass=cfg):
+                a, b, c, d = r'abcd'
+                def S(A, B, C): pass
+                def S(D): pass
+                def A(a, A): pass
+                def A(): pass
+                def B(B, b): pass
+                def B(): pass
+                def C(c): pass
+                def C(D): pass
+                def D(d, D): pass
+                def D(E): pass
+                def E(D): pass
+                def E(B): pass
+            # Now raised warnings get captured into `ws`.
+            self.assertEqual(len(ws), 1)
+            # print(ws)
+
+        
 if __name__ == '__main__':
     unittest.main()
     # pass

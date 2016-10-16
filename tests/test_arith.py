@@ -96,6 +96,9 @@ if __name__ == '__main__':
     # t = TestArithParser()
     # t.test_normal()
 
+    # tough = ' + '.join(['(2 * (1 + 1) + 2 * 2)'] * 1000)
+    # %timeit ari_lalr.interpret(tough)
+    # 1 loops, best of 3: 347 ms per loop
 
     # with open('C:/Users/Shellay/Desktop/ari.psr', 'wb') as o:
     #     o.write(ari_lalr.dumps())

@@ -188,7 +188,7 @@ class Token(object):
 
 class Rule(object):
 
-    """Rule object has the form (LHS -> RHS).  It is mainly constructed by
+    """Rule object has the form (LHS -> RHS).  It can be constructed by
     a function, taking its name as LHS and parameter list as RHS. The
     function itself is treated as the semantical behavior of this rule.
 

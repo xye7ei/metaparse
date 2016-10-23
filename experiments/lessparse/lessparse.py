@@ -1,5 +1,10 @@
 import re
 import pprint
+import warnings
+import marshal, types
+
+from pprint import pformat
+from textwrap import indent, dedent
 
 from collections import deque
 from collections import namedtuple
@@ -13,6 +18,7 @@ Token.end = property(lambda self: self.pos + len(self.lexeme))
 
 Rule = namedtuple('Rule', 'lhs rhs')
 Rule.__repr__ = lambda self: '({} = {})'.format(self.lhs, ' '.join(self.rhs))
+
 
 def func_to_rule(func):
     'Construct a rule object from a function/method. '
@@ -31,108 +37,71 @@ def func_to_rule(func):
     return Rule(lhs, rhs)
 
 
-
-class LexElem:
-
-    def __init__(self, name, pattern, handler):
-        self.name = name
-        self.pattern = pattern
-        self.handler = handler
-
-    def __repr__(self):
-        return '{}[{}][{}]'.format(
-            self.__class__.__name__,
-            self.name,
-            repr(self.pattern))
-
-    def try_match(self, inp, pos):
-        lexeme = self.pattern
-        pos1 = pos + len(lexeme)
-        if inp[pos:pos1] == lexeme:
-            if self.handler:
-                value = self.handler(lexeme)
-            else:
-                value = lexeme
-            return Token(pos, self.name, lexeme, value)
-        else:
-            return None
+def identity(x):
+    return x
 
 
-class RgxLexElem(LexElem):
+class Lexer(object):
 
-    def __init__(self, name, pattern, handler):
-        super(RgxLexElem, self).__init__(name, pattern, handler)
-        self.rgx = re.compile(pattern, re.MULTILINE)
+    def __init__(self, lexes=None, handler=None):
+        self.lexes = lexes if lexes else []
+        self.handler = handler if handler else {}
 
-    def try_match(self, inp, pos):
-        m = self.rgx.match(inp, pos=pos)
-        if m:
-            lexeme = m.group()
-            if self.handler:
-                value = self.handler(lexeme)
-            else:
-                value = lexeme
-            return Token(pos, self.name, lexeme, value)
-        else:
-            return None
-
-
-class Lexer(list):
-
-    def word(self, **kw):
-        for k, v in kw.items():
-            lx = LexElem(k, v, None)
-            self.append(lx)
-
-    def re(self, **kw):
-        for k, v in kw.items():
-            lx = RgxLexElem(k, v, None)
-            self.append(lx)
-
-    def raw(self, *lits):
-        for lit in lits:
-            self.append(LexElem(lit, lit, None))
-
-    def __call__(self, is_rgx=True, precedence=None, **kw):
+    def __call__(self, **kw):
         assert len(kw) == 1
         name, pattern = kw.popitem()
-        if is_rgx:
-            lex_elem = RgxLexElem(name, pattern, None)
-        else:
-            lex_elem = LexElem(name, pattern, None)
-        self.append(lex_elem)
+        self.lexes.append((name, re.compile(pattern)))
         def z(func):
-            lex_elem.handler = func
+            self.handler[name] = func
         return z
 
+    def more(self, **kw):
+        for k, v in kw.items():
+            self(**{k: v})
+
     def tokenize(self, inp):
+        lexes = self.lexes
+        handler = self.handler
         pos = 0
         while pos < len(inp):
-            for le in self:
-                tok = le.try_match(inp, pos)
-                if tok: break
+            name = None
+            m = None
+            for nm, rgx in lexes:
+                name = nm
+                m = rgx.match(inp, pos=pos)
+                if m: break
             else:
-                raise ValueError("No handler for unrecognized char in input: '{}'".format(inp[pos]))
-            if tok.symbol != 'IGNORED':
-                yield tok
-            pos = tok.end
+                raise ValueError("No pattern for unrecognized char in input: '{}'".format(inp[pos]))
+            lxm = m.group()
+            if name != 'IGNORED':
+                if name in handler:
+                    value = handler[name](lxm)
+                else:
+                    value = lxm
+                yield Token(pos, name, lxm, value)
+            pos = m.end()
 
 
-class Grammar:
-
-    def __repr__(self):
-        return pprint.pformat(self.rules)
+class Grammar(object):
 
     def __init__(self, rules, precedence={}):
+
+        # Augmented grammar with singleton/non-alternated start-rule.
         self.start = rules[0].lhs
-        rules = [Rule('{}^'.format(self.start), [self.start])] + rules
         self.rules = rules
+
+        # 
         self.nonterminals = set()
         self.symbols = set()
         for lhs, rhs in rules:
             self.nonterminals.add(lhs)
             self.symbols.update(rhs)
         self.terminals = self.symbols - self.nonterminals
+
+        # Group by LHS
+        self.group = {nt: [] for nt in self.nonterminals}
+        for i, (lhs, rhs) in enumerate(rules):
+            self.group[lhs].append(i)
 
         # precedence is not only specifiable for tokens, but also for
         # symbols.
@@ -142,7 +111,7 @@ class Grammar:
         self.NULLABLE = NULLABLE = set()
         while 1:
             has_new = False
-            for lhs, rhs in self.rules:
+            for lhs, rhs in rules:
                 if all(x in NULLABLE for x in rhs):
                     if lhs not in NULLABLE:
                         NULLABLE.add(lhs)
@@ -160,18 +129,29 @@ class Grammar:
                 FIRST[nt].add('EPSILON')
         while 1:
             has_new = False
-            for lhs, rhs in self.rules:
+            for lhs, rhs in rules:
                 # Use the FIRST[rhs] to update FIRST[lhs].
                 for y in rhs:
-                    z = len(FIRST[lhs])
-                    FIRST[lhs].update(FIRST[y])
-                    z1 = len(FIRST[lhs])
-                    if z1 > z:
-                        has_new = True
+                    # z = len(FIRST[lhs])
+                    # FIRST[lhs].update(FIRST[y])
+                    # z1 = len(FIRST[lhs])
+                    # if z1 > z:
+                    #     has_new = True
+                    for a in FIRST[y]:
+                        if a not in FIRST[lhs]:
+                            FIRST[lhs].add(a)
+                            has_new = True
                     if y not in NULLABLE:
                         break
             if not has_new:
                 break
+
+    def __repr__(self):
+        return pprint.pformat(self.rules)
+
+    def __getitem__(self, ir):
+        """Indexing rules."""
+        return self.rules[ir]
 
     def first(self, X):
         if X in self.FIRST:
@@ -191,17 +171,8 @@ class Grammar:
             s.add(tail)
         return s
 
-    def __getitem__(self, ir):
-        """Indexing rules."""
-        return self.rules[ir]
-
-    def __call__(self, X):
-        """g(X) -> [<rule-index: int>]"""
-        for ir, rule in enumerate(self.rules):
-            if X == rule.lhs:
-                yield ir
-
     def closure(G, I):
+        """Naive closure algorithm on item set."""
         C = I[:]
         z = 0
         while z < len(C):
@@ -209,13 +180,14 @@ class Grammar:
             if p < len(G[i].rhs):
                 X = G[i].rhs[p]
                 if X in G.nonterminals:
-                    for j in G(X):
+                    for j in G.group[X]:
                         if (j, 0) not in C:
                             C.append((j, 0))
             z += 1
         return C
 
     def closure1_with_lookahead(G, item, a):
+        """Lookahead closure algorithm on singleton item set."""
         C = [(item, a)]
         z = 0
         while z < len(C):
@@ -224,7 +196,7 @@ class Grammar:
             if p < len(G[i].rhs):
                 X = G[i].rhs[p]
                 if X in G.nonterminals:
-                    for j in G(X):
+                    for j in G.group[X]:
                         for b in G.first_of_seq(G[i].rhs[p+1:], a):
                             if ((j, 0), b) not in C:
                                 C.append(((j, 0), b))
@@ -232,13 +204,21 @@ class Grammar:
         return C
 
 
-class LALR:
+def augment(rules, semans):
+    assert len(rules) == len(semans)
+    start = rules[0].lhs
+    rules = [Rule(start+'^', (start,))] + rules
+    semans = [identity] + semans
+    return rules, semans
 
-    def __init__(self):
-        self.rules = []
+
+class LALR(object):
+
+    def __init__(self, lexer=None, rules=None, precedence=None):
+        self.rules = rules if rules else []
+        self.precedence = precedence if precedence else {}
+        self.lexer = lexer if lexer else Lexer()
         self.semans = []
-        self.precedence = {}
-        self.lexer = Lexer()
 
     def __enter__(self):
         return self.lexer, self.rule
@@ -246,34 +226,24 @@ class LALR:
     def __exit__(self, *a, **kw):
         self.make()
 
-    @staticmethod
-    def from_grammar(grammar):
-        lalr = LALR()
-        lalr.make(grammar)
-        return lalr
-
     def rule(self, func):
         rule = func_to_rule(func)
         self.rules.append(rule)
         self.semans.append(func)
 
-    def make(self, grammar=None):
-
-        if grammar:
-            self.grammar = grammar
-        else:
-            self.grammar = Grammar(self.rules)
+    def make(self):
         
-        G = self.grammar
-
         # augmented grammar - top semantics
-        if len(G.rules) == len(self.semans) + 1:
-            self.semans.insert(0, lambda x: x)
+        self.rules, self.semans = augment(self.rules, self.semans)
+        ruls = self.rules
+        semans = self.semans
+
+        G = Grammar(self.rules, self.precedence)
 
         self.Ks = Ks = [[(0, 0)]]
         self.GOTO = GOTO = []
 
-        # LR(0) item sets Ks and GOTO
+        # Make LR(0) kernel sets Ks and GOTO, incrementally.
         i = 0
         while i < len(Ks):
             I = Ks[i]
@@ -327,6 +297,12 @@ class LALR:
                                 # to K[j], jj'th item
                                 (j, jj),
                             ))
+                    # @@@ ended item?
+                    # @@@ conclude kernel/nonkernel 'reduce' (nk, p) in Ks[i] on lookahead a?
+                    # @@@ BUT here a may be dummy!
+                    # @@@ the item to be reduced should share set of lookaheads of kernel item
+                    # @@@ BUT this set is yet to be accomplished.
+
         # Propagation till fix-point
         self.propa = propa
         while 1:
@@ -339,21 +315,28 @@ class LALR:
             if not has_new:
                 break
 
-        # Conclude lookahead actions
-        self.ACTION = ACTION = [[] for _ in Ks]
+        # Conclude lookahead actions allowing conflicts on identical
+        # lookaheads.
+        self.ACTION = ACTION = [set() for _ in Ks]
         for i, Xto in enumerate(GOTO):
             for X, j in Xto.items():
                 if X in G.terminals:
-                    ACTION[i].append((X, ('shift', j)))
+                    ACTION[i].add((X, ('shift', j)))
         for i, L in enumerate(Ls):
             K = Ks[i]
-            for (r, p), l in zip(K, L):
-                # ended item
-                if p == len(G[r].rhs):
-                    for a in l:
-                        ACTION[i].append((a, ('reduce', r)))
+            for k, l in zip(K, L):
+                for (c, q), b in G.closure1_with_lookahead(k, DUMMY):
+                    # IMPORTANT: kernel/non-kernels which are ended!
+                    if q == len(G[c].rhs):
+                        # spontaneous reduction
+                        if b != DUMMY:
+                            ACTION[i].add((b, ('reduce', c)))
+                        # propagated from lookaheads of kernel item being closed
+                        else:
+                            for a in l:
+                                ACTION[i].add((a, ('reduce', c)))
 
-        # Report conflicts (not for GLR)
+        # Resolve conflicts (not for GLR)
         self.ACTION1 = ACTION1 = [{} for _ in Ks]
         for i, A in enumerate(ACTION):
             d = ACTION1[i]
@@ -362,7 +345,7 @@ class LALR:
                     # Conflict resolver here!
                     act0, arg0 = d[a]
                     redu = G.rules[arg]
-                    if act0 == 'shift' and act == 'reduce':
+                    if {act0, act} == {'shift', 'reduce'}:
                         if a in G.precedence:
                             if len(redu.rhs) > 1 and redu.rhs[-2] in G.precedence:
                                 lft = redu.rhs[-2]
@@ -394,7 +377,7 @@ class LALR:
         astk = []               # arg stack
         ACTION1 = self.ACTION1
         GOTO = self.GOTO
-        G = self.grammar
+        rules = self.rules
 
         while 1:
             token = (yield)
@@ -413,14 +396,14 @@ class LALR:
                 # Reduce until shift happens!
                 while act == 'reduce':
                     subs = deque()
-                    for _ in G[arg].rhs:
+                    for _ in rules[arg].rhs:
                         sstk.pop()
                         subs.appendleft(astk.pop())
 
                     if interpret:
                         tree = self.semans[arg](*subs)
                     else:
-                        tree = (G[arg].lhs, list(subs))
+                        tree = (rules[arg].lhs, list(subs))
 
                     if token == None and arg == 0:
                         assert sstk == [0], sstk
@@ -428,7 +411,7 @@ class LALR:
                         yield tree
 
                     astk.append(tree)
-                    sstk.append(GOTO[sstk[-1]][G[arg].lhs])
+                    sstk.append(GOTO[sstk[-1]][rules[arg].lhs])
 
                     act, arg = ACTION1[sstk[-1]][look]
 
@@ -436,6 +419,11 @@ class LALR:
                 # Use semantic value of token whether it is by parsing
                 # or interpreting.
                 astk.append(token.value)
+            else:
+                msg = ('Unexpected lookahead symbol: {}\n'
+                       'current ACTION: \n'
+                       '{}').format(look, ACTION1[sstk[-1]])
+                warnings.warn(msg)
 
     def parse(self, inp, interpret=False):
         rtn = self.prepare(interpret)
@@ -444,10 +432,57 @@ class LALR:
             rtn.send(token)
         else:
             return rtn.send(None)
+
     def interpret(self, inp):
         assert self.semans, 'Must have semantics to interpret.'
         return self.parse(inp, True)
 
+    def dumps(self):
+        tar = odict()
+
+        tar['lexes'] = [
+            (nm, rgx.pattern)
+            for nm, rgx in self.lexer.lexes
+        ]
+        tar['rules'] = [tuple(rl) for rl in self.rules]
+        tar['ACTION1'] = self.ACTION1
+        tar['GOTO'] = self.GOTO
+
+        tar['lexer_handler_code'] = {
+            nm: marshal.dumps(h.__code__)
+            for nm, h in self.lexer.handler.items()
+        }
+        tar['semans'] = [
+            marshal.dumps(f.__code__)
+            for f in self.semans
+        ]
+
+        return '\n'.join(
+            '{} = \\\n{}\n'.format(k, indent(pformat(v), '    '))
+             for k, v in tar.items()
+        )
+
+    @staticmethod
+    def loads(src, env=globals()):
+        ctx = {}
+        exec(src, env, ctx)
+        lexes = [(nm, re.compile(pat))
+                 for nm, pat in ctx.pop('lexes')]
+        handler = {nm: types.FunctionType(marshal.loads(co), env)
+                   for nm, co in ctx.pop('lexer_handler_code').items()}
+        p = LALR()
+        p.lexer = Lexer(lexes, handler)
+        p.rules = [Rule(*rl) for rl in ctx.pop('rules')]
+        p.ACTION1 = ctx.pop('ACTION1')
+        p.GOTO = ctx.pop('GOTO')
+        p.semans = [
+            types.FunctionType(marshal.loads(co), env)
+            for co in ctx.pop('semans')
+        ]
+
+        return p
+
+    # Helper for easy reading states.
     def show_item(self, item):
         i, p = item
         lhs, rhs = self.grammar[i]
@@ -462,16 +497,10 @@ class LALR:
         act, arg = action
         return (act, self.show_itemset(arg) if act == 'shift' else self.grammar.rules[arg])
 
-    @property
     def inspect_Ks(self):
-        pprint.pprint([(k, [self.show_item(i, p) for i, p in K])
+        pprint.pprint([(k, [self.show_item(itm) for itm in K])
                        for k, K in enumerate(self.Ks)])
 
-    @property
-    def inspect_GOTO(self):
-        pprint.pprint([(k, g) for k, g in enumerate(self.GOTO)])
-
-    @property
     def inspect_lkhs(self):
         pprint.pprint([
             [(i, self.show_item(self.Ks[i][ii])),
@@ -479,7 +508,6 @@ class LALR:
             for (i, ii), (j, jj) in self.propa
         ])
 
-    @property
     def inspect_propa(self):
         pprint.pprint([
             [(i, self.show_item(self.Ks[i][ii])),
@@ -487,7 +515,6 @@ class LALR:
             for (i, ii), (j, jj) in self.propa
         ])
 
-    @property
     def inspect_Ls(self):
         pprint.pprint([
             (i, [(self.show_item(itm), lkhs)
@@ -495,37 +522,21 @@ class LALR:
             for i, K in enumerate(self.Ks)
         ])
 
-    @property
     def inspect_ACTION(self):
         pprint.pprint([
             (i, self.show_itemset(i), self.ACTION[i])
             for i, K in enumerate(self.Ks)
         ])
 
+    def inspect_GOTO(self):
+        pprint.pprint([
+            (i, self.show_itemset(i), self.GOTO[i])
+            for i, K in enumerate(self.Ks)
+        ])
+
 
 if __name__ == '__main__':
 
-
-    lxr = Lexer()
-    lxr.raw('.', ',', ';')
-    lxr.re(
-        IDENTIFIER='[_a-zA-Z]\w*',
-    )
-
-    @lxr(NUMBER='[1-9]\d*(\.\d*)?')
-    def _(val):
-        return float(val)
-
-    @lxr(IGNORED='\s+')
-    def _(val):
-        return None
-
-    pp = pprint.pprint
-    pp(lxr)
-
-    ts = lxr.tokenize('   88 isGood , notBaby .   7 ')
-    pp(list(t.value for t in ts))
-    # assert 0
 
     rs = ([
         Rule('S', ('A', 'B', 'C')),
@@ -579,14 +590,14 @@ if __name__ == '__main__':
         return a
 
     lx_ite = Lexer([
-        RgxLexElem('IGNORED', '\s+', id_func),
-        LexElem('if', 'if', id_func),
-        LexElem('then', 'then', id_func),
-        LexElem('else', 'else', id_func),
-        RgxLexElem('expr', r'\d+', id_func),
-        RgxLexElem('single', r'\w+', id_func),
+        ('IGNORED', r'\s+'),
+        ('if', 'if'),
+        ('then', 'then'),
+        ('else', 'else'),
+        ('expr', r'\d+'),
+        ('single', r'\w+'),
     ])
-    g_ite = LALR.from_grammar(Grammar(rs1, {'then': 1, 'else': 2}))
+    g_ite = LALR(lx_ite, rs, {'then': 1, 'else': 2})
     g_ite.lexer = lx_ite
 
     f = g_ite.prepare(False)

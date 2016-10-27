@@ -10,7 +10,7 @@ class TestLRGrammar(unittest.TestCase):
 
     def test_LALR_report(self):
         """LALR parser should report conflicts for ambiguous Grammar.meta! """
-        with self.assertRaises(ValueError):
+        with self.assertRaises(LALR.Error):
 
             class Gif(metaclass=LALR.meta):
 

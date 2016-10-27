@@ -11,6 +11,7 @@ from textwrap import indent, dedent
 from collections import deque
 from collections import namedtuple
 from collections import OrderedDict as odict
+from collections import defaultdict as ddict
 
 
 Token = namedtuple('Token', 'pos symbol lexeme value')
@@ -79,7 +80,7 @@ class Lexer(object):
         for k, v in kw.items():
             self.register(k, v)
 
-    def tokenize(self, inp):
+    def tokenize(self, inp, end_none=False):
         lex2pats = self.lex2pats
         handlers = self.handlers
         pos = 0
@@ -109,6 +110,8 @@ class Lexer(object):
                 val = handler(lxm) if handler else lxm
                 yield Token(pos, name, lxm, val)
             pos = match.end()
+        if end_none:
+            yield None
 
 
 class Grammar(object):
@@ -270,16 +273,32 @@ def augment(rules, semans):
     return rules, semans
 
 
+# Memory-friendly structure for generalized parsing.
+GSS = namedtuple('GSS', 'car cdr')
+Nil = GSS(None, None)
+
+def GSS_to_list(gss):
+    'Stack safety.'
+    l = []
+    while gss is not Nil:
+        l.append(gss.car)
+        gss = gss.cdr
+    return l
+
+GSS.to_list = GSS_to_list
+
+
 class LALR(object):
 
     class Error(Exception):
         pass
 
-    def __init__(self, lexer=None, rules=None, precedence=None):
+    def __init__(self, lexer=None, rules=None, precedence=None, generalized=False):
         self.rules = rules if rules else []
         self.precedence = precedence if precedence else {}
         self.lexer = lexer if lexer else Lexer()
         self.semans = []
+        self.generalized = generalized
 
     def rule(self, func):
         rule = func_to_rule(func)
@@ -295,8 +314,6 @@ class LALR(object):
 
         # Augmented grammar - top semantics
         self.rules, self.semans = augment(self.rules, self.semans)
-        # rules = self.rules
-        # semans = self.semans
 
         # Propagate precedence from lexer.
         if self.lexer.precedence:
@@ -423,110 +440,131 @@ class LALR(object):
 
         # Conclude lookahead actions allowing conflicts on identical
         # lookaheads.
-        self.ACTION = ACTION = [set() for _ in Ks]
+        # self.ACTION = ACTION = [set() for _ in Ks]
+        self.ACTION = ACTION = [{} for _ in Ks]
         for i, Xto in enumerate(GOTO):
             for X, j in Xto.items():
                 if X in G.terminals:
-                    ACTION[i].add((X, ('shift', j)))
-        for i, L in enumerate(Ls):
-            K = Ks[i]
+                    # ACTION[i].add((X, ('shift', j)))
+                    if X not in ACTION[i]: ACTION[i][X] = set()
+                    ACTION[i][X].add(('shift', j))
+        for i, (K, L) in enumerate(zip(Ks, Ls)):
             for k, l in zip(K, L):
                 for (c, q), b in G.closure1_with_lookahead(k, DUMMY):
                     # IMPORTANT: kernel/non-kernels which are ended!
                     if q == len(G.rules[c].rhs):
                         # spontaneous reduction
                         if b != DUMMY:
-                            ACTION[i].add((b, ('reduce', c)))
+                            # ACTION[i].add((b, ('reduce', c)))
+                            if b not in ACTION[i]: ACTION[i][b] = set()
+                            ACTION[i][b].add(('reduce', c))
                         # propagated from lookaheads of kernel item being closed
                         else:
                             for a in l:
-                                ACTION[i].add((a, ('reduce', c)))
+                                # ACTION[i].add((a, ('reduce', c)))
+                                if a not in ACTION[i]: ACTION[i][a] = set()
+                                ACTION[i][a].add(('reduce', c))
 
-        # Resolve conflicts (not for GLR)
-        self.ACTION1 = ACTION1 = [{} for _ in Ks]
-        for i, A in enumerate(ACTION):
-            d = ACTION1[i]
-            # Try add (act, arg) into d.
-            for a, (act, arg) in A:
-                # It is assured that 'shift' is added earlier than 'reduce'
-                if a in d:
-                    # Conflict resolver here!
-                    act0, arg0 = d[a]
-                    # if {act0, act} == {'shift', 'reduce'}:
-                    if {act0, act} == {'shift', 'reduce'}:
-                        if act0 == 'reduce':
-                            s, s_i = act, arg
-                            r, r_r = act0, arg0
-                        else:
-                            s, s_i = act0, arg0
-                            r, r_r = act, arg
-                        redu = G.rules[r_r]
-                        if a in G.precedence:
-                            if len(redu.rhs) > 1 and redu.rhs[-2] in G.precedence:
-                                lft = redu.rhs[-2]
-                                rgt = a
-                                if G.precedence[lft] >= G.precedence[rgt]:
-                                    d[a] = (r, r_r)
+        # Resolve conflicts
+        # - Resolution can filter some invalid actions in ACTION
+        #   for GLR.
+        # - Use phantom-precedence to decide!
+        #   - decider for shift: the left neighbor of item actor symbol
+        #   - decider for reduce: the lookahead symbol
+        # - For any action in ACTION[i], i.e. A:
+        #   - if the decider has no precedence, it must be preserved;
+        #   - if the decider has highest precedence among A, it must be preserved;
+        #   - otherwise, it gets excluded.
+        # if self.precedence:
+        #     def prsv(i, look, action):
+        #         if Ks[i]
+        #         act, arg = action
+        #         if act == 'reduce':
+                    
+        def resolve():
+            ACTION1 = [{} for _ in Ks]
+            for i, A in enumerate(ACTION):
+                A1 = ACTION1[i]
+                # Try add (act, arg) into A1.
+                # for a, (act, arg) in A:
+                #     if 1:
+                for a, actargs in A.items():
+                    for act, arg in actargs:
+                        # It is assured that 'shift' is added earlier than 'reduce'
+                        if a in A1:
+                            # Conflict resolver here!
+                            act0, arg0 = A1[a]
+                            # if {act0, act} == {'shift', 'reduce'}:
+                            if {act0, act} == {'shift', 'reduce'}:
+                                if act0 == 'reduce':
+                                    s, s_i = act, arg
+                                    r, r_r = act0, arg0
                                 else:
-                                    d[a] = (s, s_i)
-                                continue
-                    # Unable to resolve
-                    msg = ("\n"
-                           "Handling item set: \n" "{}\n"
-                           "Conflict on lookahead: {} \n"
-                           "- {}\n" "- {}\n"
-                    ).format(
-                        self.show_itemset(i),
-                        a,
-                        self.show_action(d[a]),
-                        self.show_action((act, arg)),
-                    )
-                    raise ValueError(msg)
-                else:
-                    d[a] = (act, arg)
+                                    s, s_i = act0, arg0
+                                    r, r_r = act, arg
+                                redu = G.rules[r_r]
+                                if a in G.precedence:
+                                    if len(redu.rhs) > 1 and redu.rhs[-2] in G.precedence:
+                                        lft = redu.rhs[-2]
+                                        rgt = a
+                                        if G.precedence[lft] >= G.precedence[rgt]:
+                                            A1[a] = (r, r_r)
+                                        else:
+                                            A1[a] = (s, s_i)
+                                        continue
+                            # Unable to resolve
+                            msg = ("\n"
+                                "Handling item set: \n" "{}\n"
+                                "Conflict on lookahead: {} \n"
+                                "- {}\n" "- {}\n"
+                            ).format(
+                                self.show_itemset(i),
+                                a,
+                                self.show_action(A1[a]),
+                                self.show_action((act, arg)),
+                            )
+                            raise ValueError(msg)
+                        else:
+                            A1[a] = (act, arg)
+            return ACTION1
+
+        if not self.generalized:
+            self.ACTION1 = resolve()
 
     def prepare(self, interpret=True):
+        """Prepare a parsing coroutine which accepts tokens."""
         sstk = [0]              # state stack
         astk = []               # arg stack
-        ACTION1 = self.ACTION1
-        GOTO = self.GOTO
-        rules = self.rules
-
         while 1:
             token = (yield)
-            # token = (yield)
-            # inp = (yield astk)
-            # for token in self.lexer.tokenize(inp):
-            if token == None:   # Finish
-                # assert sstk == [0], sstk
-                # yield astk[0]
+            if token == None:
                 look = '\x03'
             else:
                 look = token.symbol
-
-            if look in ACTION1[sstk[-1]]:
-                act, arg = ACTION1[sstk[-1]][look]
+            if look in self.ACTION1[sstk[-1]]:
+                act, arg = self.ACTION1[sstk[-1]][look]
                 # Reduce until shift happens!
                 while act == 'reduce':
                     subs = deque()
-                    for _ in rules[arg].rhs:
+                    for _ in self.rules[arg].rhs:
                         sstk.pop()
                         subs.appendleft(astk.pop())
 
                     if interpret:
                         tree = self.semans[arg](*subs)
                     else:
-                        tree = (rules[arg].lhs, list(subs))
+                        tree = (self.rules[arg].lhs, list(subs))
 
+                    # Reducing the 0th rule with END lookup.
                     if token == None and arg == 0:
                         assert sstk == [0], sstk
                         assert astk == [], astk
                         yield tree
 
                     astk.append(tree)
-                    sstk.append(GOTO[sstk[-1]][rules[arg].lhs])
+                    sstk.append(self.GOTO[sstk[-1]][self.rules[arg].lhs])
 
-                    act, arg = ACTION1[sstk[-1]][look]
+                    act, arg = self.ACTION1[sstk[-1]][look]
 
                 sstk.append(arg)
                 # Use semantic value of token whether it is by parsing
@@ -534,9 +572,79 @@ class LALR(object):
                 astk.append(token.value)
             else:
                 msg = ('Unexpected lookahead symbol: {}\n'
-                       'current ACTION: \n'
-                       '{}').format(look, ACTION1[sstk[-1]])
+                       '- Expected in ACTION: \n'
+                       '{}').format(look, self.ACTION1[sstk[-1]])
                 warnings.warn(msg)
+
+
+    def parse_generalized(self, inp, interpret=True):
+        """Prepare a parsing coroutine which accepts tokens."""
+        agenda = deque([(GSS(0, Nil), Nil)])
+        for i, token in enumerate(self.lexer.tokenize(inp, end_none=True)):
+            look = token.symbol if token else '\x03'
+            agenda_bak = deque(agenda)
+            agenda_new = deque()
+            dead = []
+            while agenda:
+                # Dead states for error reporting.
+                dead = []
+                sstk, astk = agenda.popleft()
+                s = sstk.car
+                if look in self.ACTION[s]:
+                    for act, arg in self.ACTION[s][look]:
+                        sstk1, astk1 = sstk, astk
+                        if act == 'reduce':
+                            subs = deque()
+                            for _ in self.rules[arg].rhs:
+                                # sstk.pop()
+                                # subs.appendleft(astk.pop())
+                                sstk1 = sstk1.cdr
+                                subs.appendleft(astk1.car)
+                                astk1 = astk1.cdr
+
+                            if interpret:
+                                tree = self.semans[arg](*subs)
+                            else:
+                                tree = (self.rules[arg].lhs, list(subs))
+                            # Reducing the start rule - 
+                            # May deliver partial parses on the fly!
+                            if arg == 0:
+                                assert sstk1.car == 0, sstk1
+                                assert astk1 == Nil, astk1
+                                print(tree)
+                            # NOTE:
+                            # - Each state during cascaded reduction
+                            # should be added to the forks!
+                            # - Intermediate reduction items may or
+                            # may not have a GOTO target!
+                            if self.rules[arg].lhs in self.GOTO[sstk1.car]:
+                                # trans = self.GOTO[sstk1[-1]][self.rules[arg].lhs]
+                                # agenda.append((sstk1 + [trans], astk1 + [tree]))
+                                trans = self.GOTO[sstk1.car][self.rules[arg].lhs]
+                                agenda.append(
+                                    (GSS(trans, sstk1), GSS(tree, astk1)))
+                            else:
+                                dead.append((sstk1, astk1))
+                        elif act == 'shift':
+                            # Shift
+                            # agenda_new.append((sstk + [arg], astk + [token.value]))
+                            agenda_new.append(
+                                (GSS(arg, sstk1), GSS(token.value, astk1)))
+                else:
+                    dead.append((sstk1, astk1))
+            if not token:
+                break
+            if not agenda_new:
+                msg = ('Syntax error on {}th given token: {}\n'
+                       '- Dead state stack with expected ACTION: \n{}'
+                       .format(i, token,
+                           [(ss.to_list(), self.ACTION[ss.car])
+                            for (ss, aa) in dead]))
+                # raise LALR.Error(msg)
+                warnings.warn(msg)
+                agenda = agenda_bak
+            else:
+                agenda = agenda_new
 
     def parse(self, inp, interpret=False):
         rtn = self.prepare(interpret)
@@ -664,12 +772,12 @@ class LALR(object):
             pass
 
         elif isinstance(v, str):
-            self.lexer.add(k, v)
+            self.lexer.register(k, v)
 
         elif isinstance(v, tuple):
             assert len(v) == 2
             pat, prece = v
-            self.lexer.add(k, pat)
+            self.lexer.register(k, pat)
             if prece in self.precedence:
                 raise ValueError(
                     'Repeated specifying the precedence of symbol: {}'.format(k))
@@ -680,7 +788,7 @@ class LALR(object):
             parlist = v.__code__.co_varnames[:v.__code__.co_argcount]
             if len(parlist) == 1 and parlist[0] in ('lex', 'LEX'):
                 for _, pat in v.__annotations__.items():
-                    self.lexer.add(k, pat, v)
+                    self.lexer.register(k, pat, v)
             else:
                 self.rule(v)
 

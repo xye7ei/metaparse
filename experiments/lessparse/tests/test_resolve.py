@@ -38,4 +38,17 @@ class Test(TestCase):
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+
+    inp = 'if e then else (if e then (if e then s else s) else s)'
+    # r = p_ite.prepare_generalized()
+    # l = p_ite.lexer.tokenize(inp)
+    # next(r)
+    # for t in l:
+    #     print('feeding: ', t)
+    #     res = r.send(t)
+    #     print(res)
+    # res = r.send(None)
+    # print(res)
+
+    t = p_ite.parse_generalized(inp)

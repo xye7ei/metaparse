@@ -2044,7 +2044,7 @@ class GLR(LR):
                             # NOTE: Translation on-the-fly should not
                             # be supported due to possibly impure
                             # semantics.
-                            results.append(subs[0])
+                            results.append(subs[0]) # Unaugmented top
                     else:
                         tr = ParseTree(rule, subs, seman)
                         # 'Push/Augment' GSS.

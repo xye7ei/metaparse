@@ -1,7 +1,7 @@
-import lessparse as lp
+from metaparse import LALR
 
 
-p = lp.LALR()
+p = LALR()
 
 p.lexer.more(
     IGNORED=' ',
@@ -74,7 +74,7 @@ assert p.interpret(tough) == eval(tough)
 # %timeit p.interpret(tough)
 # 1 loops, best of 3: 346 ms per loop
 
-p_sexp = lp.LALR()
+p_sexp = LALR()
 
 with p_sexp as (lex, rule):
 
@@ -144,7 +144,7 @@ with p_sexp as (lex, rule):
 
 # lx_dp = p_sexp.lexer.dumps()
 # print(lx_dp)
-# lexer1 = lp.Lexer.loads(lx_dp, globals())
+# lexer1 = Lexer.loads(lx_dp, globals())
 
 # print(list(lexer1.tokenize(' 123  99 ')))
 
@@ -164,7 +164,7 @@ with open('sexp_dump.py', 'w') as o:
     o.write(sexp_dp)
 
 # print(sexp_dp)
-p_sexp1 = lp.LALR.loads(sexp_dp, globals())
+p_sexp1 = LALR.loads(sexp_dp, globals())
 
 with warnings.catch_warnings(record=True) as w:
     s = p_sexp.interpret('(a & 123 (c (d)) %  & e)')

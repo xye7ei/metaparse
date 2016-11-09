@@ -6,7 +6,6 @@ import warnings
 import marshal, types
 
 from pprint import pformat
-from textwrap import indent, dedent
 
 from collections import deque
 from collections import namedtuple
@@ -100,11 +99,11 @@ class Lexer(object):
                     .format(pos, inp[pos]))
             lxm = match.group()
             if name == 'IGNORED':
-                # IGNORED is not associated with any handler.
+                # IGNORED should be associated with no handler.
                 pass
             elif name == 'ERROR':
                 # ERROR must have a handler, whilst not yielded as a token.
-                assert handler
+                assert handler, 'Each ERROR token must have a handler!'
                 handler(lxm)
             else:
                 val = handler(lxm) if handler else lxm
@@ -266,10 +265,12 @@ class Grammar(object):
 
 
 def augment(rules, semans):
+    'Augment language (rules, semantics) with singleton top rule/semantics. '
     assert len(rules) == len(semans)
     start = rules[0].lhs
     rules = [Rule(start+'^', (start,))] + rules
     semans = [identity] + semans
+    assert len(rules) == len(semans)
     return rules, semans
 
 
@@ -290,17 +291,29 @@ def GSS_to_list(gss):
 GSS.to_list = GSS_to_list
 
 
-class LALR(object):
+class GLR(object):
+
+    """Generalized LR parser with lookahead.
+
+    - It is the generalized version of LALR parser, thus being
+    slightly more powerful than typical GLR(0) parser due to
+    utilization of lookhead.
+    
+    """
 
     class Error(Exception):
         pass
 
-    def __init__(self, lexer=None, rules=None, precedence=None, generalized=False):
+    def __init__(self, lexer=None, rules=None, precedence=None):
         self.rules = rules if rules else []
         self.precedence = precedence if precedence else {}
         self.lexer = lexer if lexer else Lexer()
         self.semans = []
-        self.generalized = generalized
+
+        assert isinstance(self.lexer, Lexer)
+        assert isinstance(self.precedence, dict)
+        assert isinstance(self.rules, list)
+        assert isinstance(self.semans, list)
 
     def rule(self, func):
         rule = func_to_rule(func)
@@ -469,7 +482,7 @@ class LALR(object):
                                 if a not in ACTION[i]: ACTION[i][a] = set()
                                 ACTION[i][a].add(('reduce', c))
 
-        # Resolve conflicts
+        # TODO: Resolving conflicts with symbol precedence
         # - Resolution can filter some invalid actions in ACTION
         #   for GLR.
         # - Use phantom-precedence to decide!
@@ -484,114 +497,7 @@ class LALR(object):
         #         if Ks[i]
         #         act, arg = action
         #         if act == 'reduce':
- 
-        if not self.generalized:
-            self.ACTION1 = self.resolve(G)
-
-    def resolve(self, G):
-        "Resolve conflicts with precedence."
-        Ks = self.Ks
-        ACTION = self.ACTION
-        ACTION1 = [{} for _ in Ks]
-        for i, A in enumerate(ACTION):
-            A1 = ACTION1[i]
-            # Try add (act, arg) into A1.
-            for a, actargs in A.items():
-                for act, arg in actargs:
-                    # It is assured that 'shift' is added earlier than 'reduce'
-                    if a in A1:
-                        # Conflict resolver here!
-                        act0, arg0 = A1[a]
-                        if {act0, act} == {'shift', 'reduce'}:
-                            if act0 == 'reduce':
-                                s, s_i = act, arg
-                                r, r_r = act0, arg0
-                            else:
-                                s, s_i = act0, arg0
-                                r, r_r = act, arg
-                            redu = G.rules[r_r]
-                            if a in G.precedence:
-                                if len(redu.rhs) > 1 and redu.rhs[-2] in G.precedence:
-                                    lft = redu.rhs[-2]
-                                    rgt = a
-                                    if G.precedence[lft] >= G.precedence[rgt]:
-                                        A1[a] = (r, r_r)
-                                    else:
-                                        A1[a] = (s, s_i)
-                                    continue
-                        # Unable to resolve
-                        msg = ("\n"
-                            "Handling item set: \n" "{}\n"
-                            "Conflict on lookahead: {} \n"
-                            "- {}\n" "- {}\n"
-                        ).format(
-                            self.show_itemset(i),
-                            a,
-                            self.show_action(A1[a]),
-                            self.show_action((act, arg)),
-                        )
-                        raise LALR.Error(msg)
-                    else:
-                        A1[a] = (act, arg)
-        return ACTION1
-
-
-    def prepare(self, interpret=True):
-        """Prepare a parsing coroutine which accepts tokens."""
-        sstk = [0]              # state stack
-        astk = []               # arg stack
-        while 1:
-            token = (yield)
-            if token == None:
-                look = '\x03'
-            else:
-                look = token.symbol
-            if look in self.ACTION1[sstk[-1]]:
-                act, arg = self.ACTION1[sstk[-1]][look]
-                # Reduce until shift happens!
-                while act == 'reduce':
-                    subs = deque()
-                    for _ in self.rules[arg].rhs:
-                        sstk.pop()
-                        subs.appendleft(astk.pop())
-
-                    if interpret:
-                        tree = self.semans[arg](*subs)
-                    else:
-                        tree = (self.rules[arg].lhs, list(subs))
-
-                    # Reducing the 0th rule with END lookup.
-                    if token == None and arg == 0:
-                        assert sstk == [0], sstk
-                        assert astk == [], astk
-                        yield tree
-
-                    astk.append(tree)
-                    sstk.append(self.GOTO[sstk[-1]][self.rules[arg].lhs])
-
-                    act, arg = self.ACTION1[sstk[-1]][look]
-
-                sstk.append(arg)
-                # Use semantic value of token whether it is by parsing
-                # or interpreting.
-                astk.append(token.value)
-            else:
-                msg = ('Unexpected lookahead symbol: {}\n'
-                       '- Expected in ACTION: \n'
-                       '{}').format(look, self.ACTION1[sstk[-1]])
-                warnings.warn(msg)
-
-    def parse(self, inp, interpret=False):
-        rtn = self.prepare(interpret)
-        next(rtn)
-        for token in self.lexer.tokenize(inp):
-            rtn.send(token)
-        return rtn.send(None)
-
-    def interpret(self, inp):
-        assert self.semans, 'Must have semantics to interpret.'
-        return self.parse(inp, True)
-
+        return
 
     def prepare_generalized(self, interpret=True):
         """Prepare a parsing coroutine which accepts tokens."""
@@ -606,9 +512,9 @@ class LALR(object):
             look = token.symbol if token else '\x03'
             agenda_bak = deque(agenda)
             agenda_new = deque()
+            # Dead states for error reporting.
             dead = []
             while agenda:
-                # Dead states for error reporting.
                 # dead = []
                 sstk, astk = agenda.popleft()
                 s = sstk.car
@@ -703,7 +609,7 @@ class LALR(object):
         ]
 
         tar['rules'] = [tuple(rl) for rl in self.rules]
-        tar['ACTION1'] = self.ACTION1
+        tar['ACTION'] = self.ACTION
         tar['GOTO'] = self.GOTO
 
         tar['semans'] = [
@@ -712,9 +618,13 @@ class LALR(object):
         ]
 
         return '\n'.join(
-            '{} = \\\n{}\n'.format(k, indent(pformat(v), '    '))
+            '{} = {}\n'.format(k, pformat(v))
              for k, v in tar.items()
         )
+
+    def dump(self, filename):
+        with open(filename, 'w') as o:
+            o.write(self.dumps())
 
     @staticmethod
     def loads(src, env=globals()):
@@ -730,7 +640,7 @@ class LALR(object):
 
         p = LALR(Lexer(lex2pats, handlers))
         p.rules = [Rule(*rl) for rl in ctx.pop('rules')]
-        p.ACTION1 = ctx.pop('ACTION1')
+        p.ACTION = ctx.pop('ACTION')
         p.GOTO = ctx.pop('GOTO')
         p.semans = [
             types.FunctionType(marshal.loads(co), env)
@@ -738,6 +648,10 @@ class LALR(object):
         ]
         return p
 
+    @staticmethod
+    def load(filename, env=globals()):
+        with open(filename, 'r') as o:
+            return LALR.loads(o.read(), env=env)
 
     # Helper for easy reading/tracing/debugging.
     def show_item(self, item):
@@ -801,6 +715,141 @@ class LALR(object):
     @staticmethod
     def verbose(func_def):
         assert func_def.__code__.co_argcount == 2
+        p = GLR()
+        func_def(p.lexer, p.rule)
+        p.make()
+        return p
+
+    class meta(type):
+
+        def __prepare__(mcls, *a, **kw):
+            return GLR(*a, **kw)
+
+        def __new__(mcls, m, bs, p, **kw):
+            p.make()
+            return p
+
+
+class LALR(GLR):
+
+    """LookAhead LR parser.
+
+    - Can use precedence of tokens to resolve conflicts.
+
+    """
+
+    class Error(Exception):
+        pass
+
+    def make(self):
+        # Make GLALR(1) automaton.
+        super(LALR, self).make()
+        # Resolve conflicts with precedence.
+        Ks = self.Ks
+        ACTION = self.ACTION
+        ACTION1 = [{} for _ in Ks]
+        for i, A in enumerate(ACTION):
+            A1 = ACTION1[i]
+            # Try add (act, arg) into A1.
+            for a, actargs in A.items():
+                for act, arg in actargs:
+                    # It is assured that 'shift' is added earlier than 'reduce'
+                    if a in A1:
+                        # Conflict resolver here!
+                        act0, arg0 = A1[a]
+                        if {act0, act} == {'shift', 'reduce'}:
+                            if act0 == 'reduce':
+                                s, s_i = act, arg
+                                r, r_r = act0, arg0
+                            else:
+                                s, s_i = act0, arg0
+                                r, r_r = act, arg
+                            redu = self.rules[r_r]
+                            if a in self.precedence:
+                                if len(redu.rhs) > 1 and redu.rhs[-2] in self.precedence:
+                                    lft = redu.rhs[-2]
+                                    rgt = a
+                                    if self.precedence[lft] >= self.precedence[rgt]:
+                                        A1[a] = (r, r_r)
+                                    else:
+                                        A1[a] = (s, s_i)
+                                    continue
+                        # Unable to resolve
+                        msg = ("\n"
+                            "Handling item set: \n" "{}\n"
+                            "Conflict on lookahead: {} \n"
+                            "- {}\n" "- {}\n"
+                        ).format(
+                            self.show_itemset(i),
+                            a,
+                            self.show_action(A1[a]),
+                            self.show_action((act, arg)),
+                        )
+                        raise LALR.Error(msg)
+                    else:
+                        A1[a] = (act, arg)
+
+        self.ACTION = ACTION1
+
+    def prepare(self, interpret=True):
+        """Prepare a parsing coroutine which accepts tokens."""
+        sstk = [0]              # state stack
+        astk = []               # arg stack
+        while 1:
+            token = (yield)
+            if token == None:
+                look = '\x03'
+            else:
+                look = token.symbol
+            if look in self.ACTION[sstk[-1]]:
+                act, arg = self.ACTION[sstk[-1]][look]
+                # Reduce until shift happens!
+                while act == 'reduce':
+                    subs = deque()
+                    for _ in self.rules[arg].rhs:
+                        sstk.pop()
+                        subs.appendleft(astk.pop())
+
+                    if interpret:
+                        tree = self.semans[arg](*subs)
+                    else:
+                        tree = (self.rules[arg].lhs, list(subs))
+
+                    # Reducing the 0th rule with END lookup.
+                    if token == None and arg == 0:
+                        assert sstk == [0], sstk
+                        assert astk == [], astk
+                        yield tree
+
+                    astk.append(tree)
+                    sstk.append(self.GOTO[sstk[-1]][self.rules[arg].lhs])
+
+                    act, arg = self.ACTION[sstk[-1]][look]
+
+                sstk.append(arg)
+                # Use semantic value of token whether it is by parsing
+                # or interpreting.
+                astk.append(token.value)
+            else:
+                msg = ('Unexpected lookahead symbol: {}\n'
+                       '- Expected in ACTION: \n'
+                       '{}').format(look, self.ACTION[sstk[-1]])
+                warnings.warn(msg)
+
+    def parse(self, inp, interpret=False):
+        rtn = self.prepare(interpret)
+        next(rtn)
+        for token in self.lexer.tokenize(inp):
+            rtn.send(token)
+        return rtn.send(None)
+
+    def interpret(self, inp):
+        assert self.semans, 'Must have semantics to interpret.'
+        return self.parse(inp, True)
+
+    @staticmethod
+    def verbose(func_def):
+        assert func_def.__code__.co_argcount == 2
         p = LALR()
         func_def(p.lexer, p.rule)
         p.make()
@@ -816,11 +865,15 @@ class LALR(object):
             return p
 
 
-
 class Debug(LALR):
 
-    """Methods for inspecting LALR attributes are organized here to avoid
-    clustering.
+    """Methods for inspecting LALR attributes.
+
+    - Since the representation of structures in LALR are raw
+      integers/pairs as indices, these methods help inspect indexed
+      objects.
+
+    - They are organized here to avoid clustering.
 
     """
     
@@ -855,11 +908,11 @@ class Debug(LALR):
             for i, K in enumerate(self.Ks)
         ])
 
-    def inspect_ACTION1(self):
-        pprint.pprint([
-            (i, self.show_itemset(i), self.ACTION1[i])
-            for i, K in enumerate(self.Ks)
-        ])
+    # def inspect_ACTION1(self):
+    #     pprint.pprint([
+    #         (i, self.show_itemset(i), self.ACTION1[i])
+    #         for i, K in enumerate(self.Ks)
+    #     ])
 
     def inspect_GOTO(self):
         pprint.pprint([

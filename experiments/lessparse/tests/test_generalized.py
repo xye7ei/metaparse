@@ -3,7 +3,7 @@ from unittest import TestCase, main
 from metaparse import *
 
 
-class pExpr(metaclass=LALR.meta, generalized=True):
+class pExpr(metaclass=GLR.meta):
 
     'An ambigious grammar for arithmetic expressions.'
 

@@ -4,6 +4,7 @@ import re
 import pprint
 import warnings
 import marshal, types
+import traceback
 
 from pprint import pformat
 
@@ -43,6 +44,9 @@ def identity(x):
     return x
 
 
+END_TOKEN = Token(-1, '\x03', None, None)
+
+
 class Lexer(object):
 
     class Error(Exception):
@@ -79,7 +83,7 @@ class Lexer(object):
         for k, v in kw.items():
             self.register(k, v)
 
-    def tokenize(self, inp, end_none=False):
+    def tokenize(self, inp, with_end=False):
         lex2pats = self.lex2pats
         handlers = self.handlers
         pos = 0
@@ -109,8 +113,8 @@ class Lexer(object):
                 val = handler(lxm) if handler else lxm
                 yield Token(pos, name, lxm, val)
             pos = match.end()
-        if end_none:
-            yield None
+        if with_end:
+            yield END_TOKEN
 
 
 class Grammar(object):
@@ -257,7 +261,8 @@ class Grammar(object):
                 else:
                     pass
 
-        def __prepare__(mcls, *a, **kw):
+        @classmethod
+        def __prepare__(mcls, name, bases, *a, **kw):
             return Grammar.meta.Reader()
 
         def __new__(mcls, n, b, r):
@@ -289,6 +294,63 @@ def GSS_to_list(gss):
     return l
 
 GSS.to_list = GSS_to_list
+GSS.__repr__ = lambda s: repr(s.to_list())
+
+
+# In order to supply an API, syntax error during parsing may be
+# returned as object containing error information.
+# class MetaparseSyntaxError(SyntaxError):
+#     def __init__(self, *a, lineno=None, offset=None):
+#         super(MetaparseSyntaxError, self).__init__(*a)
+#         self.lineno = lineno
+#         self.offset = offset
+Just = namedtuple('Just', 'result')
+
+class ParseError(Exception):
+
+    def __init__(self, token, action, stack, tree_stack):
+        """Record for syntactic error information during parsing.
+        - thrown/returned during parsing?
+        - handler?
+
+          - May need to associate syntax error handler to the parser!
+            - How to define such a handler?
+              - For each rule?
+              - Error correction?
+
+          - Or even semantic error handler?
+            - A handler defined to check the whole content of argument stack!
+            - translation (i.e. applying semantics to arguments in arg-stack)
+              only available after such check.
+            - To be thrown in the rule-seman-body
+            - To be catched and reported by the parsing routine
+        """
+
+        """Which information to be included?
+
+        - The syntax tree being constructed -- exactly the active item
+        in the current state (top of stack), as well as the expected
+        token.
+        
+        - The range of input text corresponding to the syntax tree?
+
+        """
+        msg = ('Unexpected token {} at ({}:{})\n'
+               'while expecting actions {}\n'
+               'with state stack {}\n'
+               'and subtree stack {}\n'
+               .format(
+                   token,
+                   token.pos, token.end,
+                   action,
+                   stack,
+                   tree_stack))
+
+        super(ParseError, self).__init__(msg)
+        # self.tree = tree
+        self.token = token
+        self.action = action
+        self.stack = stack
 
 
 class GLR(object):
@@ -351,7 +413,6 @@ class GLR(object):
                            '- in {}th rule {}\n'
                     ).format(y, r, rule)
                     seman = self.semans[r]
-                    import traceback
                     trc = traceback.format_list([
                         (seman.__code__.co_filename,
                          seman.__code__.co_firstlineno,
@@ -361,11 +422,11 @@ class GLR(object):
                                '{}\n').format(trc)
                     lex_msg = str(self.lexer)
                     raise LALR.Error(msg + trc_msg + lex_msg)
+
         # Report soundness of grammar (unreachable, loops, etc).
         for X in G.unreachable:
             for i in G.group[X]:
                 seman = self.semans[i]
-                import traceback
                 trc = traceback.format_list([
                     (seman.__code__.co_filename,
                      seman.__code__.co_firstlineno,
@@ -459,28 +520,31 @@ class GLR(object):
         # lookaheads.
         # self.ACTION = ACTION = [set() for _ in Ks]
         self.ACTION = ACTION = [{} for _ in Ks]
-        for i, Xto in enumerate(GOTO):
+        for A, Xto in zip(ACTION, GOTO):
             for X, j in Xto.items():
                 if X in G.terminals:
-                    # ACTION[i].add((X, ('shift', j)))
-                    if X not in ACTION[i]: ACTION[i][X] = set()
-                    ACTION[i][X].add(('shift', j))
-        for i, (K, L) in enumerate(zip(Ks, Ls)):
+                    if X not in A: A[X] = set()
+                    A[X].add(('shift', j))
+        for K, L, A in zip(Ks, Ls, ACTION):
             for k, l in zip(K, L):
                 for (c, q), b in G.closure1_with_lookahead(k, DUMMY):
+                    # Accept state.
+                    if c == 0 and q == 1:
+                        if '\x03' not in A:
+                            A['\x03'] = {('accept', 0)}
                     # IMPORTANT: kernel/non-kernels which are ended!
-                    if q == len(G.rules[c].rhs):
+                    elif q == len(G.rules[c].rhs):
                         # spontaneous reduction
                         if b != DUMMY:
-                            # ACTION[i].add((b, ('reduce', c)))
-                            if b not in ACTION[i]: ACTION[i][b] = set()
-                            ACTION[i][b].add(('reduce', c))
+                            # A.add((b, ('reduce', c)))
+                            if b not in A: A[b] = set()
+                            A[b].add(('reduce', c))
                         # propagated from lookaheads of kernel item being closed
                         else:
                             for a in l:
-                                # ACTION[i].add((a, ('reduce', c)))
-                                if a not in ACTION[i]: ACTION[i][a] = set()
-                                ACTION[i][a].add(('reduce', c))
+                                # A.add((a, ('reduce', c)))
+                                if a not in A: A[a] = set()
+                                A[a].add(('reduce', c))
 
         # TODO: Resolving conflicts with symbol precedence
         # - Resolution can filter some invalid actions in ACTION
@@ -504,94 +568,85 @@ class GLR(object):
         agenda = deque()
         agenda.append((GSS(Nil, 0), Nil))
         tokens = []
-        results = ddict(list)
-        # for i, token in enumerate(self.lexer.tokenize(inp, end_none=True)):
+        # results = ddict(list)
+
+        token = yield None
+        tokens.append(token)
         while 1:
-            token = (yield results)
-            tokens.append(token)
-            look = token.symbol if token else '\x03'
-            agenda_bak = deque(agenda)
-            agenda_new = deque()
+
+            agenda_bak = deque(agenda); agenda_new = deque()
+
             # Dead states for error reporting.
             dead = []
+
             while agenda:
-                # dead = []
-                sstk, astk = agenda.popleft()
+
+                sstk, tstk = agenda.popleft()
                 s = sstk.car
-                if look in self.ACTION[s]:
-                    for act, arg in self.ACTION[s][look]:
-                        sstk1, astk1 = sstk, astk
+
+                if token.symbol in self.ACTION[s]:
+
+                    for act, arg in self.ACTION[s][token.symbol]:
+
+                        sstk1, tstk1 = sstk, tstk
+
                         if act == 'reduce':
                             subs = deque()
                             for _ in self.rules[arg].rhs:
-                                # sstk.pop()
-                                # subs.appendleft(astk.pop())
                                 sstk1 = sstk1.cdr
-                                subs.appendleft(astk1.car)
-                                astk1 = astk1.cdr
+                                subs.appendleft(tstk1.car)
+                                tstk1 = tstk1.cdr
                             if interpret:
                                 tree = self.semans[arg](*subs)
                             else:
                                 tree = (self.rules[arg].lhs, list(subs))
-                            # Reducing the start rule - 
-                            # May deliver partial parses on the fly!
-                            if arg == 0:
-                                assert sstk1.car == 0, sstk1
-                                assert astk1 == Nil, astk1
-                                # Mark resulted trees with token index.
-                                results[len(tokens) - 1].append(tree)
+
                             # NOTE:
                             # - Each state during cascaded reduction
                             # should be added to the forks!
                             # - Intermediate reduction items may or
                             # may not have a GOTO target!
                             if self.rules[arg].lhs in self.GOTO[sstk1.car]:
-                                # trans = self.GOTO[sstk1[-1]][self.rules[arg].lhs]
-                                # agenda.append((sstk1 + [trans], astk1 + [tree]))
                                 trans = self.GOTO[sstk1.car][self.rules[arg].lhs]
                                 agenda.append(
-                                    (GSS(sstk1, trans), GSS(astk1, tree)))
+                                    (GSS(sstk1, trans), GSS(tstk1, tree)))
                             else:
-                                dead.append((sstk1, astk1))
+                                dead.append((sstk1, tstk1))
+
+                        elif act == 'accept':
+                            agenda_new.append(
+                                (sstk1, tstk1))
+
                         elif act == 'shift':
                             # Shift
-                            # agenda_new.append((sstk + [arg], astk + [token.value]))
+                            # agenda_new.append((sstk + [arg], tstk + [token.value]))
                             agenda_new.append(
-                                (GSS(sstk1, arg), GSS(astk1, token.value)))
+                                (GSS(sstk1, arg), GSS(tstk1, token.value)))
                 else:
-                    dead.append((sstk1, astk1))
-            if not token:
-                yield results
-                break
+                    dead.append((sstk, tstk))
+
             if not agenda_new:
-                msg = ('Ignoring syntax error on {}th given token: {}\n'
-                       '- Dead states: [state-stack, expected-ACTION]: \n{}'
-                       .format(len(tokens), token,
-                           [(ss.to_list(), self.ACTION[ss.car])
-                            for (ss, aa) in dead]))
-                # raise LALR.Error(msg)
-                warnings.warn(msg)
+                token = yield [
+                    ParseError(token, self.ACTION[ss.car], ss, aa)
+                    for ss, aa in dead
+                ]
                 agenda = agenda_bak
             else:
+                token = yield [Just(ts) for ss, ts in agenda_new]
+                tokens.append(token)
                 agenda = agenda_new
 
     def parse_generalized(self, inp, interpret=False):
         p = self.prepare_generalized(interpret)
         next(p)
-        for token in self.lexer.tokenize(inp):
-            r = p.send(token)
+        for token in self.lexer.tokenize(inp, False):
+            rs = p.send(token)
         else:
-            r = p.send(None)
-            return r
+            rs = p.send(END_TOKEN)
+            return [r.result[-1] for r in rs]
             
-    def interpret_generalized(self, inp, interpret=True):
-        p = self.prepare_generalized(interpret)
-        next(p)
-        for token in self.lexer.tokenize(inp):
-            r = p.send(token)
-        else:
-            r = p.send(None)
-            return r
+    def interpret_generalized(self, inp):
+        return self.parse_generalized(inp, True)
             
 
     def dumps(self):
@@ -674,16 +729,21 @@ class GLR(object):
         raise KeyError()
 
     def __setitem__(self, k, v):
+        'This method is used to register attributes.'
 
+        # Docstring of instance.
         if k == '__doc__':
             self.__doc__ = v
 
+        # Built-in attributes ignored.
         elif k.startswith('__') and k.endswith('__'):
             pass
 
+        # Lexical element.
         elif isinstance(v, str):
             self.lexer.register(k, v)
 
+        # Lexical element with precedence.
         elif isinstance(v, tuple):
             assert len(v) == 2
             pat, prece = v
@@ -694,14 +754,17 @@ class GLR(object):
             else:
                 self.precedence[k] = prece
 
+        # Method as handler...
         elif callable(v):
             parlist = v.__code__.co_varnames[:v.__code__.co_argcount]
+            # for lexical element.
             if len(parlist) == 1 and parlist[0] in ('lex', 'LEX'):
                 for prm, pat in v.__annotations__.items():
                     if prm == 'return':
                         self.precedence[k] = pat
                     else:
                         self.lexer.register(k, pat, v)
+            # for syntax rule, i.e. semantics.
             else:
                 self.rule(v)
 
@@ -712,22 +775,24 @@ class GLR(object):
         self.make()
 
 
-    @staticmethod
-    def verbose(func_def):
-        assert func_def.__code__.co_argcount == 2
-        p = GLR()
-        func_def(p.lexer, p.rule)
-        p.make()
-        return p
-
     class meta(type):
 
-        def __prepare__(mcls, *a, **kw):
+        @classmethod
+        def __prepare__(mcls, name, bases, *a, **kw):
             return GLR(*a, **kw)
 
         def __new__(mcls, m, bs, p, **kw):
             p.make()
             return p
+
+    @classmethod
+    def verbose(cls, func_def):
+        "Polymorphic class method which tends to be overriden."
+        assert func_def.__code__.co_argcount == 2
+        p = cls()
+        func_def(p.lexer, p.rule)
+        p.make()
+        return p
 
 
 class LALR(GLR):
@@ -794,66 +859,70 @@ class LALR(GLR):
     def prepare(self, interpret=True):
         """Prepare a parsing coroutine which accepts tokens."""
         sstk = [0]              # state stack
-        astk = []               # arg stack
+        tstk = []               # subtree stack
+        token = yield Just(None)
+
         while 1:
-            token = (yield)
-            if token == None:
-                look = '\x03'
-            else:
-                look = token.symbol
-            if look in self.ACTION[sstk[-1]]:
-                act, arg = self.ACTION[sstk[-1]][look]
-                # Reduce until shift happens!
-                while act == 'reduce':
+
+            if token.symbol in self.ACTION[sstk[-1]]:
+                act, arg = self.ACTION[sstk[-1]][token.symbol]
+                # Active tree set default to token. 
+                tree = token
+
+                # Reduce (no new token fetched during reduction)
+                if act == 'reduce':
                     subs = deque()
                     for _ in self.rules[arg].rhs:
                         sstk.pop()
-                        subs.appendleft(astk.pop())
+                        subs.appendleft(tstk.pop())
 
                     if interpret:
                         tree = self.semans[arg](*subs)
                     else:
                         tree = (self.rules[arg].lhs, list(subs))
 
-                    # Reducing the 0th rule with END lookup.
-                    if token == None and arg == 0:
-                        assert sstk == [0], sstk
-                        assert astk == [], astk
-                        yield tree
-
-                    astk.append(tree)
+                    # Transfer with reduced symbol.
                     sstk.append(self.GOTO[sstk[-1]][self.rules[arg].lhs])
+                    tstk.append(tree)
 
-                    act, arg = self.ACTION[sstk[-1]][look]
+                # Accept
+                if act == 'accept':
+                    assert sstk.pop() == 1
+                    tree = tstk.pop()
+                    assert sstk == [0], sstk
+                    assert tstk == [], tstk
+                    # Now parsing routine is identical to the initial
+                    # state and can start a new round, thus no need
+                    # to create new routines for more parsing tasks.
+                    token = yield Just(tree)
 
-                sstk.append(arg)
-                # Use semantic value of token whether it is by parsing
-                # or interpreting.
-                astk.append(token.value)
+                # Shift
+                elif act == 'shift':
+                    sstk.append(arg)
+                    tstk.append(token.value)
+                    token = yield Just(tree)
+
             else:
-                msg = ('Unexpected lookahead symbol: {}\n'
-                       '- Expected in ACTION: \n'
-                       '{}').format(look, self.ACTION[sstk[-1]])
-                warnings.warn(msg)
+                token = yield ParseError(
+                    token,
+                    self.ACTION[sstk[-1]],
+                    [self.show_itemset(s) for s in sstk],
+                    tstk)
 
     def parse(self, inp, interpret=False):
         rtn = self.prepare(interpret)
         next(rtn)
-        for token in self.lexer.tokenize(inp):
-            rtn.send(token)
-        return rtn.send(None)
+        for token in self.lexer.tokenize(inp, False):
+            opt = rtn.send(token)
+            if isinstance(opt, ParseError):
+                warnings.warn(opt)
+        just = rtn.send(END_TOKEN)
+        return just.result
 
     def interpret(self, inp):
         assert self.semans, 'Must have semantics to interpret.'
         return self.parse(inp, True)
 
-    @staticmethod
-    def verbose(func_def):
-        assert func_def.__code__.co_argcount == 2
-        p = LALR()
-        func_def(p.lexer, p.rule)
-        p.make()
-        return p
 
     class meta(type):
 
@@ -907,12 +976,6 @@ class Debug(LALR):
             (i, self.show_itemset(i), self.ACTION[i])
             for i, K in enumerate(self.Ks)
         ])
-
-    # def inspect_ACTION1(self):
-    #     pprint.pprint([
-    #         (i, self.show_itemset(i), self.ACTION1[i])
-    #         for i, K in enumerate(self.Ks)
-    #     ])
 
     def inspect_GOTO(self):
         pprint.pprint([

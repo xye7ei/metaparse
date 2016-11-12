@@ -1,6 +1,6 @@
 import preamble
-
-from metaparse import *
+import metaparse
+from metaparse import LALR
 
 
 class ListParser(metaclass=LALR.meta):
@@ -57,6 +57,32 @@ class LISP(metaclass=LALR.meta):
     def sexps():
         return []
 
+
 p_lisp = (LISP)
-res = p_lisp.interpret('(lambda (x y) (+ x y))')
+
+lx = p_lisp.lexer
+p = p_lisp.prepare(False)
+next(p)
+
+inp = '(+ (+ 1 2) 3 ))'
+tks = list(lx.tokenize(inp, True))
+
+
+from pprint import pprint
+
+# pprint(tks)
+
+for tk in tks:
+    opt = p.send(tk)
+    if isinstance(opt, metaparse.ParseError):
+        pprint(opt.args)
+        pprint(opt.__dict__)
+    else:
+        pprint(opt.result)
+
+res = p_lisp.interpret('(lambda (x y) (+ x y) ))')
 print(res)
+
+# for tk in tks:
+#     res = p.send(tk).result
+#     pprint(res)

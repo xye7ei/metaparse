@@ -10,3 +10,4 @@ metaparse.egg-info
 dist
 *.ipython
 *.python_history
+__pycache__

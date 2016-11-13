@@ -61,7 +61,7 @@ class LISP(metaclass=LALR.meta):
 p_lisp = (LISP)
 
 lx = p_lisp.lexer
-p = p_lisp.prepare(False)
+p = p_lisp.prepare(True)
 next(p)
 
 inp = '(+ (+ 1 2) 3 ))'
@@ -73,16 +73,12 @@ from pprint import pprint
 # pprint(tks)
 
 for tk in tks:
-    opt = p.send(tk)
-    if isinstance(opt, metaparse.ParseError):
-        pprint(opt.args)
-        pprint(opt.__dict__)
-    else:
-        pprint(opt.result)
+    res = p.send(tk)
+    pprint(res)
 
-res = p_lisp.interpret('(lambda (x y) (+ x y) ))')
-print(res)
+# res = p_lisp.interpret('(lambda (x y) (+ x y) ))')
+# print(res)
 
-# for tk in tks:
-#     res = p.send(tk).result
-#     pprint(res)
+for tk in tks:
+    res = p.send(tk)
+    pprint(res)

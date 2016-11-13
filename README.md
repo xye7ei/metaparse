@@ -3,22 +3,35 @@ metaparse
 
 This is a tool for **instant parsing** with **full power** in native Python environment<sup>[1]</sup>.
 
-Moreover, You might be amazed that merely defining a Python `class`<sup>[2]</sup> just suffices to get parse work done, including
+Moreover, You might be amazed that defining a Python *class*<sup>[2]</sup> just suffices to *define a language*, including
 
 * lexical
 * syntatical
 * semantic
 
-definitions altogether.
+definitions altogether, as well as the parser for it.
+
+Then parsing work gets done by simply calling its `parse` method.
 
 
 <sub>[1]. This module is motivated by [instaparse][] in [Clojure][], but travels another way more like [PLY][].</sub>
-
+<br/>
 <sub>[2]. Python 3 preferred.</sub>
+
+
+# Table of Contents
+1. [Quick Example](#quick-example)
+1. [Design and Usage](#design-and-usage)
+1. [Generalized LALR Parsing](#generalized-lalr-and-dealing-with-ambiguity)
+1. [API](#api)
+
 
 # Quick Example
 
-In `metaparse`, grammar syntax and semantics can be simply defined with **class methods**. To illustrate this, we create a tiny calculator which can do basic arithmetics and registers variable bindings in a table (`context`).
+In `metaparse`, language syntax and semantics can be simply defined
+with **class methods**. To illustrate this, we create a tiny
+calculator which can read basic arithmetic expressions and register
+variable bindings in a table (aka. `context`).
 
 Firstly, we design the grammar on a paper, as in textbooks,
 
@@ -54,25 +67,30 @@ class pCalc(metaclass=LALR.meta):
     "A language for calculating expressions."
 
     # ===== Lexical patterns / Terminals =====
-    # - Will be matched in order when tokenizing
+    # - Patterns specified with regular expressions
+    # - Patterns will be tested in declaration order during tokenizing
 
-    IGNORED = r'\s+'             # Special token.
+    IGNORED = r'\s+'             # Special pattern to be ignored.
 
     EQ  = r'='
-    NUM = r'[1-9][0-9]*'
-    ID  = r'[_a-zA-Z]\w*'
-    POW = r'\*\*', 3             # Can specify precedence of token (mainly for LALR)
+    POW = r'\*\*', 3             # Can specify precedence of token (for LALR conflict resolution)
+    POW = r'\^'  , 3             # Alternative patterns can share the same name
     MUL = r'\*'  , 2
     ADD = r'\+'  , 1
 
+    ID  = r'[_a-zA-Z]\w*'
+    NUM = r'[1-9][0-9]*'
+    def NUM(value):              # Can specify handler for lexical pattern!
+        return int(value)
+
     # ===== Syntactic/Semantic rules in SDT-style =====
 
-    def assign(ID, EQ, expr):        # May rely on side-effect...
+    def assign(ID, EQ, expr):        # May access global context.
         context[ID] = expr
         return expr
 
-    def expr(NUM):                   # or return local results for purity
-        return int(NUM)
+    def expr(NUM):                   # May compute result purely.
+        return NUM                   # NUM is passed as (int) due to the handler!
 
     def expr(ID):
         return context[ID]
@@ -90,53 +108,68 @@ class pCalc(metaclass=LALR.meta):
 Then we get a `LALR` parser object:
 
 ``` python
-type(pCalc)
-# <class 'metaparse.LALR>
+>>> type(pCalc)
+<class 'metaparse.LALR>
 ```
 
-
-Now we are done and it's quite easy to try it out.
+Now we are **done** and it's quite easy to try it out.
 
 ``` python
-pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
-# 42
-pCalc.interpret("y = 5 + x * 2")
-# 89
-pCalc.interpret("z = 99")
-# 99
+>>> pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
+42
+>>> pCalc.interpret("y = 5 + x * 2")
+89
+>>> pCalc.interpret("z = 9 ^ 2")
+81
 
-context
-# {'x': 42, 'y': 89, 'z': 99}
+>>> context
+{'y': 89, 'x': 42, 'z': 81}
 ```
 
-IMO, tools in state-of-the-art could hardly get more handy than this.
+IMO, tools under state-of-the-art could hardly get more handy than
+this.
 
-Note `metaclass=LALR.meta` only works in Python 3. There is an [alternative](#verbose-style) form which also works in Python 2, which as well expose the API of this module more explicitly.
+Note `metaclass=LALR.meta` only works in Python 3. There is an
+[alternative](#verbose-style) form which also works in Python 2, as
+well expose the API of this module more explicitly.
 
 
-## The Underlying Lexical Analyzer
+# Design and Usage
 
-During declaring the language like above, a lexical analyzer is created as utility for the usable parser. It works through `tokenize` and generates tokens with useful attributes:
+The design of this module targets "**native** parsing" (like [instaparse][] and [Parsec][]). Users might find `metaparse` remarkable due to its
 
-``` python
-for token in pCalc.lexer.tokenize(" w  = 1 + x * 2"):
-    print(token.pos,
-          token.end,
-          token.symbol,
-          repr(token.lexeme))
+* native structure representing grammar rules
+    - like `def E(E, plus, T)`, `def T(F)` ...
+    - rather than **literal string notations** like `"E = E + T"`, `"T = F"` ...
+* language semantics in *pure* Python,
+* easy to play with (e.g. REPL),
+* no [DSL][] feeling<sup>[3]</sup>,
+* dump/load utilities,
+* no dependencies,
+* no helper/intermediate files generated,
+* optional precedence specification (for LALR),
+* and etc.
 
-# 1 2 ID 'w'
-# 4 5 EQ '='
-# 6 7 NUM '1'
-# 8 9 ADD '+'
-# 10 11 ID 'x'
-# 12 13 MUL '*'
-# 14 15 NUM '2'
-```
+
+<!-- All thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
+ -->
+
+<sub>[3]. may be untrue.</sub>
+
+Though this slim module does not intend to replace more extensive
+tools like [Bison][] and [ANTLR][], it is extremely handy and its
+integration in Python projects can be seamless.
+
+The following contents are unnecessary for using this module with
+dirty hands, but gives better explanation about core utilities of this
+module.
+
 
 ## Retrieving the Parse Tree
 
-If merely the parse tree is needed rather than the semantic result, use method `parse` instead of `interpret`:
+Continuing the first example, if merely the parse tree is needed
+rather than the semantic result, use method `parse` instead of
+`interpret`:
 
 ``` python
 tr = pCalc.parse(" w  = 1 + 2 * 3 ** 4 + 5 ")
@@ -160,17 +193,26 @@ tr = pCalc.parse(" w  = 1 + 2 * 3 ** 4 + 5 ")
     ('expr', [('NUM', '5')])])])
 ```
 
-The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as ```(<token-name>, '<lexeme>')```. 
+The result is a `ParseTree` object with tuple representation. A parse
+leaf is just a `Token` object represented as ```(<token-name>,
+'<lexeme>')```.
+
 
 ## Save with Persistence
 
-It should be useful to save the created parser persistently for future use (since creating a new LALR parser instance may be time consuming in some cases). Using `dumps/loads` or `dump/load` the parser instance (more precisely, the underlying automaton) will be encoded into *Python structure form*.
+It should be useful to save the created parser persistently for future
+use (since creating a new LALR parser instance may be time consuming
+in some cases). Using `dumps/loads` or `dump/load` the parser instance
+(more precisely, the underlying automaton) will be encoded into
+*Python structure form*.
 
 ``` python
 pCalc.dumps('./eg_demo_dump.py')
 ```
 
-Since our parser is created given access to a variable named `context` in `globals()`, we should provide the runtime environment in the user file when loading the instance:
+Since our parser is created given access to a global variable named
+`context`, we should provide the runtime environment in the user
+module, i.e. `globals`, when loading this parser instance:
 
 ``` python
 # Another file using the parser
@@ -189,103 +231,12 @@ print (context)
 # {'foo': 10}
 ```
 
-# Design
+Since the runtime environment in Python is simply a `dict`, more
+tricks would be possible by passing a user-defined runtime environment
+instance to the `load` method - it would be treated as the context for
+executing the semantic `__code__` object (more basic details see the
+documents for `exec` and `code` object).
 
-The design of this module targets "**native** parsing" (like [instaparse][] and [Parsec][]). Users might find `metaparse` remarkable due to its
-
-* native structure representing grammar rules
-    - like `def E(E, plus, T)`, `def T(F)` ...
-    - rather than **literal string notations** like `"E = E + T"`, `"T = F"` ...
-* language semantics in *pure* Python,
-* easy to play with (e.g. REPL),
-* no [DSL][] feeling<sup>[3]</sup>,
-* dump/load utilities,
-* no dependencies,
-* no helper/intermediate files generated,
-* optional precedence specification (for LALR),
-* and etc.
-
-
-<!-- All thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
- -->
-
-<sub>[3]. may be untrue.</sub>
-
-Though this slim module does not intend to replace more extensive tools like [Bison][] and [ANTLR][], it is extremely handy and its integration in Python projects can be seamless.
-
-The following contents are unnecessary for using this module with dirty hands, but gives better explanation about core utilities of this module.
-
-# Excursion: Online-Parsing behind the Scene
-
-The `parse` and `interpret` methods mentioned above are based on the parsing **coroutine**, which is designed with *online* behavior, i.e. 
-
-```
-<get-token> —→ <process-actions> —→ <wait-for-next-token>
-```
-
-When calling the routine directly, tracing intermediate states:
-
-``` python
-# Prepare a parsing routine
-p = pCalc.prepare()
-
-# Start this routine
-next(p)
-
-# Send tokens one-by-one
-for token in pCalc.lexer.tokenize('bar = 1 + 2 + + 3', with_end=True):
-    print("Sends: ", token)
-    r = p.send(token)
-    print("Got:   ", r)
-    print()
-``` 
-
-we get the following output, where successful each intermediate result is wrapped by `Just` and failure reported by `ParseError` containing tracing information (returned rather than thrown).
-
-```
-Sends:  ('ID', 'bar')
-Got:    Just(result=('ID', 'bar'))
-
-Sends:  ('EQ', '=')
-Got:    Just(result=('EQ', '='))
-
-Sends:  ('NUM', '1')
-Got:    Just(result=('NUM', '1'))
-
-Sends:  ('ADD', '+')
-Got:    Just(result=('ADD', '+'))
-
-Sends:  ('NUM', '2')
-Got:    Just(result=('NUM', '2'))
-
-Sends:  ('ADD', '+')
-Got:    Just(result=('ADD', '+'))
-
-Sends:  ('ADD', '+')
-Got:    Unexpected token ('ADD', '+') at (14:15)
-while expecting actions 
-{'ID': ('shift', 5), 'NUM': ('shift', 6)}
-with state stack 
-[['(assign^ = .assign)'],
- ['(assign = ID.EQ expr)'],
- ['(assign = ID EQ.expr)'],
- ['(assign = ID EQ expr.)',
-  '(expr = expr.ADD expr)',
-  '(expr = expr.MUL expr)',
-  '(expr = expr.POW expr)'],
- ['(expr = expr ADD.expr)']]
-and subtree stack 
-['bar', '=', 3, '+']
-
-
-Sends:  ('NUM', '3')
-Got:    Just(result=('NUM', '3'))
-
-Sends:  ('\x03', None)
-Got:    Just(result=6)
-```
-
-These utilities should supply a good API for buiding applications dealing with grammars with the help of extensive error tracing and reporting.
 
 # Generalized LALR and Dealing with Ambiguity
 
@@ -364,6 +315,233 @@ we then get rid of ambiguity. The successful LALR parser delivers
 However, rather than the examples here, precedence specification can be highly complex and involving in practical cases.
 
 
+# API
+
+The following contents give more details about the underlying utilities.
+
+## Explicitly Registering Lexical Patterns and Syntactic Rules
+
+The following version of declaring the language in
+[the first example](#quick-example) works for both Python 2 and Python
+3, with the more verbose but more explicit style, heavily relying on
+using decorators.
+
+``` python
+from metaparse import LALR
+
+pCalc = LALR()
+
+lex  = pCalc.lexer
+rule = pCalc.rule
+
+# lex(<terminal-symbol> = <pattern>)
+lex(IGNORED = r'\s+')
+lex(NUM = r'[0-9]+')
+lex(EQ  = r'=')
+lex(ID  = r'[_a-zA-Z]\w*')
+
+# lex(... , p = <precedence>)
+lex(POW = r'\*\*', p=3)
+lex(POW = r'\^')                # No need to give the precedence twice for POW.
+lex(MUL = r'\*'  , p=2)
+lex(ADD = r'\+'  , p=1)
+
+# @rule
+# def <lhs> ( <rhs> ):
+#     <semantics>
+@rule
+def assign(ID, EQ, expr):
+    context[ID] = expr
+    return expr
+
+@rule
+def expr(ID):
+    return context[ID]
+
+@rule
+def expr(NUM):
+    return int(NUM)
+
+@rule
+def expr(expr_1, ADD, expr_2):
+    return expr_1 + expr_2
+
+@rule
+def expr(expr, MUL, expr_1):
+    return expr * expr_1
+
+@rule
+def expr(expr, POW, expr_1):
+    return expr ** expr_1
+
+# Complete making the parser after collecting things!
+pCalc.make()
+```
+
+Explanation in short:
+
+* `lex` is the `Lexer` instance associated with `pCalc`, which is also
+able to collect definition of lexical patterns.
+
+* `rule` is a decorator which extracted syntactic rule information
+from the function signature and register this rule, as well as
+register this function as semantics associating this rule.
+
+## The Underlying Lexical Analyzer
+
+After declaring the language like above, a lexical analyzer is created
+as a utility for the usable parser, which maintains a list of terminal
+symbols of the language defined, preserving their *appearance order*
+in the declaration.
+
+``` python
+>>> pCalc.lexer
+Lexer{
+[('IGNORED', re.compile('\\s+')),
+ ('EQ', re.compile('=')),
+ ('NUM', re.compile('[1-9][0-9]*')),
+ ('ID', re.compile('[_a-zA-Z]\\w*')),
+ ('POW', re.compile('\\*\\*')),
+ ('MUL', re.compile('\\*')),
+ ('ADD', re.compile('\\+'))]}
+```
+
+It works by calling `tokenize` and generates tokens with informative
+attributes. During tokenizing, the patterns are tested for matching
+with respect to the list order.
+
+Note there is a special lexical element `IGNORED`:
+
+  * When `Lexer` reads a string prefix matching the pattern
+    associating `IGNORED`, no token is generated for such string
+    prefix;
+
+  * If `IGNORED` is not given explicitly in the user's language
+    declaration, it would be given default pattern `r'\s+'`.
+
+We can print out the tracing of lexcial analyzing process:
+
+``` python
+>>> for token in pCalc.lexer.tokenize(" foo  = 1 + bar * 2"):
+...     print(token.pos,
+...           token.end,
+...           token.symbol,
+...           repr(token.lexeme),   # (lexeme) is something literal.
+...           repr(token.value))    # (value) is something computed by handler, if exists.
+
+1 4 ID 'foo' 'foo'
+6 7 EQ '=' '='
+8 9 NUM '1' 1
+10 11 ADD '+' '+'
+12 15 ID 'bar' 'bar'
+16 17 MUL '*' '*'
+18 19 NUM '2' 2
+
+```
+
+Moreover, it is no problem to declare more lexical patterns with the
+same name, which may occasionally be useful like
+
+``` python
+class pCalc(metaclass=LALR.meta):
+    ...
+    IGNORED = r' '
+    IGNORED = r'\t'
+    IGNORED = r'#'
+    ...
+    POW     = r'\*\*'
+    POW     = r'\^'
+    ...
+```
+
+avoiding clustering alternative sub-patterns in one `re` pattern.
+
+You often totally need no access to the `Lexer` object to use the
+parser. This section only serve to be informative.
+
+
+## Online-Parsing behind the Scene
+
+The `parse` and `interpret` methods for outmost usage are based on the
+more subtle parsing **coroutine**, which is designed with *online*
+behavior, i.e.
+
+```
+<get-token> —→ <process-actions> —→ <wait-for-next-token>
+```
+
+The following block of code calls the routine directly, starts it, and
+traces the intermediate states:
+
+``` python
+# Prepare a parsing routine
+p = pCalc.prepare()
+
+# Start this routine
+next(p)
+
+# Send tokens one-by-one
+for token in pCalc.lexer.tokenize('bar = 1 + 2 + + 3', with_end=True):
+    print("Sends: ", token)
+    r = p.send(token)
+    print("Got:   ", r)
+    print()
+``` 
+
+we get the following output, where successful each intermediate result
+is wrapped by `Just` and failure reported by `ParseError` containing
+tracing information (returned rather than thrown).
+
+```
+Sends:  ('ID', 'bar')
+Got:    Just(result=('ID', 'bar'))
+
+Sends:  ('EQ', '=')
+Got:    Just(result=('EQ', '='))
+
+Sends:  ('NUM', '1')
+Got:    Just(result=('NUM', '1'))
+
+Sends:  ('ADD', '+')
+Got:    Just(result=('ADD', '+'))
+
+Sends:  ('NUM', '2')
+Got:    Just(result=('NUM', '2'))
+
+Sends:  ('ADD', '+')
+Got:    Just(result=('ADD', '+'))
+
+Sends:  ('ADD', '+')
+Got:    Unexpected token ('ADD', '+') at (14:15)
+while expecting actions 
+{'ID': ('shift', 5), 'NUM': ('shift', 6)}
+with state stack 
+[['(assign^ = .assign)'],
+ ['(assign = ID.EQ expr)'],
+ ['(assign = ID EQ.expr)'],
+ ['(assign = ID EQ expr.)',
+  '(expr = expr.ADD expr)',
+  '(expr = expr.MUL expr)',
+  '(expr = expr.POW expr)'],
+ ['(expr = expr ADD.expr)']]
+and subtree stack 
+['bar', '=', 3, '+']
+
+
+Sends:  ('NUM', '3')
+Got:    Just(result=('NUM', '3'))
+
+Sends:  ('\x03', None)
+Got:    Just(result=6)
+```
+
+The structured and detailed error reporting should be useful for
+applications potentially built on this API.
+
+<!-- These utilities should supply a good API for buiding applications -->
+<!-- dealing with grammars supported by extensive error reporting. -->
+
+
 # Limitations
 
 Though this module provides advantageous features, there are also limitations:
@@ -384,52 +562,7 @@ Though this module provides advantageous features, there are also limitations:
 
 * Only **legal Python identifier**, rather than non-alphabetic symbols (like `<fo#o>`, `==`, `raise`, etc) can be used as symbols in grammar (seems no serious).
 
-* Algorithms in pure Python lowers performance, but lots can be optimized.
-
-
-# Verbose style
-
-The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, with the more verbose but more explicit style, heavily relying on using decorators.
-
-``` python
-@LALR.verbose
-def pCalc(lex, rule):           # Parameter (lex, rule) is required by the decorator!
-
-    lex(IGNORED = r'\s+')
-    lex(NUM = r'[0-9]+')
-    lex(EQ  = r'=')
-    lex(ID  = r'[_a-zA-Z]\w*')
-    lex(POW = r'\*\*', p=3)
-    lex(MUL = r'\*'  , p=2)
-    lex(ADD = r'\+'  , p=1)
-
-    @rule
-    def assign(ID, EQ, expr):
-        context[ID] = expr
-        return expr
-
-    @rule
-    def expr(ID):
-        return context[ID]
-
-    @rule
-    def expr(NUM):
-        return int(NUM)
-
-    @rule
-    def expr(expr_1, ADD, expr_2):
-        return expr_1 + expr_2
-
-    @rule
-    def expr(expr, MUL, expr_1):
-        return expr * expr_1
-
-    @rule
-    def expr(expr, POW, expr_1):
-        return expr ** expr_1
-```
-
-Such style would be preferred by explicity lovers, although typing the decorators `lex` and `rule` repeatedly may be sort of nuisance. The underlying mechanism is quite easy: the decorator `verbose` prepares a lex-collector and a rule-collector to passed to the decorated function `pCalc`, after calling of which the lexical and syntactic rules collected by `lex` and `rule` are then used to construct a `LALR` instance, which gets returned and named `pCalc`.
+* Algorithms in pure Python lowers performance, but speed-up is possible.
 
 
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"

@@ -77,7 +77,7 @@ class Lexer(object):
         return z
 
     def __repr__(self):
-        return pprint.pformat(self.lex2pats)
+        return 'Lexer{{\n{}}}'.format(pprint.pformat(self.lex2pats))
 
     def register(self, name, pattern, handler=None, precedence=None):
         self.lex2pats.append((name, re.compile(pattern)))
@@ -649,6 +649,7 @@ class GLR(object):
                 agenda = agenda_new
 
     def parse_generalized(self, inp, interpret=False):
+        assert hasattr(self, 'ACTION'), 'Call yourparser.make() to build the parser first!'
         p = self.prepare_generalized(interpret)
         next(p)
         for token in self.lexer.tokenize(inp, False):
@@ -769,13 +770,20 @@ class GLR(object):
         # Method as handler...
         elif callable(v):
             parlist = v.__code__.co_varnames[:v.__code__.co_argcount]
-            # for lexical element.
+            # for new lexical element.
             if len(parlist) == 1 and parlist[0] in ('lex', 'LEX'):
                 for prm, pat in v.__annotations__.items():
                     if prm == 'return':
                         self.precedence[k] = pat
                     else:
                         self.lexer.register(k, pat, v)
+            # for existing lexical element
+            elif any(k == lx for lx, _ in self.lexer.lex2pats):
+                assert len(parlist) == 1
+                for i, (lx, pt) in reversed(
+                        list(enumerate(self.lexer.lex2pats))):
+                    if lx == k:
+                        self.lexer.handlers[i] = v
             # for syntax rule, i.e. semantics.
             else:
                 self.rule(v)
@@ -922,6 +930,7 @@ class LALR(GLR):
                     tstk)
 
     def parse(self, inp, interpret=False):
+        assert hasattr(self, 'ACTION'), 'Call yourparser.make() to build the parser first!'
         rtn = self.prepare(interpret)
         next(rtn)
         for token in self.lexer.tokenize(inp, False):

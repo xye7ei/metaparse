@@ -28,7 +28,9 @@ class Gparen(metaclass=LALR.meta):
 from unittest import main, TestCase
 
 class Test(TestCase):
+
     def test_paren(self):
+
         assert Gparen.interpret('()') == '<>'
         assert Gparen.interpret('( ( ) )') == '<<>>'
         assert Gparen.interpret('( ( ) ) ( )') == '<<>><>'

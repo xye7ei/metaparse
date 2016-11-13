@@ -1,8 +1,10 @@
 import preamble
 from metaparse import LALR
 
-@LALR.verbose
-def calc(lex, rule):
+calc = LALR()
+
+
+with calc as (lex, rule):
 
     lex(IGNORED = r'\s+')
 

@@ -2,12 +2,13 @@
 import preamble
 
 import pprint as pp
-from metaparse import LALR, cfg, GLR
+from metaparse import LALR
+from unittest import main, TestCase
 
 # Global stuff
 table = {}
 
-class G_Calc(metaclass=cfg):
+class pCalc(metaclass=LALR.meta):
 
     # ===== Lexical patterns / Terminals =====
     # - A pattern is defined by Python regex literal.
@@ -22,8 +23,7 @@ class G_Calc(metaclass=cfg):
 
     EQ  = r'='                  # Precedence is 0 by default.
 
-    NUM = r'[1-9]\d*'
-    def NUM(lex):                 # Handler for translating token value.
+    def NUM(lex: r'[1-9]\d*'):  # Handler for translating token value.
         return int(lex)
 
     ID  = r'[_a-zA-Z]\w*'       # Unhandled token yields literal value.
@@ -31,8 +31,7 @@ class G_Calc(metaclass=cfg):
     # === Optional error handling for tokenizer ===
     # - If handler defined, token ERROR is ignored when tokenizing.
     # - Otherwise token ERROR is yielded.
-    ERROR = r'#'
-    def ERROR(lex):
+    def ERROR(lex: r'#'):
         print("Error literal '{}'".format(lex))
 
     # ===== Syntactic/Semantic rules in SDT-style =====
@@ -56,25 +55,13 @@ class G_Calc(metaclass=cfg):
         return expr ** expr_1
 
 
-from metaparse import cfg
-
-
-pCalc = LALR(G_Calc)
-
-from unittest import main, TestCase
 
 
 class Test(TestCase):
 
     def test_interp(self):
-        # parse and tree
-        t = pCalc.parse("x = 1 + 4 * 3 ** 2 + 5")
-        # interpretation of tree
-        t.translate()
+        t = pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
         assert table == {'x': 42}
-
-        # direct interpretation
-        # pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
         pCalc.interpret("y = 5 + x * 2")
         assert table == {'x': 42, 'y': 5 + 42 * 2}
         pCalc.interpret("z = 99")

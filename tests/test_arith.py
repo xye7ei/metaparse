@@ -1,11 +1,11 @@
 import preamble
 import unittest
 
-from metaparse import *
+from metaparse import Grammar, LALR
 
-class GArith(metaclass=cfg):
+class GArith(metaclass=LALR.meta):
 
-    'Textbook grammar for simple arithmetics.'
+    'Textbook Grammar.meta for simple arithmetics.'
 
     # E -> E + T
     # E -> T
@@ -18,8 +18,8 @@ class GArith(metaclass=cfg):
 
     plus   = r'\+'
     times  = r'\*'
-    number = r'\d+'
-    def number(lex):
+
+    def number(lex: r'\d+'):
         return int(lex)
 
     left   = r'\('
@@ -44,48 +44,33 @@ class GArith(metaclass=cfg):
     # def Atom(number):
     #     return int(number)
 
+g = Grammar(GArith.rules)
+p = GArith
 
-ari_ear = Earley(GArith)
-ari_lalr = LALR(GArith)
-# Naive GLL still cannot handle left-recursion
-# ari_gll = GLR(GArith)
-ari_glr = GLR(GArith)
-# ari_gll = GLL(GArith)
-
+# l = p.lexer
+# print(list(l.tokenize('1 2')))
+# assert 0
 
 class TestArithParser(unittest.TestCase):
 
     def test_FIRST(self):
-        self.assertEqual(GArith.FIRST['Expr'], {'left', 'number'})
+        self.assertEqual(g.FIRST['Expr'], {'left', 'number'})
+        self.assertEqual(g.FIRST['Term'], {'left', 'number'})
+        self.assertEqual(g.FIRST['Factor'], {'left', 'number'})
+        self.assertEqual(g.FIRST['number'], {'number'})
 
     def test_single(self):
         inp = '0'
-        ps1 = ari_ear.interpret_many(inp)
-        ps2 = ari_lalr.interpret_many(inp)
-        ps3 = ari_glr.interpret_many(inp)
-        self.assertEqual(ps1, ps2)
-        self.assertEqual(ps2, ps3)
+        self.assertEqual(eval(inp), p.interpret(inp))
 
     def test_normal(self):
         inp = '3 + 2 * (5 + 11) * 2 + 3'
-        ps0 = [eval(inp)]
-        ps1 = ari_ear.interpret_many(inp)
-        ps2 = ari_lalr.interpret_many(inp)
-        ps3 = ari_glr.interpret_many(inp)
-        self.assertEqual(ps0, ps1)
-        self.assertEqual(ps1, ps2)
-        self.assertEqual(ps2, ps3)
+        self.assertEqual(eval(inp), p.interpret(inp))
 
     def test_tough(self):
         inp = '3 + 2 * (5 + 11)'
         tough_inp = ' + '.join(inp for _ in range(100))
-        ps0 = [eval(tough_inp)]
-        ps1 = ari_ear.interpret_many(tough_inp)
-        ps2 = ari_lalr.interpret_many(tough_inp)
-        ps3 = ari_glr.interpret_many(tough_inp)
-        self.assertEqual(ps0, ps2)
-        self.assertEqual(ps1, ps2)
-        self.assertEqual(ps2, ps3)
+        self.assertEqual(eval(inp), p.interpret(inp))
 
 
 if __name__ == '__main__':
@@ -97,8 +82,8 @@ if __name__ == '__main__':
     # t.test_normal()
 
     # tough = ' + '.join(['(2 * (1 + 1) + 2 * 2)'] * 1000)
-    # %timeit ari_lalr.interpret(tough)
+    # %timeit ari_LALR.meta.interpret(tough)
     # 1 loops, best of 3: 347 ms per loop
 
     # with open('C:/Users/Shellay/Desktop/ari.psr', 'wb') as o:
-    #     o.write(ari_lalr.dumps())
+    #     o.write(ari_LALR.meta.dumps())

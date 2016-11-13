@@ -15,7 +15,7 @@ from collections import defaultdict as ddict
 
 
 Token = namedtuple('Token', 'pos symbol lexeme value')
-Token.__repr__ = lambda self: "({}: {})".format(repr(self.symbol), repr(self.value))
+Token.__repr__ = lambda self: "({}, {})".format(repr(self.symbol), repr(self.value))
 Token.end = property(lambda self: self.pos + len(self.lexeme))
 
 
@@ -342,15 +342,15 @@ class ParseError(Exception):
 
         """
         msg = ('Unexpected token {} at ({}:{})\n'
-               'while expecting actions {}\n'
-               'with state stack {}\n'
-               'and subtree stack {}\n'
+               'while expecting actions \n{}\n'
+               'with state stack \n{}\n'
+               'and subtree stack \n{}\n'
                .format(
                    token,
                    token.pos, token.end,
-                   action,
-                   stack,
-                   tree_stack))
+                   pformat(action),
+                   pformat(stack),
+                   pformat(tree_stack)))
 
         super(ParseError, self).__init__(msg)
         # self.tree = tree

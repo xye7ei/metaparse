@@ -11,3 +11,5 @@ dist
 *.ipython
 *.python_history
 __pycache__
+
+*.grip

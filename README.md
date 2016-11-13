@@ -18,7 +18,7 @@ definitions altogether.
 
 # Quick Example
 
-In `metaparse`, grammar syntax and semantics can be simply defined with **class methods**. To illustrate this, we create a tiny calculator which can do basic arithmetics and registers variable bindings in a table.
+In `metaparse`, grammar syntax and semantics can be simply defined with **class methods**. To illustrate this, we create a tiny calculator which can do basic arithmetics and registers variable bindings in a table (`context`).
 
 Firstly, we design the grammar on a paper, as in textbooks,
 
@@ -44,12 +44,14 @@ def expr(expr_1, POW, expr_2): ...
 and finally write down the semantics with [SDT][]-style (cf. [Yacc][]).
 
 ``` python
-from metaparse import cfg, LALR
+from metaparse import LALR
 
-# Global stuff
-table = {}
+# Global context/environment for language semantics.
+context = {}
 
-class G_Calc(metaclass=cfg):
+class pCalc(metaclass=LALR.meta):
+
+    "A language for calculating expressions."
 
     # ===== Lexical patterns / Terminals =====
     # - Will be matched in order when tokenizing
@@ -66,14 +68,14 @@ class G_Calc(metaclass=cfg):
     # ===== Syntactic/Semantic rules in SDT-style =====
 
     def assign(ID, EQ, expr):        # May rely on side-effect...
-        table[ID] = expr
+        context[ID] = expr
         return expr
 
     def expr(NUM):                   # or return local results for purity
         return int(NUM)
 
     def expr(ID):
-        return table[ID]
+        return context[ID]
 
     def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂)
         return expr_1 + expr_2
@@ -85,86 +87,119 @@ class G_Calc(metaclass=cfg):
         return expr ** expr_1
 ```
 
-Then we get a `Grammar` object and build parser with it:
+Then we get a `LALR` parser object:
 
 ``` python
->>> type(G_Calc)
-<class 'metaparse.Grammar'>
->>> pCalc = LALR(G_Calc)
+type(pCalc)
+# <class 'metaparse.LALR>
 ```
 
 
 Now we are done and it's quite easy to try it out.
 
 ``` python
->>> pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
-42
->>> pCalc.interpret("y = 5 + x * 2")
-89
->>> pCalc.interpret("z = 99")
-99
+pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
+# 42
+pCalc.interpret("y = 5 + x * 2")
+# 89
+pCalc.interpret("z = 99")
+# 99
 
->>> table
-{'x': 42, 'y': 89, 'z': 99}
+context
+# {'x': 42, 'y': 89, 'z': 99}
 ```
 
 IMO, tools in state-of-the-art could hardly get more handy than this.
 
-Note `metaclass=cfg` only works in Python 3. There is an [alternative](#verbose-style) form which also works in Python 2 but seems trickier and is arguably less recommended<sup>[3]</sup> .
+Note `metaclass=LALR.meta` only works in Python 3. There is an [alternative](#verbose-style) form which also works in Python 2, which as well expose the API of this module more explicitly.
 
-<sub>[3]. although more interesting.</sub>
+
+## The Underlying Lexical Analyzer
+
+During declaring the language like above, a lexical analyzer is created as utility for the usable parser. It works through `tokenize` and generates tokens with useful attributes:
+
+``` python
+for token in pCalc.lexer.tokenize(" w  = 1 + x * 2"):
+    print(token.pos,
+          token.end,
+          token.symbol,
+          repr(token.lexeme))
+
+# 1 2 ID 'w'
+# 4 5 EQ '='
+# 6 7 NUM '1'
+# 8 9 ADD '+'
+# 10 11 ID 'x'
+# 12 13 MUL '*'
+# 14 15 NUM '2'
+```
 
 ## Retrieving the Parse Tree
 
 If merely the parse tree is needed rather than the semantic result, use method `parse` instead of `interpret`:
 
 ``` python
->>> tr = Calc.parse(" w  = 1 + 2 * 3 ** 4 + 5 ")
+tr = pCalc.parse(" w  = 1 + 2 * 3 ** 4 + 5 ")
+
 >>> tr
-(assign,
- [(ID: 'w')@[1:2],
-  (EQ: '=')@[4:5],
-  (expr,
-   [(expr,
-     [(expr, [(NUM: '1')@[6:7]]),
-      (ADD: '+')@[8:9],
-      (expr,
-       [(expr, [(NUM: '2')@[10:11]]),
-        (MUL: '*')@[12:13],
-        (expr,
-         [(expr, [(NUM: '3')@[14:15]]),
-          (POW: '**')@[16:18],
-          (expr, [(NUM: '4')@[19:20]])])])]),
-    (ADD: '+')@[21:22],
-    (expr, [(NUM: '5')@[23:24]])])])
+('assign',
+ [('ID', 'w'),
+  ('EQ', '='),
+  ('expr',
+   [('expr',
+     [('expr', [('NUM', '1')]),
+      ('ADD', '+'),
+      ('expr',
+       [('expr', [('NUM', '2')]),
+        ('MUL', '*'),
+        ('expr',
+         [('expr', [('NUM', '3')]),
+          ('POW', '**'),
+          ('expr', [('NUM', '4')])])])]),
+    ('ADD', '+'),
+    ('expr', [('NUM', '5')])])])
 ```
 
-The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as ```(<token-name>: '<lexeme>')@[<position-in-input>]```.
+The result is a `ParseTree` object with tuple representation. A parse leaf is just a `Token` object represented as ```(<token-name>, '<lexeme>')```. 
 
-Having this tree, calling ```tr.translate()``` returns the same result as `interpret`. With LALR parser, the method `interpret` performs on-the-fly interpretation without producing any parse tree explicitly.
+## Save with Persistence
 
+It should be useful to save the created parser persistently for future use (since creating a new LALR parser instance may be time consuming in some cases). Using `dumps/loads` or `dump/load` the parser instance (more precisely, the underlying automaton) will be encoded into *Python structure form*.
+
+``` python
+pCalc.dumps('./eg_demo_dump.py')
+```
+
+Since our parser is created given access to a variable named `context` in `globals()`, we should provide the runtime environment in the user file when loading the instance:
+
+``` python
+# Another file using the parser
+
+from metaparse import LALR
+
+# Let loaded parser be able to access current runtime env `globals()`.
+qCalc = LALR.load('./eg_demo_dump.py', globals())
+
+# Context instance to be accessed by the loaded parser
+context = {}
+
+qCalc.interpret('foo = 1 + 9')
+
+print (context)
+# {'foo': 10}
+```
 
 # Design
 
-<!--
-This module provides:
+The design of this module targets "**native** parsing" (like [instaparse][] and [Parsec][]). Users might find `metaparse` remarkable due to its
 
-- Elegant syntactic/semantic definition structure.
-- Token, tokenizer, parse leaf/tree structure as well as parser interface.
-- Parsing algorithms ([Earley], [GLR], [GLL], [LALR] etc.).
-
--->
-
-<!-- The declaration style targets [Context-Free Grammars][CFG] with completeness check (such as detection of repeated declarations, non-reachable symbols, etc). To allow ultimate ease of use, the [BNF][BNF] grammar definition is approached by the Python `class` structure, where each method definition therein is both a **syntactic rule** associated with **semantic behavior**.
--->
-
-The design of this module targets "native parsing" (like [instaparse][] and [Parsec][]). Users might find `metaparse` remarkable, since
-
-* native structure representing grammar rules,
-    - no **literal string notations** like `"E = E + T"`, `"T = F"` ...
-* rule semantics in *pure* Python,
-* easy to play with (like in REPL),
-* no [DSL][] feeling<sup>[4]</sup>,
+* native structure representing grammar rules
+    - like `def E(E, plus, T)`, `def T(F)` ...
+    - rather than **literal string notations** like `"E = E + T"`, `"T = F"` ...
+* language semantics in *pure* Python,
+* easy to play with (e.g. REPL),
+* no [DSL][] feeling<sup>[3]</sup>,
+* dump/load utilities,
 * no dependencies,
 * no helper/intermediate files generated,
 * optional precedence specification (for LALR),
@@ -174,180 +209,159 @@ The design of this module targets "native parsing" (like [instaparse][] and [Par
 <!-- All thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
  -->
 
-<sub>[4]. may be untrue.</sub>
+<sub>[3]. may be untrue.</sub>
 
 Though this slim module does not intend to replace more extensive tools like [Bison][] and [ANTLR][], it is extremely handy and its integration in Python projects can be seamless.
 
+The following contents are unnecessary for using this module with dirty hands, but gives better explanation about core utilities of this module.
 
-# A Tiny Documentation
+# Excursion: Online-Parsing behind the Scene
 
-Demonstrated by the above example, the code structure for grammar declaration with `metaparse` can be more formally described as
+The `parse` and `interpret` methods mentioned above are based on the parsing **coroutine**, which is designed with *online* behavior, i.e. 
+
+```
+<get-token> —→ <process-actions> —→ <wait-for-next-token>
+```
+
+When calling the routine directly, tracing intermediate states:
 
 ``` python
-from metaparse import cfg, <parser>
+# Prepare a parsing routine
+p = pCalc.prepare()
+
+# Start this routine
+next(p)
+
+# Send tokens one-by-one
+for token in pCalc.lexer.tokenize('bar = 1 + 2 + + 3', with_end=True):
+    print("Sends: ", token)
+    r = p.send(token)
+    print("Got:   ", r)
+    print()
+``` 
+
+we get the following output, where successful each intermediate result is wrapped by `Just` and failure reported by `ParseError` containing tracing information (returned rather than thrown).
+
+```
+Sends:  ('ID', 'bar')
+Got:    Just(result=('ID', 'bar'))
+
+Sends:  ('EQ', '=')
+Got:    Just(result=('EQ', '='))
+
+Sends:  ('NUM', '1')
+Got:    Just(result=('NUM', '1'))
+
+Sends:  ('ADD', '+')
+Got:    Just(result=('ADD', '+'))
+
+Sends:  ('NUM', '2')
+Got:    Just(result=('NUM', '2'))
+
+Sends:  ('ADD', '+')
+Got:    Just(result=('ADD', '+'))
+
+Sends:  ('ADD', '+')
+Got:    Unexpected token ('ADD', '+') at (14:15)
+while expecting actions 
+{'ID': ('shift', 5), 'NUM': ('shift', 6)}
+with state stack 
+[['(assign^ = .assign)'],
+ ['(assign = ID.EQ expr)'],
+ ['(assign = ID EQ.expr)'],
+ ['(assign = ID EQ expr.)',
+  '(expr = expr.ADD expr)',
+  '(expr = expr.MUL expr)',
+  '(expr = expr.POW expr)'],
+ ['(expr = expr ADD.expr)']]
+and subtree stack 
+['bar', '=', 3, '+']
 
 
-class <grammar-object> ( metaclass=cfg ) :
+Sends:  ('NUM', '3')
+Got:    Just(result=('NUM', '3'))
 
-    IGNORED = <ignored-pattern>           # When not given, default pattern is r"\s".
-
-    <terminal> = <lexeme-pattern>
-    ...                                   # The order of lexical rules matters.
-
-    def <rule-LHS> ( <rule-RHS> ) :
-        <semantic-behavior>
-        ...
-        return <subtree-value>
-
-    ...
-
-my_parser = <parser> ( <grammar-object> )
+Sends:  ('\x03', None)
+Got:    Just(result=6)
 ```
 
-Literally, lexical rule is represented by **class attribute** assignment, syntactical rule by method **signature** and semantic behavior by method **body**. In method body, the call arguments represents the values interpreted by successful parsing of subtrees.
+These utilities should supply a good API for buiding applications dealing with grammars with the help of extensive error tracing and reporting.
 
-It is advised not to declare grammar-dependent attributes in such a class as helpers due to the speccial meanings.
+# Generalized LALR and Dealing with Ambiguity
 
-<!--
-The working mechanism of such a declaration trick is quite simple. The metaclass `cfg`
+`metaparse` supplies an interesting extension: the `GLR` parser with look-ahead, which can cope with many non-singular ambiguous grammars.
 
-0. prepares an [assoc-list](https://en.wikipedia.org/wiki/Association_list) with [`__prepare__`](https://docs.python.org/3/reference/datamodel.html#preparing-the-class-namespace),
-0. registers attributes/methods into this assoc-list,
-0. in its [`__new__`](https://docs.python.org/3/reference/datamodel.html#object.__new__) translates attributes into `re` objects and methods into `Rule` objects
-0. and  returns a completed `Grammar` object.
-
-Then a `XXXParser` object can be initialized given this `Grammar` and prepares necessary table/algorithms for parsing.
-
--->
-
-# Further into Non-determinism
-
-Contents above only show the *front-end* of applying this module. On the *back-end* side, various parsing algorithms have been/can be implemented.
-
-One step further, `metaparse` provides implementation of *non-deterministic* parsers like [`Earley`][Earley] and [`GLR`][GLR]. Currently, grammars with **loop**s are yet supported due to the eager mechanism of tree generation.
-
-For exmaple, given the tricky *ambiguous* grammar
-```
-S → A B C
-A → u | ε
-B → E | F
-C → u | ε
-E → u | ε
-F → u | ε
-```
-where `ε` denotes empty production. The corresponding `metaparse` declaration follows (we can ignore semantic bodies since we do not need translation)
+Given the famous ambiguous [Dangling-Else][] grammar, trying to build it using `LALR`:
 
 ``` python
-from metaparse import cfg, Earley, GLR
+from metaparse import GLR, LALR
 
-class S(metaclass=cfg):
-    u = r'u'
-    def S(A, B, C) : pass
-    def A(u)       : pass
-    def A()        : pass
-    def B(E)       : pass
-    def B(F)       : pass
-    def C(u)       : pass
-    def C()        : pass
-    def E(u)       : pass
-    def E()        : pass
-    def F(u)       : pass
-    def F()        : pass
-```
+class pIfThenElse(metaclass=GLR.meta):
 
-and using Earley/GLR parser, we get all *ambiguous* parse trees properly:
-``` python
->>> p_S = Earley(S)
->>> p_S.parse_many('u')
-[(S, [(A, []), (B, [(F, [])]), (C, [(u: 'u')@[0:1]])]),
- (S, [(A, []), (B, [(E, [])]), (C, [(u: 'u')@[0:1]])]),
- (S, [(A, []), (B, [(F, [(u: 'u')@[0:1]])]), (C, [])]),
- (S, [(A, []), (B, [(E, [(u: 'u')@[0:1]])]), (C, [])]),
- (S, [(A, [(u: 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
- (S, [(A, [(u: 'u')@[0:1]]), (B, [(F, [])]), (C, [])])]
+    IF     = r'if'
+    THEN   = r'then'
+    ELSE   = r'else'
+    EXPR   = r'\d+'
+    SINGLE = r'[_a-zA-Z]+'
 
->>> p_S = GLR(S)
->>> p_S.parse_many('u')
-[(S, [(A, [(u: 'u')@[0:1]]), (B, [(F, [])]), (C, [])]),
- (S, [(A, [(u: 'u')@[0:1]]), (B, [(E, [])]), (C, [])]),
- (S, [(A, []), (B, [(F, [(u: 'u')@[0:1]])]), (C, [])]),
- (S, [(A, []), (B, [(E, [(u: 'u')@[0:1]])]), (C, [])]),
- (S, [(A, []), (B, [(F, [])]), (C, [(u: 'u')@[0:1]])]),
- (S, [(A, []), (B, [(E, [])]), (C, [(u: 'u')@[0:1]])])]
-```
+    def stmt(ifstmt):
+        return ifstmt 
 
-These results may be helpful for inspecting the grammar's characteristics.
-
-Despite this power of non-determinism, `LALR` would be recommended currently for practical use since it won't permit *ambiguity* (which may harm the language design but cannot be directly discovered by constructing non-deterministic parsers).
-
-Note for non-deterministic parsers like `Earley` and `GLR`, method `parse_many` should be used instead of `parse` since more than one parse results may be produced.
-
-### Play with Ambiguity
-
-Here is another example, showing the ambiguity of the famous [Dangling-Else][] grammar
-``` python
-class G_IfThenElse(metaclass=cfg):
-
-    IF = r'if'
-    THEN = r'then'
-    ELSE = r'else'
-    EXPR = r'\d+'
-    SINGLE = r'\w+'
-
-    def stmt(IF, EXPR, THEN, stmt):
-        return ('i-t', stmt)
-    def stmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
-        return ('i-t-e', stmt_1, stmt_2)
     def stmt(SINGLE):
-        return SINGLE
+        return SINGLE 
+
+    def ifstmt(IF, EXPR, THEN, stmt_1, ELSE, stmt_2):
+        return ('ite', EXPR, stmt_1, stmt_2) 
+
+    def ifstmt(IF, EXPR, THEN, stmt):
+        return ('it', EXPR, stmt)
 ```
 
-with exemplar semantic results:
-
-```
->>> p_ite = GLR(G_IfThenElse)
->>> p_ite.interpret_many('if 1 then if 2 then if 3 then a else b else c')
-[('i-t', ('i-t-e', ('i-t-e', 'a', 'b'), 'c')),
- ('i-t-e', ('i-t', ('i-t-e', 'a', 'b')), 'c'),
- ('i-t-e', ('i-t-e', ('i-t', 'a'), 'b'), 'c')]
-```
-
-This may fail when try to build an LALR:
+would result in a *shift/reduce* conflict on the token `ELSE` with error hints:
 
 ``` python
->>> p_ite = LALR(G_IfThenElse)
-Traceback (most recent call last):
-  File ...
-  ...
-  File "c:\Users\Shellay\Documents\GitHub\metaparse\metaparse.py", line 1801, in _build_automaton
-    raise ParserError(msg)metaparse.ParserError:
-============================
-! LALR-Conflict raised:
-  * in state [6]:
-[(stmt = IF EXPR THEN stmt.), (stmt = IF EXPR THEN stmt.ELSE stmt)]
-  * on lookahead 'ELSE':
-{'ELSE': [(SHIFT, 7), (REDUCE, (stmt = IF EXPR THEN stmt.))]}
-============================
+metaparse.Error: 
+Handling item set: 
+['(ifstmt = IF EXPR THEN stmt.ELSE stmt)', '(ifstmt = IF EXPR THEN stmt.)']
+Conflict on lookahead: ELSE 
+- ('reduce', (ifstmt = IF EXPR THEN stmt))
+- ('shift', ['(ifstmt = IF EXPR THEN stmt ELSE.stmt)'])
 ```
 
-However, by specifying `ELSE` a higher associative precedence than `THEN` (just like the calculator example treating operators)
+Using `GLR.meta` instead of `LALR.meta`, and `interpret_generalized` respectively:
+
+```
+>>> pIfThenElse.interpret_generalized('if 1 then if 2 then if 3 then a else b else c')
+[('ite', '1', ('ite', '2', ('it', '3', 'a'), 'b'), 'c'),
+ ('ite', '1', ('it', '2', ('ite', '3', 'a', 'b')), 'c'),
+ ('it', '1', ('ite', '2', ('ite', '3', 'a', 'b'), 'c'))]
+```
+
+the parser delivers all ambiguous parse results properly. Note that ambiguous parsing relying on *interpret on-the-fly* is dangerous since some latterly rejected parses might already get interpreted producing side-effects **(so it is advised to use side-effects-free semantics when using GLR parsers!)**.
+
+
+## Using Precedence to Resolve Conflicts
+
+Though GLR is quite powerful, we may not want to deal with ambiguity in practical cases and prefer `LALR` for its clarity and performance. 
+
+By specifying `ELSE` a higher associative precedence than `THEN` (just like the calculator example treating operators), meaning `ELSE` would be preferred to combine the nearest `THEN` leftwards:
 
 ``` python
-class G_IfThenElse(metaclass=cfg):
+class pIfThenElse(metaclass=LALR.meta):
     ...
     THEN = r'then', 1
     ELSE = r'else', 2
     ...
 ```
 
-we then get rid of ambiguity. The successful LALR delivers
+we then get rid of ambiguity. The successful LALR parser delivers
+
 ```
->>> p_lalr_ite = LALR(G_IfThenElse)
->>> p_lalr_ite.interpret('if 1 then if 2 then if 3 then a else b else c')
-('i-t', ('i-t-e', ('i-t-e', 'a', 'b'), 'c'))
+>>> pIfThenElse.interpret('if 1 then if 2 then if 3 then a else b else c')
+('it', '1', ('ite', '2', ('ite', '3', 'a', 'b'), 'c'))
 ```
 
-In practice, rather than the examples here, precedence specification can be highly complex and involving.
+However, rather than the examples here, precedence specification can be highly complex and involving in practical cases.
 
 
 # Limitations
@@ -372,48 +386,31 @@ Though this module provides advantageous features, there are also limitations:
 
 * Algorithms in pure Python lowers performance, but lots can be optimized.
 
-* GLL parser is yet able to handle *left-recursion*.
-
-
-# TODOs
-
-* Support Graph-Structured-Stack (GSS) for non-deterministic parsers.
-
-* Support *left-recursion* by GLL parser.
-
 
 # Verbose style
 
-The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, with more verbose but more straightforward style.
+The following version of the grammar in [the first example](#quick-example) works for both Python 2 and Python 3, with the more verbose but more explicit style, heavily relying on using decorators.
 
 ``` python
-from metaparse import verbose, LALR
-
-@verbose
-def Calc(lex, rule):
+@LALR.verbose
+def pCalc(lex, rule):           # Parameter (lex, rule) is required by the decorator!
 
     lex(IGNORED = r'\s+')
-
-    @lex(NUM = r'[0-9]+')
-    def NUM(val):
-        return int(val)
-
+    lex(NUM = r'[0-9]+')
     lex(EQ  = r'=')
     lex(ID  = r'[_a-zA-Z]\w*')
-
     lex(POW = r'\*\*', p=3)
     lex(MUL = r'\*'  , p=2)
     lex(ADD = r'\+'  , p=1)
-    lex(SUB = r'\-'  , p=1)
 
     @rule
     def assign(ID, EQ, expr):
-        table[ID] = expr
+        context[ID] = expr
         return expr
 
     @rule
     def expr(ID):
-        return table[ID]
+        return context[ID]
 
     @rule
     def expr(NUM):
@@ -424,22 +421,15 @@ def Calc(lex, rule):
         return expr_1 + expr_2
 
     @rule
-    def expr(expr_1, SUB, expr_2):
-        return expr_1 - expr_2
-
-    @rule
     def expr(expr, MUL, expr_1):
         return expr * expr_1
 
     @rule
     def expr(expr, POW, expr_1):
         return expr ** expr_1
-
-
-pCalc = LALR(Calc)
 ```
 
-Such style would be preferred by explicity lovers, although typing the decorators `lex` and `rule` repeatedly may be sort of nuisance. The underlying mechanism is quite easy: the decorator `verbose` prepares a lex-collector and a rule-collector to be arguments passed to function `Calc`, after calling of which the lexical and syntactic rules collected are then used to construct a `Grammar` object, which gets returned with name `Calc`.
+Such style would be preferred by explicity lovers, although typing the decorators `lex` and `rule` repeatedly may be sort of nuisance. The underlying mechanism is quite easy: the decorator `verbose` prepares a lex-collector and a rule-collector to passed to the decorated function `pCalc`, after calling of which the lexical and syntactic rules collected by `lex` and `rule` are then used to construct a `LALR` instance, which gets returned and named `pCalc`.
 
 
 [Parsing]: https://en.wikipedia.org/wiki/Parsing "Parsing"

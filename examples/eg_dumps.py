@@ -3,13 +3,13 @@ import ast
 
 from metaparse import *
 
-def G_Calc():
+class G_Calc(metaclass=LALR.meta):
 
     IGNORED = r'\s+'
 
     EQ  = r'='
-    NUM = r'[1-9]\d*'
-    def NUM(lex):
+
+    def NUM(lex: r'[1-9]\d*'):
         return float(lex)
 
     ID  = r'[_a-zA-Z]\w*'
@@ -37,11 +37,9 @@ def G_Calc():
 
 # assert 0
 
-G_Calc = grammar(G_Calc)
+p = (G_Calc)
 
 from pprint import pprint
-
-p = LALR(G_Calc)
 
 # with open('eg_dumps_file.py', 'w') as o:
 #     psr_fl = p.dumps()

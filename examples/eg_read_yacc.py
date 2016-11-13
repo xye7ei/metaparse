@@ -1,7 +1,13 @@
 import preamble
-from metaparse import cfg, LALR, Symbol
+from metaparse import *
 from collections import OrderedDict
 from pprint import pprint
+
+
+class Symbol(str):
+    def __repr__(self):
+        return self
+
 
 class Helper:
 
@@ -20,7 +26,7 @@ class Helper:
         return Helper.terms[lit]
 
 
-class YACC(metaclass=cfg):
+class YACC(metaclass=LALR.meta):
 
     IGNORED = r'\s+'
     IGNORED = r'\/\*[^(\*/)]*\*\/'
@@ -63,7 +69,7 @@ class YACC(metaclass=cfg):
     def rule(ID, DRV, alts, SEMI):
         r_defs = []
         for seq, bdy in alts:
-            r_def = '    def {}{}:\n        r"""{}"""'.format(
+            r_def = '    def {}{}:\n        r"""{}"""\n'.format(
                 ID,
                 seq,
                 repr(bdy),
@@ -116,7 +122,7 @@ exp:      NUM             { $$ = $1;         }
 
 # pprint([*YACC.tokenize(eg, True)])
 
-yacc = LALR(YACC)
+yacc = YACC
 tr = yacc.parse(eg)
 res = yacc.interpret(eg)
 
@@ -125,3 +131,7 @@ res = yacc.interpret(eg)
 # pprint(tr)
 print()
 print(res)
+
+
+r_plus = Rule('exp', ['exp', 'exp', '+'])
+print(r_plus)

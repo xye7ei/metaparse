@@ -2,12 +2,12 @@
 import preamble
 
 import pprint as pp
-from metaparse import LALR, cfg, GLR
+from metaparse import LALR
 
 # Global stuff
 table = {}
 
-class G_Calc(metaclass=cfg):
+class G_Calc(metaclass=LALR.meta):
 
     # ===== Lexical patterns / Terminals =====
     # - A pattern is defined by Python regex literal.
@@ -56,22 +56,10 @@ class G_Calc(metaclass=cfg):
         return expr ** expr_1
 
 
-from metaparse import cfg
+pCalc = G_Calc
 
-
-pCalc = LALR(G_Calc)
-
+from pprint import pprint
 # parse and tree
 t = pCalc.parse("x = 1 + 4 * 3 ** 2 + 5")
-print(t)
+pprint(t)
 
-# interpretation of tree
-print(t.translate())
-print(table)
-assert table == {'x': 42}
-
-# direct interpretation
-# pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
-pCalc.interpret("y = 5 + x * 2")
-pCalc.interpret("z = 99")
-print(table)

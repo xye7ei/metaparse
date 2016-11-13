@@ -1,13 +1,8 @@
 import preamble
 
-from metaparse import Symbol, LALR
+from metaparse import LALR
 from collections import namedtuple
 
-NOT = Symbol('NOT')
-AND = Symbol('AND')
-OR = Symbol('OR')
-IMP = Symbol('IMP')
-IFF = Symbol('IFF')
 
 class PropLogic(metaclass=LALR.meta):
 
@@ -64,7 +59,7 @@ table = dict(
 )
 
 t = PropLogic.parse(inp)
-r = t.translate()
+r = PropLogic.interpret(inp)
 
 from pprint import pprint
 

@@ -25,7 +25,8 @@ for E in Expr:
 TW = r'[ \t]*'
 TWN = r'[ \t\n]*'
 
-class Lam(metaclass=cfg):
+
+class Lam(metaclass=LALR.meta):
 
     "A haskell like grammar."
 
@@ -34,12 +35,13 @@ class Lam(metaclass=cfg):
     IGNORED = r'\s+'
 
     # Examplar ERROR handling
-    ERROR = r'\#'
-    ERROR = r'\$'
-    ERROR = r'\!'
-    def ERROR(lex):
-        # print('Found ERRORed lexeme: `{}` and ignored it.'.format(lex))
-        pass
+    def ERROR(lex: '\#'):
+        print('Found ERRORed lexeme: `{}` and ignored it.'.format(lex))
+    def ERROR(lex: '\$'):
+        print('Found ERRORed lexeme: `{}` and ignored it.'.format(lex))
+    def ERROR(lex: '\!'):
+        print('Found ERRORed lexeme: `{}` and ignored it.'.format(lex))
+        
 
     EQ      = r'='          # + TW
     IN      = r'in'         # + TWN
@@ -126,10 +128,7 @@ class Lam(metaclass=cfg):
 
 # Test whether the grammar is LALR to exclude potential ambiguity
 # and prepare for better performance
-# psr_ear = Earley(Lam)
-# psr_gll = GLL(Lam)
-psr_glr = GLR(Lam)
-psr_lalr = LALR(Lam)
+psr_lalr = Lam
 
 
 inp = """
@@ -185,5 +184,5 @@ psr1 = psr.loads(s, globals())
 pp.pprint(psr1.interpret(tough_inp))
 
 
-assert psr_glr.interpret_many(tough_inp)[0] == psr1.interpret(tough_inp)
+# assert psr_glr.interpret_many(tough_inp)[0] == psr1.interpret(tough_inp)
 assert psr.interpret(tough_inp) == psr1.interpret(tough_inp)

@@ -2,68 +2,84 @@
 
 import preamble
 
-from metaparse import cfg, LALR
+from metaparse import LALR
 
 # Global stuff
 table = {}
 
-@cfg.v2
-def Calc():
+@LALR.verbose
+def calc(lex, rule):
 
-    IGNORED = r'\s+'
+    lex(IGNORED = r'\s+')
 
-    L   = r'\('
-    R   = r'\)' 
-    EQ  = r'='
-    NUM = r'\d+'
-    def NUM(lex):
-        return int(lex)
-    ID  = r'[_a-zA-Z]\w*' 
-    POW = r'\*\*', 3
-    MUL = r'\*'  , 2
-    MUL = r'x'
-    ADD = r'\+'  , 1
+    @lex(NUM = r'[0-9]+')
+    def NUM(val):
+        return int(val)
 
-    def stmt(ID, EQ, expr):
-        table[ID] = expr 
-        return expr
+    lex(LEFT = r'\(')
+    lex(RIGHT = r'\)')
 
+    lex(EQ  = r'=')
+    lex(ID  = r'[_a-zA-Z]\w*')
+
+    lex(POW = r'\*\*', p = 3)
+    lex(MUL = r'\*', p = 2)
+    lex(ADD = r'\+', p = 1)
+    lex(SUB = r'\-', p = 1)
+
+    @rule
+    def stmt(assign):
+        return assign
+    @rule
     def stmt(expr):
         return expr
-
-    def expr(ID):
-        if ID in table:
-            return table[ID]
-        else:
-            raise ValueError('ID yet bound: {}'.format(ID))
-
-    def expr(NUM):
-        # return int(NUM) 
-        return NUM
-
-    def expr(L, expr, R):
+    
+    @rule
+    def assign(ID, EQ, expr):
+        table[ID] = expr
         return expr
 
-    def expr(expr_1, ADD, expr_2):   # With TeX-subscripts, meaning (expr → expr₁ + expr₂)
+    @rule
+    def expr(ID):
+        return table[ID]
+    @rule
+    def expr(NUM):
+        return int(NUM)
+    @rule
+    def expr(LEFT, expr, RIGHT):
+        return expr
+
+    @rule
+    def expr(expr_1, ADD, expr_2):
         return expr_1 + expr_2
-
-    def expr(expr, MUL, expr_1):     # Can ignore one of the subscripts.
+    @rule
+    def expr(expr_1, SUB, expr_2):
+        return expr_1 - expr_2
+    @rule
+    def expr(expr, MUL, expr_1):
         return expr * expr_1
-
+    @rule
     def expr(expr, POW, expr_1):
         return expr ** expr_1
 
 
-p = calc = LALR(Calc)
+from pprint import pprint
 
-# s = calc.dumps()
+table = {}
 
-# # print(s)
+calc.interpret('x  =  8')
+calc.interpret('y  =  x -  6 ')
+calc.interpret('z  =  x ** y ')
 
-# p = LALR.loads(s, globals())
+calc.interpret(' (3) ')
+calc.interpret(' x = 03 ')
+calc.interpret(' y = 4 * x ** (2 + 1) * 2')
 
-p.interpret(' (3) ')
-p.interpret(' x = 03 ')
-p.interpret(' y = 4 * x ** (2 + 1) * 2')
+print(table)
+
+# print(calc.dumps())
+calc1 = LALR.loads(calc.dumps(), globals())
+
+calc1.interpret(' w = x + 1')
 
 print(table)

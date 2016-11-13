@@ -1,5 +1,5 @@
 import preamble
-from metaparse import Symbol, LALR
+from metaparse import LALR
 from collections import namedtuple
 from pprint import pprint
 
@@ -7,6 +7,11 @@ Seq = namedtuple('Seq', 'exprs')
 Rep = namedtuple('Rep', 'expr')
 Opt = namedtuple('Opt', 'expr')
 Alts = namedtuple('Alts', 'exprs')
+
+
+class Symbol(str):
+    def __repr__(self):
+        return self
 
 
 class EBNF(metaclass=LALR.meta):

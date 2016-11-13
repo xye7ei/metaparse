@@ -1,6 +1,7 @@
-from metaparse import cfg, GLR, LALR
+import preamble
+from metaparse import LALR
 
-class E(metaclass=cfg):
+class E(metaclass=LALR.meta):
 
     num = r'\d+'
 
@@ -39,7 +40,7 @@ import pprint as pp
 
 print(E)
 pp.pprint(E.precedence)
-psr = LALR(E)
+psr = (E)
 # print(psr.table.__len__())
 # pp.pprint([*zip(psr.Ks, psr.ACTION)])
 

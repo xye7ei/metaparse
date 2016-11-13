@@ -1,0 +1,99 @@
+lex2pats = [('IGNORED', '\\s+'),
+ ('EQ', '='),
+ ('NUM', '[1-9][0-9]*'),
+ ('ID', '[_a-zA-Z]\\w*'),
+ ('POW', '\\*\\*'),
+ ('MUL', '\\*'),
+ ('ADD', '\\+')]
+
+handlers = [None, None, None, None, None, None, None]
+
+rules = [('assign^', ('assign',)),
+ ('assign', ('ID', 'EQ', 'expr')),
+ ('expr', ('NUM',)),
+ ('expr', ('ID',)),
+ ('expr', ('expr', 'ADD', 'expr')),
+ ('expr', ('expr', 'MUL', 'expr')),
+ ('expr', ('expr', 'POW', 'expr'))]
+
+ACTION = [{'ID': ('shift', 2)},
+ {'\x03': ('accept', 0)},
+ {'EQ': ('shift', 3)},
+ {'ID': ('shift', 6), 'NUM': ('shift', 5)},
+ {'\x03': ('reduce', 1),
+  'ADD': ('shift', 7),
+  'MUL': ('shift', 8),
+  'POW': ('shift', 9)},
+ {'\x03': ('reduce', 2),
+  'ADD': ('reduce', 2),
+  'MUL': ('reduce', 2),
+  'POW': ('reduce', 2)},
+ {'\x03': ('reduce', 3),
+  'ADD': ('reduce', 3),
+  'MUL': ('reduce', 3),
+  'POW': ('reduce', 3)},
+ {'ID': ('shift', 6), 'NUM': ('shift', 5)},
+ {'ID': ('shift', 6), 'NUM': ('shift', 5)},
+ {'ID': ('shift', 6), 'NUM': ('shift', 5)},
+ {'\x03': ('reduce', 4),
+  'ADD': ('reduce', 4),
+  'MUL': ('shift', 8),
+  'POW': ('shift', 9)},
+ {'\x03': ('reduce', 5),
+  'ADD': ('reduce', 5),
+  'MUL': ('reduce', 5),
+  'POW': ('shift', 9)},
+ {'\x03': ('reduce', 6),
+  'ADD': ('reduce', 6),
+  'MUL': ('reduce', 6),
+  'POW': ('reduce', 6)}]
+
+GOTO = [{'ID': 2, 'assign': 1},
+ {},
+ {'EQ': 3},
+ {'ID': 6, 'NUM': 5, 'expr': 4},
+ {'ADD': 7, 'MUL': 8, 'POW': 9},
+ {},
+ {},
+ {'ID': 6, 'NUM': 5, 'expr': 10},
+ {'ID': 6, 'NUM': 5, 'expr': 11},
+ {'ID': 6, 'NUM': 5, 'expr': 12},
+ {'ADD': 7, 'MUL': 8, 'POW': 9},
+ {'ADD': 7, 'MUL': 8, 'POW': 9},
+ {'ADD': 7, 'MUL': 8, 'POW': 9}]
+
+semans = [b'\xe3\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01\x00\x00'
+ b'\x00C\x00\x00\x00s\x04\x00\x00\x00|\x00\x00S)\x01N\xa9\x00)\x01\xda\x01x'
+ b'r\x01\x00\x00\x00r\x01\x00\x00\x00\xfa8c:\\Users\\Shellay\\Documents\\GitHu'
+ b'b\\metaparse\\metaparse.py\xda\x08identity1\x00\x00\x00s\x02\x00\x00\x00\x00'
+ b'\x01',
+ b'\xe3\x03\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x03\x00\x00'
+ b'\x00C\x00\x00\x00s\x0e\x00\x00\x00|\x02\x00t\x00\x00|\x00\x00<|\x02\x00S'
+ b')\x01N)\x01\xda\x07context)\x03\xda\x02ID\xda\x02EQ\xda\x04expr\xa9\x00'
+ b'r\x05\x00\x00\x00\xfa?c:/Users/Shellay/Documents/GitHub/metaparse/examples/'
+ b'eg_demo.py\xda\x06assign\x19\x00\x00\x00s\x04\x00\x00\x00\x00\x01\n\x01',
+ b'\xe3\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00'
+ b'\x00C\x00\x00\x00s\n\x00\x00\x00t\x00\x00|\x00\x00\x83\x01\x00S)\x01N)'
+ b'\x01\xda\x03int)\x01\xda\x03NUM\xa9\x00r\x03\x00\x00\x00\xfa?c:/Users/Shell'
+ b'ay/Documents/GitHub/metaparse/examples/eg_demo.py\xda\x04expr\x1d'
+ b'\x00\x00\x00s\x02\x00\x00\x00\x00\x01',
+ b'\xe3\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00'
+ b'\x00C\x00\x00\x00s\x08\x00\x00\x00t\x00\x00|\x00\x00\x19S)\x01N)\x01\xda'
+ b'\x07context)\x01\xda\x02ID\xa9\x00r\x03\x00\x00\x00\xfa?c:/Users/Shellay/'
+ b'Documents/GitHub/metaparse/examples/eg_demo.py\xda\x04expr \x00\x00\x00'
+ b's\x02\x00\x00\x00\x00\x01',
+ b'\xe3\x03\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x02\x00\x00'
+ b'\x00C\x00\x00\x00s\x08\x00\x00\x00|\x00\x00|\x02\x00\x17S)\x01N\xa9\x00)'
+ b'\x03\xda\x06expr_1\xda\x03ADD\xda\x06expr_2r\x01\x00\x00\x00r'
+ b'\x01\x00\x00\x00\xfa?c:/Users/Shellay/Documents/GitHub/metaparse/examples/e'
+ b'g_demo.py\xda\x04expr#\x00\x00\x00s\x02\x00\x00\x00\x00\x01',
+ b'\xe3\x03\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x02\x00\x00'
+ b'\x00C\x00\x00\x00s\x08\x00\x00\x00|\x00\x00|\x02\x00\x14S)\x01N\xa9\x00)'
+ b'\x03\xda\x04expr\xda\x03MUL\xda\x06expr_1r\x01\x00\x00\x00r\x01\x00'
+ b'\x00\x00\xfa?c:/Users/Shellay/Documents/GitHub/metaparse/examples/eg_demo'
+ b'.pyr\x02\x00\x00\x00&\x00\x00\x00s\x02\x00\x00\x00\x00\x01',
+ b'\xe3\x03\x00\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x02\x00\x00'
+ b'\x00C\x00\x00\x00s\x08\x00\x00\x00|\x00\x00|\x02\x00\x13S)\x01N\xa9\x00)'
+ b'\x03\xda\x04expr\xda\x03POW\xda\x06expr_1r\x01\x00\x00\x00r\x01\x00'
+ b'\x00\x00\xfa?c:/Users/Shellay/Documents/GitHub/metaparse/examples/eg_demo'
+ b'.pyr\x02\x00\x00\x00)\x00\x00\x00s\x02\x00\x00\x00\x00\x01']

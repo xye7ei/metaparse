@@ -7,7 +7,7 @@ class TestConflicts(unittest.TestCase):
 
     def test_conflicts(self):
 
-        with self.assertRaises(LALR.Error):
+        with self.assertRaises(LanguageError):
 
             class G(metaclass=LALR.meta):
                 'A Grammar.meta which is LR(1) but not LALR(1).'

@@ -148,6 +148,7 @@ The design of this module targets "**native** parsing" (like [instaparse][] and 
 * no dependencies,
 * no helper/intermediate files generated,
 * optional precedence specification (for LALR),
+* nice error reporting,
 * and etc.
 
 
@@ -238,6 +239,63 @@ executing the semantic `__code__` object (more basic details see the
 documents for `exec` and `code` object).
 
 
+## Error Reporting
+
+During designing a language, various errors may occur. `metaparse`
+provides nice error reporting - for example, executing the following
+
+``` python
+from metaparse import LALR
+
+class pExpr(metaclass=LALR.meta):
+
+    NUM = '\d+'
+    PLUS = '\+'
+
+    def expr(expr, PLUS, term):
+        return expr + term
+
+    def expr(expr, TIMES, term):
+        return expr * term
+
+    def expr(term):
+        return term
+
+    def term(NUM):
+        return int(NUM)
+
+    def factor(NUM):
+        return int(NUM)
+```
+
+would result in error report:
+
+``` python-traceback
+metaparse.LanguageError: No lexical pattern provided for terminal symbol: TIMES
+- in 2th rule (expr = expr TIMES term)
+- with helping traceback (if available): 
+  File "c:/Users/Shellay/Documents/GitHub/metaparse/tests/test_make_error.py", line 11, in expr
+- declared lexes: Lexer{
+[('NUM', re.compile('\\d+')),
+ ('PLUS', re.compile('\\+')),
+ ('IGNORED', re.compile('\\s+'))]}
+
+```
+
+After giving the missing terminal symbol `TIMES` and re-running,
+another error appears:
+
+``` python-traceback
+metaparse.LanguageError: There are unreachable nonterminal at 5th rule: {'factor'}.
+- with helping traceback: 
+  File "c:/Users/Shellay/Documents/GitHub/metaparse/tests/test_make_error.py", line 21, in factor
+
+```
+
+The precise error information with Python *traceback* format can guide
+human or editors to the exact erroneous place conveniently.
+
+
 # Generalized LALR and Dealing with Ambiguity
 
 `metaparse` supplies an interesting extension: the `GLR` parser with look-ahead, which can cope with many non-singular ambiguous grammars.
@@ -247,7 +305,7 @@ Given the famous ambiguous [Dangling-Else][] grammar, trying to build it using `
 ``` python
 from metaparse import GLR, LALR
 
-class pIfThenElse(metaclass=GLR.meta):
+class pIfThenElse(metaclass=LALR.meta):
 
     IF     = r'if'
     THEN   = r'then'
@@ -270,7 +328,7 @@ class pIfThenElse(metaclass=GLR.meta):
 
 would result in a *shift/reduce* conflict on the token `ELSE` with error hints:
 
-``` python
+``` python-traceback
 metaparse.Error: 
 Handling item set: 
 ['(ifstmt = IF EXPR THEN stmt.ELSE stmt)', '(ifstmt = IF EXPR THEN stmt.)']
@@ -281,7 +339,7 @@ Conflict on lookahead: ELSE
 
 Using `GLR.meta` instead of `LALR.meta`, and `interpret_generalized` respectively:
 
-```
+``` python
 >>> pIfThenElse.interpret_generalized('if 1 then if 2 then if 3 then a else b else c')
 [('ite', '1', ('ite', '2', ('it', '3', 'a'), 'b'), 'c'),
  ('ite', '1', ('it', '2', ('ite', '3', 'a', 'b')), 'c'),
@@ -492,7 +550,7 @@ we get the following output, where successful each intermediate result
 is wrapped by `Just` and failure reported by `ParseError` containing
 tracing information (returned rather than thrown).
 
-```
+``` python-traceback
 Sends:  ('ID', 'bar')
 Got:    Just(result=('ID', 'bar'))
 

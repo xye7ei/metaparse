@@ -12,3 +12,5 @@ dist
 *.python_history
 __pycache__
 *.grip
+
+experiments*

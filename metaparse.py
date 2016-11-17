@@ -58,8 +58,9 @@ class Lexer(object):
     class Error(Exception):
         pass
 
-    def __init__(self, lex2pats=None, handlers=None):
-        self.lex2pats = lex2pats if lex2pats else []
+    def __init__(self, names=None, patterns=None, handlers=None):
+        self.names = names if names else []
+        self.patterns = patterns if patterns else []
         self.handlers = handlers if handlers else []
         self.precedence = {}
 
@@ -68,19 +69,22 @@ class Lexer(object):
         prece = kw.pop('p') if 'p' in kw else None
         name, pattern = kw.popitem()
         if prece: self.precedence[name] = prece
-        self.lex2pats.append((name, re.compile(pattern)))
+        self.names.append(name)
+        self.patterns.append(re.compile(pattern))
         self.handlers.append(None)
-        assert len(self.lex2pats) == len(self.handlers)
+        assert len(self.names) == len(self.patterns) == len(self.handlers)
         def z(func):
             'Swap the last handler with the decorated function.'
             self.handlers[-1] = func
         return z
 
     def __repr__(self):
-        return 'Lexer{{\n{}}}'.format(pprint.pformat(self.lex2pats))
+        return 'Lexer{{\n{}}}'.format(
+            pformat(list(zip(self.names, self.patterns))))
 
     def register(self, name, pattern, handler=None, precedence=None):
-        self.lex2pats.append((name, re.compile(pattern)))
+        self.names.append(name)
+        self.patterns.append(re.compile(pattern))
         self.handlers.append(handler)
         if precedence != None:
             self.precedence[name] = precedence
@@ -90,14 +94,15 @@ class Lexer(object):
             self.register(k, v)
 
     def tokenize(self, inp, with_end=False):
-        lex2pats = self.lex2pats
+        names = self.names
+        patterns = self.patterns
         handlers = self.handlers
         pos = 0
         while pos < len(inp):
             match = None
             name = None
             handler = None
-            for (nm, rgx), hdl in zip(lex2pats, handlers):
+            for nm, rgx, hdl in zip(names, patterns, handlers):
                 match = rgx.match(inp, pos=pos)
                 if match:
                     name = nm
@@ -121,6 +126,11 @@ class Lexer(object):
             pos = match.end()
         if with_end:
             yield END_TOKEN
+
+    def prepare(self, sep=' '):
+
+        while 1:
+            pass
 
 
 class Grammar(object):
@@ -312,6 +322,10 @@ GSS.__repr__ = lambda s: repr(s.to_list())
 #         self.offset = offset
 Just = namedtuple('Just', 'result')
 
+class LanguageError(Exception):
+    # FIXME: Should contain some data attributes?
+    pass
+
 class ParseError(Exception):
 
     def __init__(self, token, action, stack, tree_stack):
@@ -337,7 +351,7 @@ class ParseError(Exception):
         - The syntax tree being constructed -- exactly the active item
         in the current state (top of stack), as well as the expected
         token.
-        
+
         - The range of input text corresponding to the syntax tree?
 
         """
@@ -366,11 +380,8 @@ class GLR(object):
     - It is the generalized version of LALR parser, thus being
     slightly more powerful than typical GLR(0) parser due to
     utilization of lookhead.
-    
-    """
 
-    class Error(Exception):
-        pass
+    """
 
     def __init__(self, lexer=None, rules=None, precedence=None):
         self.rules = rules if rules else []
@@ -391,7 +402,7 @@ class GLR(object):
     def make(self):
 
         # Augmented lexer - ignoring spaces by default.
-        lexes = {lex for lex, _ in self.lexer.lex2pats}
+        lexes = set(self.lexer.names)
         if 'IGNORED' not in lexes:
             self.lexer.register('IGNORED', r'\s+')
 
@@ -426,8 +437,8 @@ class GLR(object):
                          '')])[0]
                     trc_msg = ('- with helping traceback (if available): \n'
                                '{}\n').format(trc)
-                    lex_msg = str(self.lexer)
-                    raise LALR.Error(msg + trc_msg + lex_msg)
+                    lex_msg = ('- declared lexes: {}\n').format(self.lexer)
+                    raise LanguageError(msg + trc_msg + lex_msg)
 
         # Report soundness of grammar (unreachable, loops, etc).
         for X in G.unreachable:
@@ -438,11 +449,11 @@ class GLR(object):
                      seman.__code__.co_firstlineno,
                      seman.__name__,
                      '')])[0]
-                msg = ('There are unreachable nonterminals: {}.\n'
+                msg = ('There are unreachable nonterminal at {}th rule: {}.\n'
                        '- with helping traceback: \n{}\n'
-                ).format(G.unreachable, trc)
+                ).format(i, G.unreachable, trc)
                 # warnings.warn(msg)
-                raise LALR.Error(msg)
+                raise LanguageError(msg)
 
         # Kernel sets and corresponding GOTO
         self.Ks = Ks = [[(0, 0)]]
@@ -609,10 +620,10 @@ class GLR(object):
                                 tree = ParseTree(self.rules[arg].lhs, list(subs))
 
                             # NOTE:
-                            # 
+                            #
                             # - Each state during cascaded reduction
                             #   should be added to the forks!
-                            # 
+                            #
                             # - Intermediate reduction items may or
                             #   may not have a GOTO target! If no,
                             #   such items are denoted as "dead" -
@@ -657,19 +668,19 @@ class GLR(object):
         else:
             rs = p.send(END_TOKEN)
             return [r.result[-1] for r in rs]
-            
+
     def interpret_generalized(self, inp):
         return self.parse_generalized(inp, True)
-            
+
 
     def dumps(self):
         'Dump this parser instance to readable Python code string.'
 
         tar = odict()
 
-        tar['lex2pats'] = [
-            (nm, rgx.pattern)
-            for nm, rgx in self.lexer.lex2pats
+        tar['names'] = self.lexer.names
+        tar['patterns'] = [
+            rgx.pattern for rgx in self.lexer.patterns
         ]
         tar['handlers'] = [
             marshal.dumps(h.__code__) if h else None
@@ -699,21 +710,23 @@ class GLR(object):
         'Load a dumped code string and make a usable parse instance.'
         ctx = {}
         exec(src, env, ctx)
-        lex2pats = [(nm, re.compile(pat))
-                 for nm, pat in ctx.pop('lex2pats')]
+
+        names = ctx.pop('names')
+        patterns = [re.compile(pat)
+                    for pat in ctx.pop('patterns')]
         handlers = [
             types.FunctionType(marshal.loads(co), env) if co else None
             for co in ctx.pop('handlers')
         ]
+        p = LALR(Lexer(names, patterns, handlers))
 
-        p = LALR(Lexer(lex2pats, handlers))
         p.rules = [Rule(*rl) for rl in ctx.pop('rules')]
-        p.ACTION = ctx.pop('ACTION')
-        p.GOTO = ctx.pop('GOTO')
         p.semans = [
             types.FunctionType(marshal.loads(co), env)
             for co in ctx.pop('semans')
         ]
+        p.ACTION = ctx.pop('ACTION')
+        p.GOTO = ctx.pop('GOTO')
         return p
 
     @staticmethod
@@ -778,10 +791,10 @@ class GLR(object):
                     else:
                         self.lexer.register(k, pat, v)
             # for existing lexical element
-            elif any(k == lx for lx, _ in self.lexer.lex2pats):
+            elif any(k == lx for lx in self.lexer.names):
                 assert len(parlist) == 1
-                for i, (lx, pt) in reversed(
-                        list(enumerate(self.lexer.lex2pats))):
+                for i, lx in reversed(
+                        list(enumerate(self.lexer.names))):
                     if lx == k:
                         self.lexer.handlers[i] = v
             # for syntax rule, i.e. semantics.
@@ -822,9 +835,6 @@ class LALR(GLR):
     - Can use precedence of tokens to resolve conflicts.
 
     """
-
-    class Error(Exception):
-        pass
 
     def make(self):
         # Make GLALR(1) automaton.
@@ -870,7 +880,7 @@ class LALR(GLR):
                             self.show_action(A1[a]),
                             self.show_action((act, arg)),
                         )
-                        raise LALR.Error(msg)
+                        raise LanguageError(msg)
                     else:
                         A1[a] = (act, arg)
 
@@ -886,7 +896,7 @@ class LALR(GLR):
 
             if token.symbol in self.ACTION[sstk[-1]]:
                 act, arg = self.ACTION[sstk[-1]][token.symbol]
-                # Active tree set default to token. 
+                # Active tree set default to token.
                 tree = token
 
                 # Reduce (no new token fetched during reduction)
@@ -966,7 +976,7 @@ class Debug(LALR):
     - They are organized here to avoid clustering.
 
     """
-    
+
     def inspect_Ks(self):
         pprint.pprint([(k, [self.show_item(itm) for itm in K])
                        for k, K in enumerate(self.Ks)])

@@ -1,6 +1,6 @@
-names = ['COMMA', 'IGNORED', 'RIGHT', 'LEFT', 'IGNORED', 'SYMBOL', 'UNKNOWN', 'NUMBER']
+names = ['RIGHT', 'COMMA', 'IGNORED', 'LEFT', 'IGNORED', 'SYMBOL', 'UNKNOWN', 'NUMBER']
 
-patterns = [',', '%', '\\)', '\\(', '\\s+', '[_a-zA-Z]\\w*', '&', '[1-9]\\d*(\\.\\d*)?']
+patterns = ['\\)', ',', '%', '\\(', '\\s+', '[_a-zA-Z]\\w*', '&', '[1-9]\\d*(\\.\\d*)?']
 
 handlers = [None,
  None,

@@ -19,7 +19,7 @@ class Token(namedtuple('Token', 'pos symbol lexeme value')):
     @property
     def end(self):
         return self.pos + len(self.lexeme)
-        
+
     def __repr__(self):
         return "({}, {})".format(
             repr(self.symbol), repr(self.value))
@@ -122,9 +122,11 @@ class Lexer(object):
         self.patterns.append(re.compile(pattern))
         self.handlers.append(None)
         assert len(self.names) == len(self.patterns) == len(self.handlers)
+
         def z(func):
             'Swap the last handler with the decorated function.'
             self.handlers[-1] = func
+
         return z
 
     def __repr__(self):
@@ -142,7 +144,7 @@ class Lexer(object):
             )
 
         * Note:
-            In this case the /order/ of these name-patterns are not preserved! 
+            In this case the /order/ of these name-patterns are not preserved!
         """
         for name, pat in kw.items():
             self.names.append(name)
@@ -154,7 +156,7 @@ class Lexer(object):
         self.names.append(name)
         self.patterns.append(re.compile(pattern))
         self.handlers.append(handler)
-        if precedence != None:
+        if precedence is not None:
             self.precedence[name] = precedence
 
     def tokenize(self, inp, with_end=False):
@@ -269,8 +271,10 @@ class Grammar(object):
                         if Y in self.nonterminals:
                             if Y not in reachable:
                                 news.add(Y)
-            if news: reachable.update(news)
-            else: break
+            if news:
+                reachable.update(news)
+            else:
+                break
         self.unreachable = self.nonterminals - reachable
 
         # precedence is not only specifiable for tokens, but also for
@@ -401,7 +405,7 @@ def augment(rules, semans):
     return rules, semans
 
 
-class GSS(namedtuple('GSS', 'cdr car')):
+class GSS(namedtuple('GSS', 'tail head')):
 
     """Graph Structured Stack: a memory-friendly structure for forking
     states during generalized parsing, which is identical to CONS
@@ -412,8 +416,8 @@ class GSS(namedtuple('GSS', 'cdr car')):
         gss = self
         l = deque()
         while gss is not Nil:
-            l.appendleft(gss.car)
-            gss = gss.cdr
+            l.appendleft(gss.head)
+            gss = gss.tail
         return l
 
     def __repr__(self):
@@ -431,9 +435,11 @@ Nil = GSS(None, None)
 #         self.offset = offset
 Just = namedtuple('Just', 'result')
 
+
 class LanguageError(Exception):
     # FIXME: Should contain some data attributes?
     pass
+
 
 class ParseError(Exception):
 
@@ -535,7 +541,8 @@ class GLR(object):
         for r, rule in enumerate(G.rules):
             for y in rule.rhs:
                 if y in G.terminals and y not in lexes:
-                    msg = ('No lexical pattern provided for terminal symbol: {}\n'
+                    msg = ('No lexical pattern provided '
+                           'for terminal symbol: {}\n'
                            '- in {}th rule {}\n'
                     ).format(y, r, rule)
                     seman = self.semans[r]
@@ -579,7 +586,8 @@ class GLR(object):
                     if X not in igotoset:
                         igotoset[X] = []
                     if (nk, p+1) not in igotoset[X]:
-                        igotoset[X].append((nk, p+1)) # shifted item (nk, p+1)
+                        # (nk, p+1) is the shifted item of (nk, p)
+                        igotoset[X].append((nk, p+1))
             igoto = {}
             for X, J in igotoset.items():
                 J.sort()
@@ -624,10 +632,10 @@ class GLR(object):
                             ))
                     else:
                         # Handle ended item here?
-                        # i.e. conclude kernel/nonkernel 'reduce' (nk, p) in Ks[i] on lookahead a?
-                        # BUT here a may be dummy!
-                        # The item to be reduced should share set of lookaheads of kernel item
-                        # whilst this set is yet to be accomplished.
+                        #
+                        # No. The item to be reduced should share the
+                        # set of lookaheads of kernel item whilst this
+                        # set is yet to be accomplished.
                         pass
 
         # Propagation till fix-point
@@ -649,7 +657,8 @@ class GLR(object):
         for A, Xto in zip(ACTION, GOTO):
             for X, j in Xto.items():
                 if X in G.terminals:
-                    if X not in A: A[X] = set()
+                    if X not in A:
+                        A[X] = set()
                     A[X].add(('shift', j))
         for K, L, A in zip(Ks, Ls, ACTION):
             for k, l in zip(K, L):
@@ -660,16 +669,17 @@ class GLR(object):
                             A['\x03'] = {('accept', 0)}
                     # IMPORTANT: kernel/non-kernels which are ended!
                     elif q == len(G.rules[c].rhs):
-                        # spontaneous reduction
+                        # Spontaneous reduction
                         if b != DUMMY:
-                            # A.add((b, ('reduce', c)))
-                            if b not in A: A[b] = set()
+                            if b not in A:
+                                A[b] = set()
                             A[b].add(('reduce', c))
-                        # propagated from lookaheads of kernel item being closed
+                        # Propagated from lookaheads of kernel item
+                        # being closed
                         else:
                             for a in l:
-                                # A.add((a, ('reduce', c)))
-                                if a not in A: A[a] = set()
+                                if a not in A:
+                                    A[a] = set()
                                 A[a].add(('reduce', c))
 
         # TODO: Resolving conflicts with symbol precedence
@@ -680,7 +690,8 @@ class GLR(object):
         #   - decider for reduce: the lookahead symbol
         # - For any action in ACTION[i], i.e. A:
         #   - if the decider has no precedence, it must be preserved;
-        #   - if the decider has highest precedence among A, it must be preserved;
+        #   - if the decider has highest precedence among A, it must be
+        #     preserved;
         #   - otherwise, it gets excluded.
         # if self.precedence:
         #     def prsv(i, look, action):
@@ -700,7 +711,8 @@ class GLR(object):
         tokens.append(token)
         while 1:
 
-            agenda_bak = deque(agenda); agenda_new = deque()
+            agenda_bak = deque(agenda)
+            agenda_new = deque()
 
             # Dead states for error reporting.
             dead = []
@@ -708,7 +720,7 @@ class GLR(object):
             while agenda:
 
                 sstk, tstk = agenda.popleft()
-                s = sstk.car
+                s = sstk.head
 
                 if token.symbol in self.ACTION[s]:
 
@@ -717,16 +729,18 @@ class GLR(object):
                         sstk1, tstk1 = sstk, tstk
 
                         if act == 'reduce':
+                            tar_rule = self.rules[arg]
                             subs = deque()
-                            for _ in self.rules[arg].rhs:
+                            for _ in tar_rule.rhs:
                                 # Pop from GSS
-                                sstk1 = sstk1.cdr
-                                tstk1, sub = tstk1.cdr, tstk1.car
+                                sstk1 = sstk1.tail
+                                tstk1, sub = tstk1.tail, tstk1.head
                                 subs.appendleft(sub)
                             if interpret:
                                 tree = self.semans[arg](*subs)
                             else:
-                                tree = ParseTree(self.rules[arg].lhs, list(subs))
+                                tree = ParseTree(tar_rule.lhs,
+                                                 list(subs))
 
                             # NOTE:
                             #
@@ -737,14 +751,15 @@ class GLR(object):
                             #   may not have a GOTO target! If no,
                             #   such items are denoted as "dead" -
                             #   they show possible expectations.
-                            if self.rules[arg].lhs in self.GOTO[sstk1.car]:
-                                trans = self.GOTO[sstk1.car][self.rules[arg].lhs]
+                            if tar_rule.lhs in self.GOTO[sstk1.head]:
+                                tar_trans = self.GOTO[sstk1.head][tar_rule.lhs]
                                 agenda.append(
                                     # Push into GSS
-                                    (GSS(sstk1, trans),
+                                    (GSS(sstk1, tar_trans),
                                      GSS(tstk1, tree)))
                             else:
-                                dead.append((sstk1, tstk1))
+                                dead.append(
+                                    (sstk1, tstk1))
 
                         elif act == 'accept':
                             agenda_new.append(
@@ -753,13 +768,14 @@ class GLR(object):
                         elif act == 'shift':
                             agenda_new.append(
                                 (GSS(sstk1, arg),
-                                 GSS(tstk1, token.value if interpret else token)))
+                                 GSS(tstk1,
+                                     token.value if interpret else token)))
                 else:
                     dead.append((sstk, tstk))
 
             if not agenda_new:
                 token = yield [
-                    ParseError(token, self.ACTION[ss.car], ss, aa)
+                    ParseError(token, self.ACTION[ss.head], ss, aa)
                     for ss, aa in dead
                 ]
                 agenda = agenda_bak
@@ -769,7 +785,8 @@ class GLR(object):
                 agenda = agenda_new
 
     def parse_generalized(self, inp, interpret=False):
-        assert hasattr(self, 'ACTION'), 'Call yourparser.make() to build the parser first!'
+        assert hasattr(self, 'ACTION'), \
+            'Call your_parser.make() to build the parser first!'
         p = self.prepare_generalized(interpret)
         next(p)
         for token in self.lexer.tokenize(inp, False):
@@ -780,7 +797,6 @@ class GLR(object):
 
     def interpret_generalized(self, inp):
         return self.parse_generalized(inp, True)
-
 
     def dumps(self):
         'Dump this parser instance to readable Python code string.'
@@ -807,8 +823,7 @@ class GLR(object):
 
         return '\n'.join(
             '{} = {}\n'.format(k, pformat(v))
-             for k, v in tar.items()
-        )
+            for k, v in tar.items())
 
     def dump(self, filename):
         with open(filename, 'w') as o:
@@ -856,8 +871,10 @@ class GLR(object):
 
     def show_action(self, action):
         act, arg = action
-        return (act, self.show_itemset(arg) if act == 'shift' else self.rules[arg])
-
+        if act == 'shift':
+            return (act, self.show_itemset(arg))
+        else:
+            return (act, self.rules[arg])
 
     # Various style of declaration.
     def __getitem__(self, k):
@@ -885,7 +902,8 @@ class GLR(object):
             self.lexer.register(k, pat)
             if prece in self.precedence:
                 raise ValueError(
-                    'Repeated specifying the precedence of symbol: {}'.format(k))
+                    'Repeated specifying the precedence '
+                    'of symbol: {}'.format(k))
             else:
                 self.precedence[k] = prece
 
@@ -915,7 +933,6 @@ class GLR(object):
 
     def __exit__(self, *a, **kw):
         self.make()
-
 
     class meta(type):
 
@@ -970,25 +987,26 @@ class LALR(GLR):
                                 r, r_r = act, arg
                             redu = self.rules[r_r]
                             if a in self.precedence:
-                                if len(redu.rhs) > 1 and redu.rhs[-2] in self.precedence:
+                                if len(redu.rhs) > 1 and \
+                                   redu.rhs[-2] in self.precedence:
                                     lft = redu.rhs[-2]
                                     rgt = a
-                                    if self.precedence[lft] >= self.precedence[rgt]:
+                                    if self.precedence[lft] >= \
+                                       self.precedence[rgt]:
                                         A1[a] = (r, r_r)
                                     else:
                                         A1[a] = (s, s_i)
                                     continue
                         # Unable to resolve
                         msg = ("\n"
-                            "Handling item set: \n" "{}\n"
-                            "Conflict on lookahead: {} \n"
-                            "- {}\n" "- {}\n"
+                               "Handling item set: \n" "{}\n"
+                               "Conflict on lookahead: {} \n"
+                               "- {}\n" "- {}\n"
                         ).format(
                             self.show_itemset(i),
                             a,
                             self.show_action(A1[a]),
-                            self.show_action((act, arg)),
-                        )
+                            self.show_action((act, arg)))
                         raise LanguageError(msg)
                     else:
                         A1[a] = (act, arg)
@@ -1049,7 +1067,8 @@ class LALR(GLR):
                     tstk)
 
     def parse(self, inp, interpret=False):
-        assert hasattr(self, 'ACTION'), 'Call yourparser.make() to build the parser first!'
+        assert hasattr(self, 'ACTION'), \
+            'Call yourparser.make() to build the parser first!'
         rtn = self.prepare(interpret)
         next(rtn)
         for token in self.lexer.tokenize(inp, False):
@@ -1062,7 +1081,6 @@ class LALR(GLR):
     def interpret(self, inp):
         assert self.semans, 'Must have semantics to interpret.'
         return self.parse(inp, True)
-
 
     class meta(type):
 
@@ -1124,7 +1142,6 @@ class Inspector(LALR):
         ])
 
 
-
 if __name__ == '__main__':
 
     rs = ([
@@ -1171,14 +1188,18 @@ if __name__ == '__main__':
         return a
 
     import unittest
+
     class TestGrammar(unittest.TestCase):
+
         def test_first_0(self):
             self.assertEqual(g.FIRST['S'], {'a', 'b', 'c', 'd', 'EPSILON'})
             self.assertEqual(g.FIRST['E'], {'b', 'd', 'EPSILON'})
+
         def test_first_1(self):
             self.assertEqual(e.FIRST['expr'], {'ID', '('})
             self.assertEqual(e.FIRST['term'], {'ID', '('})
             self.assertEqual(e.FIRST['factor'], {'ID', '('})
+
         def test_nullalbe(self):
             self.assertEqual(set(g.NULLABLE), {'S', 'A', 'B', 'C', 'D', 'E'})
 

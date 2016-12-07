@@ -105,12 +105,11 @@ class Lexer(object):
 
     def __call__(self, **kw):
         """Supporting registering lexical pattern like:
+        ::
 
-        ``` python
-        @my_lexer(INTEGER = r'[1-9][0-9]*')
-        def handler(value):
-            return int(value)
-        ```
+            @my_lexer(INTEGER = r'[1-9][0-9]*')
+            def handler(value):
+                return int(value)
 
         """
         assert ('p' in kw and len(kw) == 2) or len(kw) == 1
@@ -1094,7 +1093,8 @@ class LALR(GLR):
 
 class Inspector(LALR):
 
-    """Methods for inspecting LALR attributes.
+    """Collection of methods for inspecting LALR parser object's
+    attributes.
 
     - Since the representation of structures in LALR are raw
       integers/pairs as indices, these methods help inspect indexed
@@ -1141,66 +1141,3 @@ class Inspector(LALR):
             for i, K in enumerate(self.Ks)
         ])
 
-
-if __name__ == '__main__':
-
-    rs = ([
-        Rule('S', ('A', 'B', 'C')),
-        Rule('S', ('D',)),
-        Rule('A', ('a', 'A')),
-        Rule('A', ()),
-        Rule('B', ('B', 'b')),
-        Rule('B', ()),
-        Rule('C', ('c',)),
-        Rule('C', ('D',)),
-        Rule('D', ('d', 'D')),
-        Rule('D', ('E',)),
-        Rule('E', ('D',)),
-        Rule('E', ('B',)),
-    ])
-    g = Grammar(rs)
-
-    rs1 = [
-        Rule('expr', ['expr', '+', 'term']),
-        Rule('expr', ['term']),
-        Rule('term', ['term', '*', 'factor']),
-        Rule('term', ['factor']),
-        Rule('factor', ['ID']),
-        Rule('factor', ['(', 'expr', ')']),
-    ]
-    e = Grammar(rs1)
-
-    rs1 = [
-        Rule('S', ['L', '=', 'R']),
-        Rule('S', ['R']),
-        Rule('L', ['*', 'R']),
-        Rule('L', ['id']),
-        Rule('R', ['L']),
-    ]
-
-    rs1 = [
-        Rule('stmt', ['if', 'expr', 'then', 'stmt']),
-        Rule('stmt', ['if', 'expr', 'then', 'stmt', 'else', 'stmt']),
-        Rule('stmt', ['single']),
-    ]
-
-    def id_func(a):
-        return a
-
-    import unittest
-
-    class TestGrammar(unittest.TestCase):
-
-        def test_first_0(self):
-            self.assertEqual(g.FIRST['S'], {'a', 'b', 'c', 'd', 'EPSILON'})
-            self.assertEqual(g.FIRST['E'], {'b', 'd', 'EPSILON'})
-
-        def test_first_1(self):
-            self.assertEqual(e.FIRST['expr'], {'ID', '('})
-            self.assertEqual(e.FIRST['term'], {'ID', '('})
-            self.assertEqual(e.FIRST['factor'], {'ID', '('})
-
-        def test_nullalbe(self):
-            self.assertEqual(set(g.NULLABLE), {'S', 'A', 'B', 'C', 'D', 'E'})
-
-    unittest.main()

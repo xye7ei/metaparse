@@ -3,7 +3,8 @@
 import re
 import pprint
 import warnings
-import marshal, types
+import marshal
+import types
 import traceback
 
 from pprint import pformat
@@ -11,45 +12,62 @@ from pprint import pformat
 from collections import deque
 from collections import namedtuple
 from collections import OrderedDict as odict
-from collections import defaultdict as ddict
 
 
-Token = namedtuple('Token', 'pos symbol lexeme value')
-Token.__repr__ = lambda self: "({}, {})".format(repr(self.symbol), repr(self.value))
-Token.end = property(lambda self: self.pos + len(self.lexeme))
+class Token(namedtuple('Token', 'pos symbol lexeme value')):
+
+    @property
+    def end(self):
+        return self.pos + len(self.lexeme)
+        
+    def __repr__(self):
+        return "({}, {})".format(
+            repr(self.symbol), repr(self.value))
 
 
-Rule = namedtuple('Rule', 'lhs rhs')
-Rule.__repr__ = lambda self: '({} = {})'.format(self.lhs, ' '.join(self.rhs))
+class Rule(namedtuple('Rule', 'lhs rhs')):
+
+    def __repr__(self):
+        return '({} = {})'.format(
+            self.lhs, ' '.join(self.rhs))
+
+    @staticmethod
+    def from_func(func):
+        'Construct a rule object from a function`s signature. '
+        lhs = func.__name__
+        rhs = []
+        ac = func.__code__.co_argcount
+        vs = func.__code__.co_varnames
+        for x in vs[:ac]:
+            # Cut tailing digital subscript like xxx_4.
+            s = re.search(r'_(\d+)$', x)
+            if s:
+                x = x[:s.start()]
+            rhs.append(x)
+        # Use immutable.
+        rhs = tuple(rhs)
+        return Rule(lhs, rhs)
 
 
-ParseTree = namedtuple('ParseTree', 'node subs')
-ParseTree.pos = property(lambda self: self.subs[0].pos)
-ParseTree.end = property(lambda self: self.subs[-1].end)
-ParseTree.__repr__ = tuple.__repr__
+class ParseTree(namedtuple('ParseTree', 'node subs')):
 
+    def __repr__(self):
+        return tuple.__repr__(self)
 
-def func_to_rule(func):
-    'Construct a rule object from a function/method. '
-    lhs = func.__name__
-    rhs = []
-    ac = func.__code__.co_argcount
-    vs = func.__code__.co_varnames
-    for x in vs[:ac]:
-        # Cut tailing digital subscript like xxx_4.
-        s = re.search(r'_(\d+)$', x)
-        if s:
-            x = x[:s.start()]
-        rhs.append(x)
-    # Use immutable.
-    rhs = tuple(rhs)
-    return Rule(lhs, rhs)
+    @property
+    def pos(self):
+        return self.subs[0].pos
+
+    @property
+    def end(self):
+        return self.subs[-1].pos
 
 
 def identity(x):
     return x
 
 
+# Special token to be delivered by the tokenizer.
 END_TOKEN = Token(-1, '\x03', None, None)
 
 
@@ -59,16 +77,47 @@ class Lexer(object):
         pass
 
     def __init__(self, names=None, patterns=None, handlers=None):
+        """The Lexer object bookkeeps 3 same-sized parallel lists:
+
+            :names:
+
+                The names of the patterns, which are supposed to be
+                consistent with dependent `Grammar` object, where they
+                are terminal symbols.
+
+            :patterns:
+
+                The patterns corresponding to the names with same
+                indexing.  Each pattern is a /compiled/ regular
+                expression object.
+
+            :handlers:
+
+                The handlers corresponding to the named patterns,
+                called when successfully tokenizing the named pattern.
+
+        """
+
         self.names = names if names else []
         self.patterns = patterns if patterns else []
         self.handlers = handlers if handlers else []
         self.precedence = {}
 
     def __call__(self, **kw):
+        """Supporting registering lexical pattern like:
+
+        ``` python
+        @my_lexer(INTEGER = r'[1-9][0-9]*')
+        def handler(value):
+            return int(value)
+        ```
+
+        """
         assert ('p' in kw and len(kw) == 2) or len(kw) == 1
         prece = kw.pop('p') if 'p' in kw else None
         name, pattern = kw.popitem()
-        if prece: self.precedence[name] = prece
+        if prece:
+            self.precedence[name] = prece
         self.names.append(name)
         self.patterns.append(re.compile(pattern))
         self.handlers.append(None)
@@ -82,18 +131,41 @@ class Lexer(object):
         return 'Lexer{{\n{}}}'.format(
             pformat(list(zip(self.names, self.patterns))))
 
+    def more(self, **kw):
+        """Register more lexcial name-patterns with one call like::
+
+            my_lexer.more(
+                ADD = r'\+',
+                SUB = r'-',
+                TIMES = r'\*',
+                ...
+            )
+
+        * Note:
+            In this case the /order/ of these name-patterns are not preserved! 
+        """
+        for name, pat in kw.items():
+            self.names.append(name)
+            self.patterns.append(re.compile(pat))
+            self.handlers.append(None)
+
     def register(self, name, pattern, handler=None, precedence=None):
+        """Registers lexical pattern directly."""
         self.names.append(name)
         self.patterns.append(re.compile(pattern))
         self.handlers.append(handler)
         if precedence != None:
             self.precedence[name] = precedence
 
-    def more(self, **kw):
-        for k, v in kw.items():
-            self.register(k, v)
-
     def tokenize(self, inp, with_end=False):
+        """Prepares a generator object, which iteratively finds possible
+        lexical patterns given input.
+
+        :with_end:
+
+            means delivering the END_TOKEN after reading over the input.
+
+        """
         names = self.names
         patterns = self.patterns
         handlers = self.handlers
@@ -127,15 +199,46 @@ class Lexer(object):
         if with_end:
             yield END_TOKEN
 
-    def prepare(self, sep=' '):
-
-        while 1:
-            pass
-
 
 class Grammar(object):
 
     def __init__(self, rules, precedence=None):
+        """A `Grammar` object has these attributes:
+
+        Core attributes:
+
+            :start:
+                The starting syntactic rule of the grammar.
+            :rules:
+                All syntactic rules of the grammar.
+            :nonterminals:
+                Non-terminal symbols.
+            :terminals:
+                Terminal symbols.
+            :precedence:
+                Precedence of symbols to resolve LR-conflicts.
+
+        Auxiliary attributes:
+
+            :group: dict
+                Lookup rules grouped by the same LHS.
+            :unreachable: set
+                Unreachable non-terminal symbols by deriving from start rule.
+            :NULLABLE: set
+                Nullable rules in the grammar.
+            :FIRST: dict
+                The FIRST set of terminal symbols of each non-terminal symbol.
+
+        All these attributes are necessary for performing the
+        CLOSURE-algorithm, including:
+
+            :closure:
+
+            :closure1_with_lookahead:
+
+        closure with or without lookahead.
+
+        """
 
         if not precedence:
             precedence = {}
@@ -232,7 +335,7 @@ class Grammar(object):
         return s
 
     def closure(self, I):
-        """Naive closure algorithm on item set."""
+        """Naive closure algorithm on item set :I:."""
         G = self
         C = I[:]
         z = 0
@@ -248,7 +351,7 @@ class Grammar(object):
         return C
 
     def closure1_with_lookahead(self, item, a):
-        """Lookahead closure algorithm on singleton item set."""
+        """Lookahead closure algorithm on item set [(:item:, :a:)]."""
         G = self
         C = [(item, a)]
         z = 0
@@ -273,7 +376,7 @@ class Grammar(object):
 
             def __setitem__(self, k, v):
                 if callable(v):
-                    self.append(func_to_rule(v))
+                    self.append(Rule.from_func(v))
                 else:
                     pass
 
@@ -286,7 +389,10 @@ class Grammar(object):
 
 
 def augment(rules, semans):
-    'Augment language (rules, semantics) with singleton top rule/semantics. '
+    """Augment language (rules, semantics) with a top rule and a top
+    semantics.
+
+    """
     assert len(rules) == len(semans)
     start = rules[0].lhs
     rules = [Rule(start+'^', (start,))] + rules
@@ -295,22 +401,25 @@ def augment(rules, semans):
     return rules, semans
 
 
-# Graph Structured Stack: a memory-friendly structure for tracing
-# states/arguments of generalized parsing, which is almost identical
-# to CONS structure in LISP.
-GSS = namedtuple('GSS', 'cdr car')
+class GSS(namedtuple('GSS', 'cdr car')):
+
+    """Graph Structured Stack: a memory-friendly structure for forking
+    states during generalized parsing, which is identical to CONS
+    structure in LISP. """
+
+    def to_list(self):
+        'Stack safety.'
+        gss = self
+        l = deque()
+        while gss is not Nil:
+            l.appendleft(gss.car)
+            gss = gss.cdr
+        return l
+
+    def __repr__(self):
+        return repr(self.to_list())
+
 Nil = GSS(None, None)
-
-def GSS_to_list(gss):
-    'Stack safety.'
-    l = deque()
-    while gss is not Nil:
-        l.appendleft(gss.car)
-        gss = gss.cdr
-    return l
-
-GSS.to_list = GSS_to_list
-GSS.__repr__ = lambda s: repr(s.to_list())
 
 
 # In order to supply an API, syntax error during parsing may be
@@ -395,7 +504,7 @@ class GLR(object):
         assert isinstance(self.semans, list)
 
     def rule(self, func):
-        rule = func_to_rule(func)
+        rule = Rule.from_func(func)
         self.rules.append(rule)
         self.semans.append(func)
 
@@ -965,7 +1074,7 @@ class LALR(GLR):
             return p
 
 
-class Debug(LALR):
+class Inspector(LALR):
 
     """Methods for inspecting LALR attributes.
 

@@ -1,4 +1,3 @@
-import preamble
 from unittest import TestCase, main
 from metaparse import *
 

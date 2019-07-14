@@ -1,10 +1,9 @@
-import preamble
 from metaparse import LALR
 from pprint import pprint
 from unittest import TestCase, main 
 
 
-class p_ite(metaclass=LALR.meta):
+class LangIfThenElse(metaclass=LALR.meta):
 
     'Dangling else grammar with ambiguity resolved by precedence.'
 
@@ -36,7 +35,7 @@ class Test(TestCase):
     def test_parse(self):
 
         inp = 'if e then (if e then (if e then s else s) else s)'
-        res = p_ite.interpret(inp)
+        res = LangIfThenElse.interpret(inp)
         
         self.assertEqual(res, ('it', ('ite', ('ite', 's', 's'), 's')))
 
@@ -45,8 +44,8 @@ if __name__ == '__main__':
     main()
 
     # inp = 'if e then else (if e then (if e then s else s) else s)'
-    # r = p_ite.prepare_generalized()
-    # l = p_ite.lexer.tokenize(inp)
+    # r = LangIfThenElse.prepare_generalized()
+    # l = LangIfThenElse.lexer.tokenize(inp)
     # next(r)
     # for t in l:
     #     print('feeding: ', t)
@@ -55,4 +54,4 @@ if __name__ == '__main__':
     # res = r.send(None)
     # print(res)
 
-    # t = p_ite.parse_generalized(inp)
+    # t = LangIfThenElse.parse_generalized(inp)

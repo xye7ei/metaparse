@@ -437,7 +437,8 @@ Just = namedtuple('Just', 'result')
 
 class LanguageError(Exception):
     # FIXME: Should contain some data attributes?
-    pass
+    def __init__(self, message):
+        self.message = message
 
 
 class ParseError(Exception):
@@ -564,7 +565,7 @@ class GLR(object):
                      seman.__code__.co_firstlineno,
                      seman.__name__,
                      '')])[0]
-                msg = ('There are unreachable nonterminal at {}th rule: {}.\n'
+                msg = ('There are unreachable nonterminals at {}th rule: {}.\n'
                        '- with helping traceback: \n{}\n'
                 ).format(i, G.unreachable, trc)
                 # warnings.warn(msg)

@@ -1,8 +1,6 @@
-import preamble
-
 from metaparse import *
 
-class Gparen(metaclass=LALR.meta):
+class LangParen(metaclass=LALR.meta):
 
     """
     Grammar for matching arbitrary paired parenthesises.
@@ -31,12 +29,12 @@ class Test(TestCase):
 
     def test_paren(self):
 
-        assert Gparen.interpret('()') == '<>'
-        assert Gparen.interpret('( ( ) )') == '<<>>'
-        assert Gparen.interpret('( ( ) ) ( )') == '<<>><>'
+        assert LangParen.interpret('()') == '<>'
+        assert LangParen.interpret('( ( ) )') == '<<>>'
+        assert LangParen.interpret('( ( ) ) ( )') == '<<>><>'
 
 if __name__ == '__main__':
     # import pprint as pp
-    # s = Gparen.parse('( ( ) ) ( )')
+    # s = LangParen.parse('( ( ) ) ( )')
     # pp.pprint(s)
     main()

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import preamble
 
 import pprint as pp
 from metaparse import LALR

@@ -1,9 +1,8 @@
-import preamble
 import unittest
 
 from metaparse import *
 
-class P_PyStruct(metaclass=LALR.meta):
+class LangPyStruct(metaclass=LALR.meta):
 
     """
     Grammar for python object and built-in container types.
@@ -42,15 +41,15 @@ class P_PyStruct(metaclass=LALR.meta):
     def DTerm(Obj_1, colon, Obj_2)   : return (Obj_1, Obj_2)
 
 
-target = P_PyStruct.interpret
+target = LangPyStruct.interpret
 
-G_PyStruct = Grammar(P_PyStruct.rules)
+GrammarPyStruct = Grammar(LangPyStruct.rules)
 
 
 class TestPyStructParser(unittest.TestCase):
 
     def test_first(self):
-        self.assertEqual(G_PyStruct.FIRST['Obj'], {'l1', 'id', 'l2', 'l3'})
+        self.assertEqual(GrammarPyStruct.FIRST['Obj'], {'l1', 'id', 'l2', 'l3'})
 
     def test_empty_list(self):
         self.assertEqual(target('[]'), ('Lst', []))

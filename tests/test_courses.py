@@ -1,5 +1,3 @@
-import preamble
-
 from metaparse import LALR
 
 
@@ -7,7 +5,7 @@ def fappend(l, x):
     l.append(x)
     return l
 
-class G_Courses(metaclass=LALR.meta):
+class LangCourses(metaclass=LALR.meta):
 
     """
     Grammar to assign multiple numbers to precedend course name.
@@ -62,7 +60,7 @@ class G_Courses(metaclass=LALR.meta):
 import pprint as pp
 from unittest import main, TestCase
 
-gcrs = G_Courses
+gcrs = LangCourses
 
 class Test(TestCase):
     def test_match(self):

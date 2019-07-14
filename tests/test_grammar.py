@@ -1,7 +1,6 @@
 """This file tests the fundamental checking mechanism of the class
 Grammar.meta."""
 
-import preamble
 import warnings
 import unittest
 

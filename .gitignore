@@ -14,5 +14,7 @@ __pycache__
 *.grip
 
 venv
+.coverage
+coverage_html
 
 experiments*

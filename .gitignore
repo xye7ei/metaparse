@@ -13,4 +13,6 @@ dist
 __pycache__
 *.grip
 
+venv
+
 experiments*

@@ -1,4 +1,3 @@
-import preamble
 from metaparse import LanguageError, LALR
 import unittest
 

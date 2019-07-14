@@ -1,5 +1,3 @@
-import preamble
-
 from metaparse import *
 
 table = []

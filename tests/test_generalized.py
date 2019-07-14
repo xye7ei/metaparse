@@ -3,7 +3,7 @@ from unittest import TestCase, main
 from metaparse import *
 
 
-class pExpr(metaclass=GLR.meta):
+class LangExpr(metaclass=GLR.meta):
 
     'An ambigious grammar for arithmetic expressions.'
 
@@ -31,10 +31,10 @@ class Test(TestCase):
 
     def test_send(self):
 
-        p = pExpr.prepare_generalized()
+        p = LangExpr.prepare_generalized()
 
         inp = '1 + 2 * 3 + 4'
-        x = list(pExpr.lexer.tokenize(inp))
+        x = list(LangExpr.lexer.tokenize(inp))
 
         next(p)
         for tk in x:
@@ -64,11 +64,11 @@ class Test(TestCase):
 
     def test_send_more(self):
         inp = '1 + 2 * 3 + 4 * 5'
-        y = pExpr.interpret_generalized(inp)
+        y = LangExpr.interpret_generalized(inp)
         self.assertEqual(len(y), 14)
 
     def test_parse(self):
-        y = pExpr.interpret_generalized('1 + 2 * 3')
+        y = LangExpr.interpret_generalized('1 + 2 * 3')
         self.assertEqual(y, [9, 7])
 
 

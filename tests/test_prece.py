@@ -8,7 +8,7 @@ from unittest import main, TestCase
 # Global stuff
 table = {}
 
-class pCalc(metaclass=LALR.meta):
+class LangCalc(metaclass=LALR.meta):
 
     # ===== Lexical patterns / Terminals =====
     # - A pattern is defined by Python regex literal.
@@ -60,11 +60,11 @@ class pCalc(metaclass=LALR.meta):
 class Test(TestCase):
 
     def test_interp(self):
-        t = pCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
+        t = LangCalc.interpret("x = 1 + 4 * 3 ** 2 + 5")
         assert table == {'x': 42}
-        pCalc.interpret("y = 5 + x * 2")
+        LangCalc.interpret("y = 5 + x * 2")
         assert table == {'x': 42, 'y': 5 + 42 * 2}
-        pCalc.interpret("z = 99")
+        LangCalc.interpret("z = 99")
         assert table == {'x': 42, 'y': 5 + 42 * 2, 'z': 99}
 
 

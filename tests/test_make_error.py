@@ -1,77 +1,104 @@
-import preamble; from metaparse import *
-
-try:
-
-    class pExpr(metaclass=LALR.meta):
-
-        NUM = '\d+'
-        PLUS = '\+'
-        TIMES = '\*'
-
-        def expr(expr, PLUS, term):
-            return expr + term
-
-        def expr(expr, TIMES, term):
-            return expr * term
-
-        def expr(term):
-            return term
-
-        def term(NUM):
-            return int(NUM)
-
-        def factor(NUM):
-            return int(NUM)
-
-    assert 0
-
-except LanguageError as e:
-    
-    pass
-
-
 import preamble
-from metaparse import *
-
-# Undeclared symbol
-try:
-    p = LALR()
-    with p as (lex, rule):
-        lex(a = 'a')
-        lex(b = 'b')
-        @rule
-        def S(a, S, b): pass
-        @rule
-        def S(): pass
-        @rule
-        def S(c): pass
-    assert 0
-except LanguageError as e:
-    del p
-    # print('Error catched: ', e)
+from metaparse import LanguageError, LALR
+import unittest
 
 
-# Unreachable symbol
-try:
-    p = LALR()
-    with p as (l, r):
-        l(a = 'a')
-        l(b = 'b')
-        @r
-        def S(a, S, b): pass
-        @r
-        def S(): pass
-        @r
-        def B(a): pass
-        @r
-        def B(b): pass
+class TestLangError(unittest.TestCase):
+    
+    def test_missing_symbol(self):
+        with self.assertRaises(LanguageError) as excCtx:
 
-    assert 0
-    t = p.parse('  a   a b  b ')
-    v = p.interpret('  a   a b  b ')
-    print(t)
+            class ExprLang(metaclass=LALR.meta):
 
-except LanguageError as e:
-    del p
-    # print('Error catched: ', e)
+                NUM = '\d+'
+                PLUS = '\+'
+                # TIMES = '\*'
 
+                def expr(expr, PLUS, term):
+                    return expr + term
+
+                def expr(expr, TIMES, term):
+                    return expr * term
+
+                def expr(term):
+                    return term
+
+                def term(NUM):
+                    return int(NUM)
+
+                def factor(NUM):
+                    return int(NUM)
+
+        self.assertIn(
+            'No lexical pattern provided for terminal symbol: TIMES',
+            excCtx.exception.message)
+
+    def test_unreachable_rule(self):
+        with self.assertRaises(LanguageError) as excCtx:
+
+            class ExprLang(metaclass=LALR.meta):
+
+                NUM = '\d+'
+                PLUS = '\+'
+                TIMES = '\*'
+
+                def expr(expr, PLUS, term):
+                    return expr + term
+
+                def expr(expr, TIMES, term):
+                    return expr * term
+
+                def expr(term):
+                    return term
+
+                def term(NUM):
+                    return int(NUM)
+
+                def factor(NUM):
+                    return int(NUM)
+
+        self.assertIn(
+            "There are unreachable nonterminals at 5th rule: {'factor'}.",
+            excCtx.exception.message)
+
+    
+class TestLangErrorApi2(unittest.TestCase):
+
+    def test_missing_symbol(self):
+        with self.assertRaises(LanguageError) as excCtx:
+            p = LALR()
+            with p as (lex, rule):
+                lex(a = 'a')
+                lex(b = 'b')
+                @rule
+                def S(a, S, b): pass
+                @rule
+                def S(): pass
+                @rule
+                def S(c): pass
+        self.assertIn(
+            'No lexical pattern provided for terminal symbol: c',
+            excCtx.exception.message)
+
+    def test_unreachable_rule(self):
+        with self.assertRaises(LanguageError) as excCtx:
+            p = LALR()
+            with p as (l, r):
+                l(a = 'a')
+                l(b = 'b')
+                @r
+                def S(a, S, b): pass
+                @r
+                def S(): pass
+                @r
+                def B(a): pass
+                @r
+                def B(b): pass
+
+        self.assertIn(
+            "There are unreachable nonterminals at 3th rule: {'B'}.",
+            excCtx.exception.message)
+
+
+if __name__ == '__main__':
+    unittest.main()

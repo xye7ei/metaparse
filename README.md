@@ -1,26 +1,21 @@
 metaparse
 =====
 
-This is a tool for helping out **instant parsing** or **language
-design** tasks with **strong power** in pure Python
-environment<sup>[1]</sup>.
+This is a tool which lets you do instant parsing or language design tasks
+enjoying the elegancy of pure Python<sup>[1]</sup>.
+With this tool, creating a Python class is sufficient
+to define a language, which includes
 
-The biggest highlight is that preparing a Python *class*<sup>[2]</sup>
-is enough to *define a language*, including
+* lexical patterns
+* syntatical rules
+* semantic actions (i.e. interpretation/translation)
 
-* defining lexical patterns
-* defining syntatical rules
-* defining semantic actions (i.e. interpretation/translation)
+On top of this class, a parser/interpreter is automatically generated.
+You can already use it to directly parse strings via calling its `parse`
+or `interpret` method.
 
-From such a class a parser/interpreter is automatically generated.
-Based on it, parsing strings using this new language can be done by
-simply calling the `parse` or `interpret` method.
-
-
-<sub>[1]. This module is motivated by [instaparse][] in [Clojure][], but travels another way more like [PLY][].</sub>
+<sub>[1]. This module is motivated by [instaparse][] in [Clojure][], but goes another way more like [PLY][].</sub>
 <br/>
-<sub>[2]. Python 3 preferred.</sub>
-
 
 # Table of Contents
 1. [Quick Example](#quick-example)
@@ -31,13 +26,13 @@ simply calling the `parse` or `interpret` method.
 
 # Quick Example
 
-In `metaparse`, language syntax and semantics can be simply specified
-with **class methods**. To illustrate this, we create a tiny
+In `metaparse`, language syntax and semantics can be simply defined
+as methods of a class. To illustrate this, we create a tiny
 calculator grammar which can read basic arithmetic expressions and
-register variable bindings in a table (aka. `context`).
+register variable bindings in a global dictionary.
 
-At first, we conceptually design the grammar on a paper, as has been
-shown in textbooks,
+At first, we conceptually design the grammar on a paper, as seen from the
+textbooks,
 
 ```
 assign → ID = expr
@@ -48,7 +43,7 @@ expr → expr₁ * expr₂
 expr → expr₁ ** expr₂
 ```
 
-then we incorporate `def` signatures in Python respectively as an alternative notation:
+then we map them to method declarations in Python:
 ``` python
 def assign(ID, EQ, expr): ...
 def expr(NUM): ...
@@ -58,8 +53,11 @@ def expr(expr_1, MUL, expr_2): ...
 def expr(expr_1, POW, expr_2): ...
 ```
 
-and finally we write down the semantic rules as method bodies similar
-to using the [SDT][]-style (cf. [Yacc][]).
+and finally we write down the semantic rules as method bodies,
+in a [SDT][]-style (cf. [Yacc][]). The method parameters are bound
+to the parse result of the sub-tree when a rule is being executed
+(i.e. being reduced after its sub-rules or tokens have been
+successfully processed).
 
 ``` python
 from metaparse import LALR
@@ -135,8 +133,8 @@ IMO, tools under state-of-the-art could hardly get more handy than
 this.
 
 Note `metaclass=LALR.meta` only works in Python 3. There is an
-[alternative](#verbose-style) form which also works in Python 2, as
-well expose the API of this module more explicitly.
+[alternative](#verbose-style) way which works in Python 2.
+Directly using the APIs without all syntactic sugars is also possible.
 
 
 # Design and Usage
@@ -147,11 +145,11 @@ The design of this module targets "**native** parsing" (like [instaparse][] and 
     - like `def E(E, plus, T)`, `def T(F)` ...
     - rather than **literal string notations** like `"E = E + T"`, `"T = F"` ...
 * language translation implemented in *pure* Python,
-* easy to play with (e.g. REPL),
-* no generated code or program,
-* no [DSL][] feeling<sup>[3]</sup>,
-* support for dump/load,
-* no extra dependencies,
+* easy to play with (e.g. in REPL),
+* no need to generate a program before use
+* but you can generate one and save it for future use (via dump/load APIs)
+* does not feel too much like a DSL (maybe?),
+* no dependencies,
 * optional precedence specification (for LALR),
 * nice error reporting,
 * and etc.
@@ -159,8 +157,6 @@ The design of this module targets "**native** parsing" (like [instaparse][] and 
 
 <!-- All thanks to [metaprogramming](https://docs.python.org/3/reference/datamodel.html#customizing-class-creation) techniques.
  -->
-
-<sub>[3]. may be untrue.</sub>
 
 Though this slim module does not intend to replace full-fledged tools
 like [Bison][] and [ANTLR][], it is still very handy and its
